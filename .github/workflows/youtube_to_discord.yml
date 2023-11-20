@@ -25,7 +25,7 @@ jobs:
     - name: Execute YouTube to Discord Script
       env:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
+        DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
         IS_FIRST_RUN: ${{ secrets.IS_FIRST_RUN }}
       run: |
