@@ -24,7 +24,7 @@ Discord Actions is actively developing support for the following platforms:
 1. Fork [this repository](https://github.com/LYNGMN/DiscordActions/fork) or Use [this template](https://github.com/new?template_name=DiscordActions&template_owner=LYNGMN).
 2. Access the settings of the forked repository, go to `Secrets and variables` > [`Actions`](https://github.com/LYNGMN/DiscordActions/settings/secrets/actions).  
 Click the [`New repository secret`](https://github.com/LYNGMN/DiscordActions/settings/secrets/actions/new) button to configure environment variables suitable for the platform you want to use.  
-   (e.g., For YouTube to Discord use, set DISCORD_WEBHOOK_URL, YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID)
+   (e.g., For YouTube to Discord use, set DISCORD_YOUTUBE_WEBHOOK, YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID, IS_FIRST_RUN)
 4. Go to [`Actions`](https://github.com/LYNGMN/DiscordActions/actions) and click on the workflow for the platform you want to use.  
    (e.g., [YouTube to Discord Notification](https://github.com/LYNGMN/DiscordActions/actions/workflows/youtube_to_discord.yml))  
 6. Manually press the `[Run workflow]` button to check if it's working properly.

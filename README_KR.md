@@ -23,7 +23,7 @@ Discord Actions는 다음 플랫폼에 대한 지원을 활발하게 개발 중�
 
 1. 이 저장소를 포크합니다.
 2. 포크한 저장소의 Secrets에 작동을 원하는 플랫폼에 적합한 환경 변수를 설정합니다.  
-(예: 유튜브 사용 시, DISCORD_WEBHOOK_URL, YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID)
+(예: 유튜브 사용 시, DISCORD_YOUTUBUE_WEBHOOK, YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID, IS_FIRST_RUN)
 3. [`Actions`](https://github.com/LYNGMN/DiscordActions/actions)로 이동하여 사용할 플랫폼의 워크플로우를 클릭합니다.  
 (예: [YouTube to Discord Notification](https://github.com/LYNGMN/DiscordActions/actions/workflows/youtube_to_discord.yml))  
 4. 제대로 작동하는지 수동으로 `[Run workflow]` 버튼을 눌러 작동하여 확인합니다.  
