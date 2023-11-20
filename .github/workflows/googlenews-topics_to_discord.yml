@@ -24,7 +24,7 @@ jobs:
 
     - name: Read Google News RSS and Post to Discord
       env:
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}  # Discord 웹훅 URL
+        DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}  # Discord 웹훅 URL
         GIST_ID_TOPICS: ${{ secrets.GIST_ID_TOPICS }}  # Gist ID
         GIST_TOKEN: ${{ secrets.GIST_TOKEN }}  # GitHub Token
       run: |
