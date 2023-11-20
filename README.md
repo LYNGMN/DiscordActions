@@ -5,6 +5,7 @@ Discord Actions is a GitHub Actions project that collects information from vario
 ## Currently Supported Platforms
 
 - **YouTube**: Receive notifications of new videos from specific YouTube channels.
+- **Google News**: Receive notifications of topic news and specific keyword news.
 
 ## Upcoming Platform Support
 
