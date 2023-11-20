@@ -1,0 +1,31 @@
+name: Google News (Topics) RSS to Discord
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:  # 수동 트리거
+
+jobs:
+  fetch-and-post:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        pip install requests
+        pip install python-dateutil
+
+    - name: Read Google News RSS and Post to Discord
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}  # Discord 웹훅 URL
+        GIST_ID_TOPICS: ${{ secrets.GIST_ID_TOPICS }}  # Gist ID
+        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}  # GitHub Token
+      run: |
+        python .github/scripts/googlenews-topics_to_discord.py

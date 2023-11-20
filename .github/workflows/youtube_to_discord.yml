@@ -1,0 +1,32 @@
+name: YouTube to Discord Notification
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # 매 30분마다 실행
+  workflow_dispatch:  # 수동 트리거
+  
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'
+
+    - name: Install Dependencies
+      run: |
+        pip install --upgrade google-api-python-client  # google-api-python-client 패키지 설치
+        pip install requests
+
+    - name: Execute YouTube to Discord Script
+      env:
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
+        YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+        IS_FIRST_RUN: ${{ secrets.IS_FIRST_RUN }}
+      run: |
+        python .github/scripts/youtube_to_discord.py
