@@ -78,8 +78,8 @@ def fetch_and_post_videos():
         summary_message = "최초 실행: 가져온 YouTube 동영상 목록\n\n" + "\n".join(video_list)
         post_to_discord(summary_message)
 
-    # 새로운 영상 확인 및 Discord에 보내기
-    for video in reversed(videos['items']):  # 오래된 순서로 게시
+    # 새로운 영상 확인 및 Discord에 보내기 (오래된 순서로)
+    for video in videos['items']:
         video_id = video['id']['videoId']
 
         # 이미 게시된 GUID인지 확인
