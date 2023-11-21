@@ -28,5 +28,7 @@ jobs:
         DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
         IS_FIRST_RUN: ${{ secrets.IS_FIRST_RUN }}
+        GIST_ID_NEWS: ${{ secrets.GIST_ID_NEWS }}
+        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
       run: |
         python .github/scripts/youtube_to_discord.py
