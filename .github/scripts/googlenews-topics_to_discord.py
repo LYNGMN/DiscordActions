@@ -83,6 +83,11 @@ def main():
     news_items = root.findall('.//item')
     for index, item in enumerate(news_items):
         guid = item.find('guid').text
+
+    # 이미 게시된 GUID인지 확인
+    if guid in posted_guids:
+        continue  # 중복된 항목은 무시
+
         title = item.find('title').text
         link = item.find('link').text
         pub_date = item.find('pubDate').text
@@ -95,7 +100,10 @@ def main():
         # Discord에 메시지를 포맷하여 전송합니다.
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n📅 {formatted_date}"
         send_discord_message(webhook_url, discord_message)
+
+        # 게시된 GUID 목록에 추가
         posted_guids.append(guid)
+
         time.sleep(3)  # 뉴스 항목 간에 1초의 딜레이를 추가합니다.
 
     # 게시된 뉴스 항목의 GUID를 업데이트하여 Gist에 저장합니다.
