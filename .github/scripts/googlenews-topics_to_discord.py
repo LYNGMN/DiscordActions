@@ -84,9 +84,9 @@ def main():
     for index, item in enumerate(news_items):
         guid = item.find('guid').text
 
-    # 이미 게시된 GUID인지 확인
-    if guid in posted_guids:
-        continue  # 중복된 항목은 무시
+        # 이미 게시된 GUID인지 확인
+        if guid in posted_guids:
+            continue  # 중복된 항목은 무시
 
         title = item.find('title').text
         link = item.find('link').text
@@ -103,8 +103,7 @@ def main():
 
         # 게시된 GUID 목록에 추가
         posted_guids.append(guid)
-
-        time.sleep(3)  # 뉴스 항목 간에 1초의 딜레이를 추가합니다.
+        time.sleep(3)
 
     # 게시된 뉴스 항목의 GUID를 업데이트하여 Gist에 저장합니다.
     updated_guids = '\n'.join(posted_guids)

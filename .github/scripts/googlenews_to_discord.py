@@ -96,7 +96,7 @@ def main():
         posted_guids.append(guid)
         time.sleep(3)
 
-    # Gist 업데이트
+    # 게시된 뉴스 항목의 GUID를 업데이트하여 Gist에 저장합니다.
     updated_guids = '\n'.join(posted_guids)
     gist_files = {'googlenews_posted_guids.txt': {'content': updated_guids}}
     gist_payload = {'files': gist_files}
