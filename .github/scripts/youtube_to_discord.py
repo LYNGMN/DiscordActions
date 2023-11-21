@@ -60,39 +60,45 @@ def fetch_and_post_videos():
 
     # 최초 실행 시 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
     if is_first_run:
+        recent_videos = videos['items'][:15]  # 최근 업데이트된 15개의 동영상 가져오기
         video_list = []
-        for video in reversed(videos['items']):  # 오래된 순서로 게시
+        for video in recent_videos:
             video_title = html.unescape(video['snippet']['title'])
             channel_title = html.unescape(video['snippet']['channelTitle'])
             video_id = video['id']['videoId']
             video_url = f"https://youtu.be/{video_id}"
             message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
-            post_to_discord(message)
-            video_list.append(f"{channel_title}: {video_title}")
+            video_list.append(message)
+
+        # 최초 실행이므로 가져온 동영상 목록을 Gist에 저장합니다.
+        updated_guids = '\n'.join([video['id']['videoId'] for video in recent_videos])
+        gist_files = {'youtube_posted_guids.txt': {'content': updated_guids}}
+        gist_payload = {'files': gist_files}
+        gist_update_response = requests.patch(gist_url, json=gist_payload, headers=gist_headers)
 
         # 최초 실행 시 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
         summary_message = "최초 실행: 가져온 YouTube 동영상 목록\n\n" + "\n".join(video_list)
         post_to_discord(summary_message)
-    else:
-        # 새로운 영상 확인 및 Discord에 보내기
-        for video in reversed(videos['items']):  # 오래된 순서로 게시
-            video_id = video['id']['videoId']
 
-            # 이미 게시된 GUID인지 확인
-            if video_id in posted_guids:
-                continue  # 중복된 항목은 무시
+    # 새로운 영상 확인 및 Discord에 보내기
+    for video in reversed(videos['items']):  # 오래된 순서로 게시
+        video_id = video['id']['videoId']
 
-            video_title = html.unescape(video['snippet']['title'])
-            channel_title = html.unescape(video['snippet']['channelTitle'])
-            video_url = f"https://youtu.be/{video_id}"
-            message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
-            
-            # Discord에 메시지 보내기
-            post_to_discord(message)
+        # 이미 게시된 GUID인지 확인
+        if video_id in posted_guids and not is_first_run:
+            continue  # 중복된 항목은 무시
 
-            # 게시된 GUID 목록에 추가
-            posted_guids.append(video_id)
-            time.sleep(3)
+        video_title = html.unescape(video['snippet']['title'])
+        channel_title = html.unescape(video['snippet']['channelTitle'])
+        video_url = f"https://youtu.be/{video_id}"
+        message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
+        
+        # Discord에 메시지 보내기
+        post_to_discord(message)
+
+        # 게시된 GUID 목록에 추가
+        posted_guids.append(video_id)
+        time.sleep(3)
 
     # 게시된 GUID 목록을 업데이트하여 Gist에 저장합니다.
     updated_guids = '\n'.join(posted_guids)
