@@ -16,7 +16,7 @@ def fetch_rss_feed(url):
 def escape_brackets(text):
     # 대괄호 이스케이핑 처리 함수
     # Discord 메시지에서 하이퍼링크 문제를 방지하기 위해 대괄호를 이스케이프합니다.
-    return text.replace("[", "\\[").replace("]", "\\]")
+    return text.replace("[", "\\[").replace("]", "\\]").replace("\\[", "[[").replace("\\]", "]]")
 
 def parse_html_description(html_desc):
     # HTML 내용에서 뉴스 기사 정보를 추출하는 함수

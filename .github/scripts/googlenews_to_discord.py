@@ -15,7 +15,7 @@ def fetch_rss_feed(url):
 
 def escape_brackets(text):
     """대괄호를 이스케이프 처리하는 함수"""
-    return text.replace("[", "\\[").replace("]", "\\]")
+    return text.replace("[", "\\[").replace("]", "\\]").replace("\\[", "[[").replace("\\]", "]]")
 
 def parse_html_description(html_desc):
     # HTML 엔티티 디코딩
