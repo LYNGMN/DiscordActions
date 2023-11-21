@@ -65,7 +65,7 @@ def main():
     # Gist에서 이전 게시물 ID 가져오기
     gist_headers = {"Authorization": f"token {gist_token}"}
     gist_response = requests.get(gist_url, headers=gist_headers).json()
-    posted_guids = gist_response['files']['posted_guids.txt']['content'].splitlines()
+    posted_guids = gist_response['files']['googlenews_posted_guids.txt']['content'].splitlines()
 
     # Discord 웹훅 설정
     webhook_url = os.environ.get('DISCORD_WEBHOOK_NEWS')
@@ -98,7 +98,7 @@ def main():
 
     # Gist 업데이트
     updated_guids = '\n'.join(posted_guids)
-    gist_files = {'posted_guids.txt': {'content': updated_guids}}
+    gist_files = {'googlenews_posted_guids.txt': {'content': updated_guids}}
     gist_payload = {'files': gist_files}
     gist_update_response = requests.patch(gist_url, json=gist_payload, headers=gist_headers)
 
