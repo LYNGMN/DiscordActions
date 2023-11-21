@@ -72,7 +72,7 @@ def main():
 
     # 뉴스 항목 처리
     news_items = root.findall('.//item')
-    for index, item in enumerate(news_items):
+    for index, item in reversed(list(enumerate(news_items))):  # 역순으로 순회
         guid = item.find('guid').text
 
         # 이미 게시된 GUID인지 확인

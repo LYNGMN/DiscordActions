@@ -67,7 +67,7 @@ def main():
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
 
-# Gist 관련 설정
+    # Gist 관련 설정
     gist_id = os.environ.get('GIST_ID_TOPICS')
     gist_token = os.environ.get('GIST_TOKEN')
     gist_url = f"https://api.github.com/gists/{gist_id}"
@@ -81,7 +81,7 @@ def main():
 
     # 뉴스 항목을 처리합니다.
     news_items = root.findall('.//item')
-    for index, item in enumerate(news_items):
+    for index, item in reversed(list(enumerate(news_items))):  # 역순으로 순회
         guid = item.find('guid').text
 
         # 이미 게시된 GUID인지 확인
