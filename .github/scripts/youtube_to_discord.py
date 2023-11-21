@@ -58,16 +58,14 @@ def fetch_and_post_videos():
     # 최초 실행 여부 확인
     is_first_run = IS_FIRST_RUN == '1'
 
-    # 최초 실행 시 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
+    # 최초 실행 시 최근 업데이트된 15개의 동영상 가져오기
     if is_first_run:
-        recent_videos = videos['items'][:15]  # 최근 업데이트된 15개의 동영상 가져오기
+        recent_videos = videos['items'][:15]
         video_list = []
         for video in recent_videos:
             video_title = html.unescape(video['snippet']['title'])
             channel_title = html.unescape(video['snippet']['channelTitle'])
-            video_id = video['id']['videoId']
-            video_url = f"https://youtu.be/{video_id}"
-            message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
+            message = f"`{channel_title} - YouTube`\n**{video_title}**"
             video_list.append(message)
 
         # 최초 실행이므로 가져온 동영상 목록을 Gist에 저장합니다.
@@ -90,8 +88,7 @@ def fetch_and_post_videos():
 
         video_title = html.unescape(video['snippet']['title'])
         channel_title = html.unescape(video['snippet']['channelTitle'])
-        video_url = f"https://youtu.be/{video_id}"
-        message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
+        message = f"`{channel_title} - YouTube`\n**{video_title}**"
         
         # Discord에 메시지 보내기
         post_to_discord(message)
