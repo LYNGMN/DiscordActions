@@ -2,7 +2,6 @@ import os
 import requests
 import html
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
 import time 
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
@@ -64,12 +63,37 @@ def fetch_and_post_videos():
         post_to_discord(summary_message)
     else:
         # 최초 실행이 아닌 경우, 지난 1일 이내에 업로드된 동영상만 필터링합니다.
-        current_time = datetime.utcnow()
-        filtered_videos = [video for video in videos['items'] if (
-            current_time - datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')) <= timedelta(days=1)]
+        current_time = time.mktime(time.gmtime())
+        one_day_ago = current_time - 86400  # 86400초는 1일을 나타냅니다.
+        filtered_videos = []
+
+        # YouTube에서 동영상을 가져옵니다.
+        page_token = None
+        while True:
+            videos = youtube.search().list(
+                channelId=YOUTUBE_CHANNEL_ID,
+                order='date',
+                type='video',
+                part='snippet',
+                maxResults=50,  # 페이지당 최대 50개의 동영상을 가져옵니다.
+                pageToken=page_token
+            ).execute()
+
+            if 'items' not in videos:
+                break
+
+            for video in videos['items']:
+                published_at = video['snippet']['publishedAt']
+                published_time = time.mktime(time.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ"))
+                if published_time >= one_day_ago:
+                    filtered_videos.append(video)
+
+            page_token = videos.get('nextPageToken')
+            if not page_token:
+                break
 
         if filtered_videos:
-            for video in filtered_videos:  # 오래된 순서로 게시
+            for video in reversed(filtered_videos):  # 오래된 순서로 게시
                 video_title = html.unescape(video['snippet']['title'])
                 channel_title = html.unescape(video['snippet']['channelTitle'])
                 video_id = video['id']['videoId']
