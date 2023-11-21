@@ -13,68 +13,67 @@ def fetch_rss_feed(url):
     response = requests.get(url)
     return response.content
 
+def escape_brackets(text):
+    # 대괄호 이스케이핑 처리 함수
+    # Discord 메시지에서 하이퍼링크 문제를 방지하기 위해 대괄호를 이스케이프합니다.
+    return text.replace("[", "\\[").replace("]", "\\]")
+
 def parse_html_description(html_desc):
-    # HTML 내용에서 특정 태그를 파싱하여 뉴스 기사 정보를 추출합니다.
-    html_desc = unescape(html_desc)  # HTML 엔티티 디코딩
+    # HTML 내용에서 뉴스 기사 정보를 추출하는 함수
+    # HTML 엔티티를 디코딩하고, <ol> 태그 내의 <li> 태그를 찾아 뉴스 정보를 추출합니다.
+    html_desc = unescape(html_desc)
+    items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
 
-    items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)  # <li> 태그 내용 파싱
     news_items = []
-
+    full_content_link = ""  # "전체 콘텐츠 보기" 링크 초기화
     for item in items:
-        # "Google 뉴스에서 전체 콘텐츠 보기" 링크를 처리합니다.
         if 'Google 뉴스에서 전체 콘텐츠 보기' in item:
             full_content_link_match = re.search(r'<a href="(https://news\.google\.com/stories/.*?)"', item)
             if full_content_link_match:
                 full_content_link = full_content_link_match.group(1)
-            continue  # 이 항목은 뉴스 목록에 추가하지 않습니다.
+            continue  # "전체 콘텐츠 보기" 링크는 뉴스 목록에 추가하지 않음
 
-        # 일반 뉴스 항목을 처리합니다.
+        # 일반 뉴스 항목 처리
         title_match = re.search(r'<a href="(.*?)".*?>(.*?)</a>', item)
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             link, title_text = title_match.groups()
-            title_text = escape_brackets(title_text)  # 대괄호를 이스케이프 처리합니다.
+            title_text = escape_brackets(title_text)  # 대괄호 이스케이핑
             press_name = press_match.group(1)
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
     news_string = '\n'.join(news_items)
-
-    # "Google 뉴스에서 전체 콘텐츠 보기" 링크를 추가합니다.
     if full_content_link:
         news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
 
     return news_string
 
-def escape_brackets(text):
-    # 대괄호를 이스케이프 처리합니다.
-    return text.replace("[", "\\[").replace("]", "\\]")
-
 def parse_rss_date(pub_date):
-    # RSS 피드의 날짜를 파싱하여 지역 시간대로 변환합니다.
+    # RSS 피드의 날짜를 파싱하여 지역 시간대로 변환하는 함수
     dt = parser.parse(pub_date)
     dt_kst = dt.astimezone(gettz('Asia/Seoul'))
     return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
 
 def send_discord_message(webhook_url, message):
-    # Discord 웹훅 URL로 메시지를 전송합니다.
+    # Discord 웹훅 URL로 메시지를 전송하는 함수
     payload = {"content": message}
     headers = {"Content-Type": "application/json"}
     response = requests.post(webhook_url, json=payload, headers=headers)
     return response
 
 def main():
-    # 메인 함수: RSS 피드를 가져오고, 파싱한 다음 Discord로 메시지를 전송합니다.
+    # 메인 함수: Google 뉴스 RSS 피드를 가져오고, 파싱한 후 Discord로 메시지를 전송합니다.
     rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
 
-    # Gist 관련 설정
+# Gist 관련 설정
     gist_id = os.environ.get('GIST_ID_TOPICS')
     gist_token = os.environ.get('GIST_TOKEN')
     gist_url = f"https://api.github.com/gists/{gist_id}"
 
-    # Gist에서 이전 게시물 ID를 가져옵니다.
+    # 이전에 게시된 게시물의 ID를 Gist에서 가져옵니다.
     gist_headers = {"Authorization": f"token {gist_token}"}
     gist_response = requests.get(gist_url, headers=gist_headers).json()
     posted_guids = gist_response['files']['googlenews-topics_posted_guids.txt']['content'].splitlines()
@@ -86,21 +85,20 @@ def main():
     for index, item in enumerate(news_items):
         guid = item.find('guid').text
         title = item.find('title').text
+        title = escape_brackets(title)  # 대괄호 이스케이핑
         link = item.find('link').text
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
-
-        # 피드의 제목에서 대괄호를 이스케이프 처리합니다.
-        title = escape_brackets(title)
-          
         description = parse_html_description(description_html)
         formatted_date = parse_rss_date(pub_date)
+
+        # Discord에 메시지를 포맷하여 전송합니다.
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n📅 {formatted_date}"
         send_discord_message(webhook_url, discord_message)
         posted_guids.append(guid)
         time.sleep(1)  # 뉴스 항목 간에 1초의 딜레이를 추가합니다.
 
-    # Gist를 업데이트합니다.
+    # 게시된 뉴스 항목의 GUID를 업데이트하여 Gist에 저장합니다.
     updated_guids = '\n'.join(posted_guids)
     gist_files = {'googlenews-topics_posted_guids.txt': {'content': updated_guids}}
     gist_payload = {'files': gist_files}
