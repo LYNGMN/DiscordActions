@@ -2,8 +2,7 @@ import os
 import requests
 import html
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
-import time 
+from datetime import datetime, timedelta  # datetime 모듈에서 필요한 함수들을 import 합니다.
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
@@ -42,66 +41,37 @@ def fetch_and_post_videos():
         print("동영상을 찾을 수 없습니다.")
         return
 
-    # Gist 설정
-    gist_id = os.getenv('GIST_ID_YOUTUBE')
-    gist_token = os.getenv('GIST_TOKEN')
-    gist_url = f"https://api.github.com/gists/{gist_id}"
-
-    # Gist에서 이전 게시된 GUID 목록 가져오기
-    gist_headers = {"Authorization": f"token {gist_token}"}
-    gist_response = requests.get(gist_url, headers=gist_headers).json()
-    posted_guids = gist_response['files']['youtube_posted_guids.txt']['content'].splitlines()
-
-    # Discord 웹훅 설정
-    webhook_url = os.getenv('DISCORD_WEBHOOK_YOUTUBE')
-
-    # 최초 실행 여부 확인
-    is_first_run = IS_FIRST_RUN == '1'
-
-    # 최초 실행 시 최근 업데이트된 15개의 동영상 가져오기
-    if is_first_run:
-        recent_videos = videos['items'][:15]
+    # 최초 실행일 경우 모든 동영상을 가져옵니다.
+    if IS_FIRST_RUN == '1':
         video_list = []
-        for video in recent_videos:
+        for video in reversed(videos['items']):  # 오래된 순서로 게시
             video_title = html.unescape(video['snippet']['title'])
             channel_title = html.unescape(video['snippet']['channelTitle'])
-            message = f"`{channel_title} - YouTube`\n**{video_title}**"
-            video_list.append(message)
+            video_id = video['id']['videoId']
+            video_url = f"https://youtu.be/{video_id}"
+            message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
+            post_to_discord(message)
+            video_list.append(f"{channel_title}: {video_title}")
 
-        # 최초 실행이므로 가져온 동영상 목록을 Gist에 저장합니다.
-        updated_guids = '\n'.join([video['id']['videoId'] for video in recent_videos])
-        gist_files = {'youtube_posted_guids.txt': {'content': updated_guids}}
-        gist_payload = {'files': gist_files}
-        gist_update_response = requests.patch(gist_url, json=gist_payload, headers=gist_headers)
-
-        # 최초 실행 시 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
+        # 최초 실행일 경우 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
         summary_message = "최초 실행: 가져온 YouTube 동영상 목록\n\n" + "\n".join(video_list)
         post_to_discord(summary_message)
+    else:
+        # 최초 실행이 아닐 경우, 지난 1일 이내에 업로드된 동영상만 필터링합니다.
+        current_time = datetime.utcnow()
+        filtered_videos = [video for video in videos['items'] if (
+            current_time - datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')) <= timedelta(days=1)]
 
-    # 새로운 영상 확인 및 Discord에 보내기 (오래된 순서로)
-    for video in videos['items']:
-        video_id = video['id']['videoId']
-
-        # 이미 게시된 GUID인지 확인
-        if video_id in posted_guids and not is_first_run:
-            continue  # 중복된 항목은 무시
-
-        video_title = html.unescape(video['snippet']['title'])
-        channel_title = html.unescape(video['snippet']['channelTitle'])
-        message = f"`{channel_title} - YouTube`\n**{video_title}**"
-        
-        # Discord에 메시지 보내기
-        post_to_discord(message)
-
-        # 게시된 GUID 목록에 추가
-        posted_guids.append(video_id)
-        time.sleep(3)
-
-    # 게시된 GUID 목록을 업데이트하여 Gist에 저장합니다.
-    updated_guids = '\n'.join(posted_guids)
-    gist_files = {'youtube_posted_guids.txt': {'content': updated_guids}}
-    gist_payload = {'files': gist_files}
-    gist_update_response = requests.patch(gist_url, json=gist_payload, headers=gist_headers)
+        if filtered_videos:
+            for video in filtered_videos:  # 오래된 순서로 게시
+                video_title = html.unescape(video['snippet']['title'])
+                channel_title = html.unescape(video['snippet']['channelTitle'])
+                video_id = video['id']['videoId']
+                video_url = f"https://youtu.be/{video_id}"
+                message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
+                post_to_discord(message)
+        else:
+            print("1일 이내에 업로드된 동영상이 없습니다.")
 
 # 메인 함수 실행
 def main():
