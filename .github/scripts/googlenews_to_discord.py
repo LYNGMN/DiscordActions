@@ -34,7 +34,7 @@ def parse_html_description(html_desc):
             title_text = replace_brackets(title_text)  # 대괄호를 한글 괄호로 변경
             press_name = press_match.group(1)
             # 제목에서 대괄호 이스케이프 처리
-            news_item = f"- [{escaped_title}](<{link}>) | {press_name}"
+            news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
     # 모든 뉴스 항목을 문자열로 변환
