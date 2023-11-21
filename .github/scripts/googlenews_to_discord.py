@@ -13,25 +13,33 @@ def fetch_rss_feed(url):
     response = requests.get(url)
     return response.content
 
-# HTML 설명을 파싱하여 뉴스 기사 제목과 링크, 언론사명을 추출하는 함수
+def escape_brackets(text):
+    """대괄호를 이스케이프 처리하는 함수"""
+    return text.replace("[", "\\[").replace("]", "\\]")
+
 def parse_html_description(html_desc):
-    html_desc = unescape(html_desc)  # HTML 엔티티 디코딩
+    # HTML 엔티티 디코딩
+    html_desc = unescape(html_desc)
+
+    # <ol> 태그 내의 모든 <li> 태그 파싱
     items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
 
     news_items = []
     for item in items:
+        # 뉴스 제목, 링크, 언론사명 추출
         title_match = re.search(r'<a href="(.*?)".*?>(.*?)</a>', item)
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
-
         if title_match and press_match:
             link, title_text = title_match.groups()
-            # 대괄호 이스케이프 처리
-            title_text = title_text.replace("[", "\\[").replace("]", "\\]")
             press_name = press_match.group(1)
-            news_item = f"- [{title_text}](<{link}>) | {press_name}"
+            # 제목에서 대괄호 이스케이프 처리
+            escaped_title = escape_brackets(title_text)
+            news_item = f"- [{escaped_title}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
+    # 모든 뉴스 항목을 문자열로 변환
     news_string = '\n'.join(news_items)
+
     return news_string
 
 # RSS 피드의 날짜를 파싱하는 함수
@@ -75,6 +83,9 @@ def main():
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         description = parse_html_description(description_html)
+
+        # 피드의 제목에서 대괄호를 이스케이프 처리합니다.
+        title = escape_brackets(title)
 
         formatted_date = parse_rss_date(pub_date)
         discord_message = f"`Google 뉴스 - 편두통`\n**[{title}](<{link}>)**\n>>> {description}\n📅 {formatted_date}"
