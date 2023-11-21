@@ -2,7 +2,8 @@ import os
 import requests
 import html
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta  # datetime 모듈에서 필요한 함수들을 import 합니다.
+from datetime import datetime, timedelta
+import time 
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
@@ -28,68 +29,55 @@ def post_to_discord(message):
 def fetch_and_post_videos():
     max_results = 15 if IS_FIRST_RUN == '1' else 30
 
-    # YouTube에서 동영상을 가져옵니다.
-    videos = youtube.search().list(
-        channelId=YOUTUBE_CHANNEL_ID,
-        order='date',
-        type='video',
-        part='snippet',
-        maxResults=max_results
-    ).execute()
+    # 최초 실행 여부 확인
+    is_first_run = IS_FIRST_RUN == '1'
 
-    if 'items' not in videos:
-        print("동영상을 찾을 수 없습니다.")
-        return
+    if is_first_run:
+        # 최근 업로드된 동영상 가져오기
+        max_results = 15  # 최초 실행 시 최근 업로드된 15개의 동영상 가져오기
 
-# 최초 실행 여부 확인
-is_first_run = IS_FIRST_RUN == '1'
+        # YouTube에서 동영상을 가져옵니다.
+        videos = youtube.search().list(
+            channelId=YOUTUBE_CHANNEL_ID,
+            order='date',
+            type='video',
+            part='snippet',
+            maxResults=max_results
+        ).execute()
 
-# 최근 업로드된 동영상 가져오기
-if is_first_run:
-    max_results = 15  # 최초 실행 시 최근 업로드된 15개의 동영상 가져오기
+        if 'items' not in videos:
+            print("동영상을 찾을 수 없습니다.")
+            return
 
-    # YouTube에서 동영상을 가져옵니다.
-    videos = youtube.search().list(
-        channelId=YOUTUBE_CHANNEL_ID,
-        order='date',
-        type='video',
-        part='snippet',
-        maxResults=max_results
-    ).execute()
-
-    if 'items' not in videos:
-        print("동영상을 찾을 수 없습니다.")
-        return
-
-    video_list = []
-    for video in reversed(videos['items']):  # 오래된 순서로 게시
-        video_title = html.unescape(video['snippet']['title'])
-        channel_title = html.unescape(video['snippet']['channelTitle'])
-        video_id = video['id']['videoId']
-        video_url = f"https://youtu.be/{video_id}"
-        message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
-        post_to_discord(message)
-        video_list.append(f"{channel_title}: {video_title}")
-
-    # 최초 실행일 경우 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
-    summary_message = "최초 실행: 가져온 YouTube 동영상 목록\n\n" + "\n".join(video_list)
-    post_to_discord(summary_message)
-else:
-    # 최초 실행이 아닌 경우, 지난 1일 이내에 업로드된 동영상만 필터링합니다.
-    current_time = datetime.utcnow()
-    filtered_videos = [video for video in videos['items'] if (
-        current_time - datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')) <= timedelta(days=1)]
-
-    if filtered_videos:
-        for video in filtered_videos:  # 오래된 순서로 게시
+        video_list = []
+        for video in reversed(videos['items']):  # 오래된 순서로 게시
             video_title = html.unescape(video['snippet']['title'])
             channel_title = html.unescape(video['snippet']['channelTitle'])
             video_id = video['id']['videoId']
             video_url = f"https://youtu.be/{video_id}"
             message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
             post_to_discord(message)
+            video_list.append(f"{channel_title}: {video_title}")
+
+        # 최초 실행일 경우 가져온 동영상 목록을 한 번에 Discord에 게시합니다.
+        summary_message = "최초 실행: 가져온 YouTube 동영상 목록\n\n" + "\n".join(video_list)
+        post_to_discord(summary_message)
     else:
-        print("1일 이내에 업로드된 동영상이 없습니다.")
+        # 최초 실행이 아닌 경우, 지난 1일 이내에 업로드된 동영상만 필터링합니다.
+        current_time = datetime.utcnow()
+        filtered_videos = [video for video in videos['items'] if (
+            current_time - datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')) <= timedelta(days=1)]
+
+        if filtered_videos:
+            for video in filtered_videos:  # 오래된 순서로 게시
+                video_title = html.unescape(video['snippet']['title'])
+                channel_title = html.unescape(video['snippet']['channelTitle'])
+                video_id = video['id']['videoId']
+                video_url = f"https://youtu.be/{video_id}"
+                message = f"`{channel_title} - YouTube`\n**{video_title}**\n{video_url}"
+                post_to_discord(message)
+        else:
+            print("1일 이내에 업로드된 동영상이 없습니다.")
 
 # 메인 함수 실행
 def main():
