@@ -3,8 +3,6 @@ import requests
 import html
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
-from dateutil import parser
-from dateutil.tz import gettz
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
