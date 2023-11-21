@@ -13,10 +13,10 @@ def fetch_rss_feed(url):
     response = requests.get(url)
     return response.content
 
-def escape_brackets(text):
-    """대괄호를 이스케이프 처리하는 함수"""
-    return text.replace("[", "\\[").replace("]", "\\]").replace("\\[", "[[").replace("\\]", "]]")
-
+def replace_brackets(text):
+    # 대괄호를 한글 괄호로 변경하는 함수
+    return text.replace("[", "〔").replace("]", "〕")
+    
 def parse_html_description(html_desc):
     # HTML 엔티티 디코딩
     html_desc = unescape(html_desc)
@@ -31,9 +31,9 @@ def parse_html_description(html_desc):
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             link, title_text = title_match.groups()
+            title_text = replace_brackets(title_text)  # 대괄호를 한글 괄호로 변경
             press_name = press_match.group(1)
             # 제목에서 대괄호 이스케이프 처리
-            escaped_title = escape_brackets(title_text)
             news_item = f"- [{escaped_title}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
@@ -84,14 +84,13 @@ def main():
         description_html = item.find('description').text
         description = parse_html_description(description_html)
 
-        # 피드의 제목에서 대괄호를 이스케이프 처리합니다.
-        title = escape_brackets(title)
+        title = replace_brackets(title)  # 대괄호를 한글 괄호로 변경
 
         formatted_date = parse_rss_date(pub_date)
         discord_message = f"`Google 뉴스 - 편두통`\n**[{title}](<{link}>)**\n>>> {description}\n📅 {formatted_date}"
         send_discord_message(webhook_url, discord_message)
         posted_guids.append(guid)
-        time.sleep(1)
+        time.sleep(3)
 
     # Gist 업데이트
     updated_guids = '\n'.join(posted_guids)

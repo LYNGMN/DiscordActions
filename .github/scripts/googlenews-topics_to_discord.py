@@ -13,11 +13,10 @@ def fetch_rss_feed(url):
     response = requests.get(url)
     return response.content
 
-def escape_brackets(text):
-    # 대괄호 이스케이핑 처리 함수
-    # Discord 메시지에서 하이퍼링크 문제를 방지하기 위해 대괄호를 이스케이프합니다.
-    return text.replace("[", "\\[").replace("]", "\\]").replace("\\[", "[[").replace("\\]", "]]")
-
+def replace_brackets(text):
+    # 대괄호를 한글 괄호로 변경하는 함수
+    return text.replace("[", "〔").replace("]", "〕")
+    
 def parse_html_description(html_desc):
     # HTML 내용에서 뉴스 기사 정보를 추출하는 함수
     # HTML 엔티티를 디코딩하고, <ol> 태그 내의 <li> 태그를 찾아 뉴스 정보를 추출합니다.
@@ -38,7 +37,7 @@ def parse_html_description(html_desc):
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             link, title_text = title_match.groups()
-            title_text = escape_brackets(title_text)  # 대괄호 이스케이핑
+            title_text = replace_brackets(title_text)  # 대괄호를 한글 괄호로 변경
             press_name = press_match.group(1)
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
@@ -85,18 +84,19 @@ def main():
     for index, item in enumerate(news_items):
         guid = item.find('guid').text
         title = item.find('title').text
-        title = escape_brackets(title)  # 대괄호 이스케이핑
         link = item.find('link').text
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         description = parse_html_description(description_html)
+
+        title = replace_brackets(title)  # 대괄호를 한글 괄호로 변경
         formatted_date = parse_rss_date(pub_date)
 
         # Discord에 메시지를 포맷하여 전송합니다.
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n📅 {formatted_date}"
         send_discord_message(webhook_url, discord_message)
         posted_guids.append(guid)
-        time.sleep(1)  # 뉴스 항목 간에 1초의 딜레이를 추가합니다.
+        time.sleep(3)  # 뉴스 항목 간에 1초의 딜레이를 추가합니다.
 
     # 게시된 뉴스 항목의 GUID를 업데이트하여 Gist에 저장합니다.
     updated_guids = '\n'.join(posted_guids)
