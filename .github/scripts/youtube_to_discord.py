@@ -1,23 +1,20 @@
 import os
 import requests
-import datetime
-import time
 import html
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
-from github import Github  # PyGithub 라이브러리 추가
+from github import Github
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')  # GIST 관리를 위한 GitHub 토큰
-GIST_ID = os.getenv('GIST_ID')  # 동영상 ID를 저장할 GIST ID
+GIST_TOKEN = os.getenv('GIST_TOKEN')
+GIST_ID = os.getenv('GIST_ID')
 IS_FIRST_RUN = os.getenv('IS_FIRST_RUN', '0')
 
 # YouTube Data API와 GitHub를 초기화합니다.
 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-github = Github(GITHUB_TOKEN)
+github = Github(GIST_TOKEN)
 
 # GIST에서 동영상 ID 목록을 가져오는 함수
 def get_posted_videos():
@@ -44,7 +41,7 @@ def post_to_discord(message):
 
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
-    max_results = 15 if IS_FIRST_RUN == '1' else 30
+    max_results = 15 if IS_FIRST_RUN == '1' else 50
     posted_video_ids = get_posted_videos() if IS_FIRST_RUN != '1' else []
 
     # YouTube에서 동영상을 가져옵니다.
@@ -62,7 +59,7 @@ def fetch_and_post_videos():
 
     new_video_ids = []
 
-    for video in reversed(videos['items']):  # 오래된 순서로 처리
+    for video in videos['items']:
         video_id = video['id']['videoId']
 
         # 동영상이 이미 게시된 경우 건너뜁니다.
