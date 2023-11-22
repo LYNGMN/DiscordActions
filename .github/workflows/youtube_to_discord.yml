@@ -19,8 +19,7 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install --upgrade google-api-python-client  # google-api-python-client 패키지 설치
-        pip install requests
+        pip install --upgrade google-api-python-client requests PyGithub
 
     - name: Execute YouTube to Discord Script
       env:
