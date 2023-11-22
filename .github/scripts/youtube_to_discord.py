@@ -5,7 +5,7 @@ import time
 import html
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
-from github import Github 
+from github import Github  # PyGithub 라이브러리 추가
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
