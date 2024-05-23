@@ -2,7 +2,6 @@ import os
 import requests
 import html
 import time
-import sqlite3
 from googleapiclient.discovery import build
 import isodate
 from datetime import datetime, timezone, timedelta
@@ -11,11 +10,12 @@ from datetime import datetime, timezone, timedelta
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
-RESET_DB = os.getenv('RESET_DB', '0')
 LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
-INIT_MAX_RESULTS = 50  # 초기 설정 기본값은 50
-MAX_RESULTS = 10  # 초기 설정 이후 기본값은 10
-DB_PATH = 'videos.db'
+INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))  # 초기 실행 시 가져올 영상 개수, 기본값은 30
+MAX_RESULTS = 10  # 초기 실행 이후 가져올 영상 개수
+
+# 이전 실행에서 가장 최근에 게시된 영상의 게시일을 저장할 변수
+last_published_at = None
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
@@ -29,62 +29,6 @@ def check_env_variables():
     
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
-    print("환경 변수 확인 완료")
-
-# SQLite 데이터베이스 초기화
-def initialize_database():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    if RESET_DB == '1':
-        cursor.execute('DROP TABLE IF EXISTS posted_videos')
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS posted_videos (
-        video_id TEXT PRIMARY KEY,
-        channel_title TEXT,
-        title TEXT,
-        video_url TEXT,
-        description TEXT,
-        duration TEXT,
-        published_at TEXT,
-        tags TEXT,
-        category TEXT,
-        thumbnail_url TEXT
-    )
-    ''')
-    conn.commit()
-    conn.close()
-    print("데이터베이스 초기화 완료")
-
-# 데이터베이스에서 동영상 ID 목록을 가져오는 함수
-def get_posted_videos():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT video_id FROM posted_videos')
-    video_ids = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return video_ids
-
-# 데이터베이스가 비어 있는지 확인하는 함수
-def is_database_empty():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT count(*) FROM posted_videos')
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count == 0
-
-# 데이터베이스에 동영상 정보를 추가하는 함수
-def update_posted_videos(videos):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.executemany('''
-        INSERT OR IGNORE INTO posted_videos 
-        (video_id, channel_title, title, video_url, description, duration, published_at, tags, category, thumbnail_url) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', [(video['video_id'], video['channel_title'], video['title'], video['video_url'], video['description'], video['duration'], video['published_at'], video['tags'], video['category'], video['thumbnail_url']) for video in videos])
-    conn.commit()
-    conn.close()
-    print(f"{len(videos)}개의 새로운 동영상 정보 업데이트 완료")
 
 # Discord에 메시지를 게시하는 함수
 def post_to_discord(message):
@@ -125,6 +69,7 @@ category_cache = {}
 def get_category_name(category_id):
     if category_id in category_cache:
         return category_cache[category_id]
+    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     categories = youtube.videoCategories().list(part="snippet", regionCode="US").execute()
     for category in categories['items']:
         category_cache[category['id']] = category['snippet']['title']
@@ -140,11 +85,11 @@ def convert_to_kst_and_format(published_at):
 
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
-    posted_video_ids = get_posted_videos()
-    print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
-
-    # 초기 설정 여부에 따라 MAX_RESULTS 값을 설정합니다.
-    if is_database_empty():
+    global last_published_at
+    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+    
+    # 초기 실행 여부에 따라 MAX_RESULTS 값을 설정합니다.
+    if last_published_at is None:
         max_results = INIT_MAX_RESULTS
     else:
         max_results = MAX_RESULTS
@@ -162,7 +107,6 @@ def fetch_and_post_videos():
             maxResults=max_results,
             pageToken=next_page_token
         ).execute()
-        print(f"YouTube에서 동영상 목록을 가져왔습니다. 다음 페이지 토큰: {next_page_token}")
 
         if 'items' not in response:
             print("동영상을 찾을 수 없습니다.")
@@ -171,11 +115,6 @@ def fetch_and_post_videos():
         # 오래된 순서대로 처리하기 위해 items 리스트를 뒤집습니다.
         for video in response['items'][::-1]:  # 오래된 순서부터 처리
             video_id = video['id']['videoId']
-
-            # 동영상이 이미 게시된 경우 건너뜁니다.
-            if video_id in posted_video_ids:
-                continue
-
             video_details = youtube.videos().list(
                 part="snippet,contentDetails",
                 id=video_id
@@ -188,10 +127,14 @@ def fetch_and_post_videos():
             snippet = video_detail['snippet']
             content_details = video_detail['contentDetails']
 
+            # 이전에 처리한 영상보다 오래된 영상은 건너뜁니다.
+            published_at = snippet['publishedAt']
+            if last_published_at and published_at < last_published_at:
+                continue
+
             video_title = html.unescape(snippet['title'])
             channel_title = html.unescape(snippet['channelTitle'])
             description = html.unescape(snippet.get('description', ''))
-            published_at = snippet['publishedAt']
             formatted_published_at = convert_to_kst_and_format(published_at)
             tags = ','.join(snippet.get('tags', []))
             category_id = snippet.get('categoryId', '')
@@ -201,7 +144,6 @@ def fetch_and_post_videos():
             video_url = f"https://youtu.be/{video_id}"
 
             new_videos.append({
-                'video_id': video_id,
                 'channel_title': channel_title,
                 'title': video_title,
                 'video_url': video_url,
@@ -212,7 +154,6 @@ def fetch_and_post_videos():
                 'category': category_name,
                 'thumbnail_url': thumbnail_url
             })
-            print(f"새로운 동영상 발견: {video_title}")
 
         # 다음 페이지 토큰을 가져옵니다.
         next_page_token = response.get('nextPageToken')
@@ -246,15 +187,14 @@ def fetch_and_post_videos():
 
         post_to_discord(message)
 
-    # 새로운 동영상 ID를 데이터베이스에 업데이트
+    # 새로운 영상이 있다면, 가장 최신 영상의 게시일을 저장합니다.
     if new_videos:
-        update_posted_videos(new_videos)
+        last_published_at = new_videos[0]['published_at']
 
 # 프로그램 실행
 if __name__ == "__main__":
     try:
         check_env_variables()
-        initialize_database()
         fetch_and_post_videos()
     except Exception as e:
         print(f"오류 발생: {e}")
