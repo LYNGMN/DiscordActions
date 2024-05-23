@@ -27,8 +27,9 @@ jobs:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        RESET_DB: ${{ secrets.RESET_DB || '0' }}
-        LANGUAGE: ${{ secrets.LANGUAGE || 'English' }}
+        RESET_DB: ${{ secrets.RESET_DB }}
+        LANGUAGE: ${{ secrets.LANGUAGE }}
+        MAX_RESULTS: ${{ secrets.MAX_RESULTS }}
       run: |
         python .github/scripts/youtube_to_discord.py
 
@@ -37,3 +38,6 @@ jobs:
       with:
         name: videos-db
         path: videos.db
+        if-no-files-found: warn
+      env:
+        ACTIONS_STEP_DEBUG: true
