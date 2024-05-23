@@ -9,7 +9,7 @@ import isodate
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
-DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 RESET_DB = os.getenv('RESET_DB', '0')
 
 # 환경 변수가 설정되었는지 확인하는 함수
@@ -19,11 +19,12 @@ def check_env_variables():
         missing_vars.append('YOUTUBE_CHANNEL_ID')
     if not YOUTUBE_API_KEY:
         missing_vars.append('YOUTUBE_API_KEY')
-    if not DISCORD_WEBHOOK_URL:
-        missing_vars.append('DISCORD_WEBHOOK_URL')
+    if not DISCORD_YOUTUBE_WEBHOOK:
+        missing_vars.append('DISCORD_YOUTUBE_WEBHOOK')
     
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
+    print("환경 변수 확인 완료")
 
 # YouTube Data API 초기화
 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
@@ -36,6 +37,7 @@ cursor = conn.cursor()
 if RESET_DB == '1':
     cursor.execute('DROP TABLE IF EXISTS posted_videos')
     conn.commit()
+    print("데이터베이스 초기화 완료")
 
 # 테이블 생성 (존재하지 않을 경우)
 cursor.execute('''
@@ -53,6 +55,7 @@ CREATE TABLE IF NOT EXISTS posted_videos (
 )
 ''')
 conn.commit()
+print("테이블 생성 완료")
 
 # 데이터베이스에서 동영상 ID 목록을 가져오는 함수
 def get_posted_videos():
@@ -67,16 +70,18 @@ def update_posted_videos(videos):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', [(video['video_id'], video['channel_title'], video['title'], video['video_url'], video['description'], video['duration'], video['published_at'], video['tags'], video['category'], video['thumbnail_url']) for video in videos])
     conn.commit()
+    print(f"{len(videos)}개의 새로운 동영상 정보 업데이트 완료")
 
 # Discord에 메시지를 게시하는 함수
 def post_to_discord(message):
     payload = {"content": message}
     headers = {'Content-Type': 'application/json'}
-    response = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers)
+    response = requests.post(DISCORD_YOUTUBE_WEBHOOK, json=payload, headers=headers)
     if response.status_code != 204:
         print(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
         print(response.text)
     else:
+        print("Discord에 메시지 게시 완료")
         time.sleep(3)  # 메시지 게시 후 3초 대기
 
 # ISO 8601 기간을 사람이 읽기 쉬운 형식으로 변환하는 함수
@@ -108,6 +113,7 @@ def get_category_name(category_id):
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
     posted_video_ids = get_posted_videos()
+    print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
 
     # YouTube에서 동영상을 가져옵니다.
     videos = youtube.search().list(
@@ -117,6 +123,7 @@ def fetch_and_post_videos():
         part='snippet',
         maxResults=50
     ).execute()
+    print("YouTube에서 동영상 목록을 가져왔습니다.")
 
     if 'items' not in videos:
         print("동영상을 찾을 수 없습니다.")
@@ -176,6 +183,7 @@ def fetch_and_post_videos():
             'category': category_name,
             'thumbnail_url': thumbnail_url
         })
+        print(f"새로운 동영상 발견: {video_title}")
 
     # 새로운 동영상 ID를 데이터베이스에 업데이트합니다.
     if new_videos:
