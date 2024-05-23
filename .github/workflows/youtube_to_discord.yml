@@ -18,20 +18,15 @@ jobs:
           python-version: '3.8'
 
       - name: Download Previous SQLite DB if exists
-        run: |
-          mkdir -p ./artifacts
         uses: actions/download-artifact@v2
         with:
           name: videos-db
-          path: ./artifacts
+          path: .
         continue-on-error: true
 
-      - name: Move DB to workspace if exists
-        if: success() || failure()
+      - name: Ensure DB file exists
         run: |
-          if [ -f ./artifacts/videos.db ]; then
-            mv ./artifacts/videos.db ./videos.db
-          else
+          if [ ! -f videos.db ]; then
             touch videos.db
           fi
 
