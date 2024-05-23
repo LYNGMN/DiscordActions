@@ -18,13 +18,14 @@ jobs:
           python-version: '3.8'
 
       - name: Download Previous SQLite DB if exists
+        id: download-db
         uses: actions/download-artifact@v4
         with:
           name: videos-db
           path: .
         continue-on-error: true
 
-      - name: Ensure DB file exists and initialize if needed
+      - name: Check and Initialize DB
         run: |
           if [ ! -f videos.db ]; then
             echo "Initializing new SQLite DB"
