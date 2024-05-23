@@ -136,17 +136,19 @@ def fetch_and_post_videos():
         duration = parse_duration(content_details['duration'])
         video_url = f"https://youtu.be/{video_detail['id']}"
 
-        new_videos.append({
-            'channel_title': channel_title,
-            'title': video_title,
-            'video_url': video_url,
-            'description': description,
-            'duration': duration,
-            'published_at': published_at,
-            'tags': tags,
-            'category': category_name,
-            'thumbnail_url': thumbnail_url
-        })
+        # 새로운 영상인지 확인합니다.
+        if last_published_at is None or published_at > last_published_at:
+            new_videos.append({
+                'channel_title': channel_title,
+                'title': video_title,
+                'video_url': video_url,
+                'description': description,
+                'duration': duration,
+                'published_at': published_at,
+                'tags': tags,
+                'category': category_name,
+                'thumbnail_url': thumbnail_url
+            })
 
     # 새로운 동영상을 오래된 순서로 정렬합니다.
     new_videos.sort(key=lambda x: x['published_at'])
