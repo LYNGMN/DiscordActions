@@ -12,6 +12,19 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 RESET_DB = os.getenv('RESET_DB', '0')
 
+# 환경 변수가 설정되었는지 확인하는 함수
+def check_env_variables():
+    missing_vars = []
+    if not YOUTUBE_CHANNEL_ID:
+        missing_vars.append('YOUTUBE_CHANNEL_ID')
+    if not YOUTUBE_API_KEY:
+        missing_vars.append('YOUTUBE_API_KEY')
+    if not DISCORD_WEBHOOK_URL:
+        missing_vars.append('DISCORD_WEBHOOK_URL')
+    
+    if missing_vars:
+        raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
+
 # YouTube Data API 초기화
 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 
@@ -171,6 +184,7 @@ def fetch_and_post_videos():
 # 메인 함수 실행
 def main():
     try:
+        check_env_variables()
         fetch_and_post_videos()
         print_database_content()
     except Exception as e:
