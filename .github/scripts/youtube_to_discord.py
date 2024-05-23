@@ -13,8 +13,8 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 RESET_DB = os.getenv('RESET_DB', '0')
 LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
-INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '50'))  # 초기 설정 기본값은 50
-MAX_RESULTS = int(os.getenv('MAX_RESULTS', '10'))  # 초기 설정 이후 기본값은 10
+INIT_MAX_RESULTS = 30  # 초기 설정 기본값은 30
+MAX_RESULTS = 10  # 초기 설정 이후 기본값은 10
 STATE_FILE = 'state.txt'
 
 # 환경 변수가 설정되었는지 확인하는 함수
