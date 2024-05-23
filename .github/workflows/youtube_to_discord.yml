@@ -17,6 +17,12 @@ jobs:
         with:
           python-version: '3.8'
 
+      - name: Download Previous SQLite DB
+        uses: actions/download-artifact@v2
+        with:
+          name: videos-db
+          path: .
+
       - name: Install Dependencies
         run: |
           pip install --upgrade google-api-python-client requests isodate
@@ -41,14 +47,15 @@ jobs:
         env:
           ACTIONS_STEP_DEBUG: true
 
-  download-artifact:
+  verify-artifact:
+    needs: notify-discord
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Download SQLite DB
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v2
         with:
           name: videos-db
           path: .
