@@ -95,72 +95,58 @@ def fetch_and_post_videos():
 
     # YouTube에서 동영상을 가져옵니다.
     new_videos = []
-    next_page_token = None
 
-    while True:
-        # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
-        if INIT_RUN == '1':
-            max_results = INIT_MAX_RESULTS
-        else:
-            max_results = MAX_RESULTS
+    # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
+    if INIT_RUN == '1':
+        max_results = INIT_MAX_RESULTS
+    else:
+        max_results = MAX_RESULTS
 
-        response = youtube.search().list(
-            channelId=YOUTUBE_CHANNEL_ID,
-            order='date',
-            type='video',
-            part='snippet,id',
-            maxResults=max_results,
-            pageToken=next_page_token
-        ).execute()
+    response = youtube.search().list(
+        channelId=YOUTUBE_CHANNEL_ID,
+        order='date',
+        type='video',
+        part='snippet,id',
+        maxResults=max_results
+    ).execute()
 
-        if 'items' not in response:
-            print("동영상을 찾을 수 없습니다.")
-            break
+    if 'items' not in response:
+        print("동영상을 찾을 수 없습니다.")
+        return
 
-        video_ids = [item['id']['videoId'] for item in response['items']]
+    video_ids = [item['id']['videoId'] for item in response['items']]
 
-        video_details_response = youtube.videos().list(
-            part="snippet,contentDetails",
-            id=','.join(video_ids)
-        ).execute()
+    video_details_response = youtube.videos().list(
+        part="snippet,contentDetails",
+        id=','.join(video_ids)
+    ).execute()
 
-        for video_detail in video_details_response['items']:
-            snippet = video_detail['snippet']
-            content_details = video_detail['contentDetails']
+    for video_detail in video_details_response['items']:
+        snippet = video_detail['snippet']
+        content_details = video_detail['contentDetails']
 
-            published_at = snippet['publishedAt']
-            video_title = html.unescape(snippet['title'])
-            channel_title = html.unescape(snippet['channelTitle'])
-            description = html.unescape(snippet.get('description', ''))
-            tags = ','.join(snippet.get('tags', []))
-            category_id = snippet.get('categoryId', '')
-            category_name = get_category_name(category_id)
-            thumbnail_url = snippet['thumbnails']['high']['url']
-            duration = parse_duration(content_details['duration'])
-            video_url = f"https://youtu.be/{video_detail['id']}"
+        published_at = snippet['publishedAt']
+        video_title = html.unescape(snippet['title'])
+        channel_title = html.unescape(snippet['channelTitle'])
+        description = html.unescape(snippet.get('description', ''))
+        tags = ','.join(snippet.get('tags', []))
+        category_id = snippet.get('categoryId', '')
+        category_name = get_category_name(category_id)
+        thumbnail_url = snippet['thumbnails']['high']['url']
+        duration = parse_duration(content_details['duration'])
+        video_url = f"https://youtu.be/{video_detail['id']}"
 
-            new_videos.append({
-                'channel_title': channel_title,
-                'title': video_title,
-                'video_url': video_url,
-                'description': description,
-                'duration': duration,
-                'published_at': published_at,
-                'tags': tags,
-                'category': category_name,
-                'thumbnail_url': thumbnail_url
-            })
-
-        # 초기 실행이고 지정된 개수만큼 동영상을 가져왔으면 중지합니다.
-        if INIT_RUN == '1' and len(new_videos) >= INIT_MAX_RESULTS:
-            break
-
-        # 다음 페이지 토큰을 가져옵니다.
-        next_page_token = response.get('nextPageToken')
-
-        # 다음 페이지가 없으면 중지합니다.
-        if not next_page_token:
-            break
+        new_videos.append({
+            'channel_title': channel_title,
+            'title': video_title,
+            'video_url': video_url,
+            'description': description,
+            'duration': duration,
+            'published_at': published_at,
+            'tags': tags,
+            'category': category_name,
+            'thumbnail_url': thumbnail_url
+        })
 
     # 새로운 동영상을 오래된 순서로 정렬합니다.
     new_videos.sort(key=lambda x: x['published_at'])
