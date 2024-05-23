@@ -115,10 +115,6 @@ def fetch_and_post_videos():
             break
 
         for video in response['items']:
-            # 최대 개수에 도달하면 중지합니다.
-            if len(new_videos) >= max_results:
-                break
-
             video_id = video['id']['videoId']
             video_details = youtube.videos().list(
                 part="snippet,contentDetails",
@@ -140,7 +136,6 @@ def fetch_and_post_videos():
             video_title = html.unescape(snippet['title'])
             channel_title = html.unescape(snippet['channelTitle'])
             description = html.unescape(snippet.get('description', ''))
-            formatted_published_at = convert_to_kst_and_format(published_at)
             tags = ','.join(snippet.get('tags', []))
             category_id = snippet.get('categoryId', '')
             category_name = get_category_name(category_id)
@@ -154,15 +149,11 @@ def fetch_and_post_videos():
                 'video_url': video_url,
                 'description': description,
                 'duration': duration,
-                'published_at': formatted_published_at,
+                'published_at': published_at,
                 'tags': tags,
                 'category': category_name,
                 'thumbnail_url': thumbnail_url
             })
-
-        # 최대 개수에 도달하면 중지합니다.
-        if len(new_videos) >= max_results:
-            break
 
         # 다음 페이지 토큰을 가져옵니다.
         next_page_token = response.get('nextPageToken')
@@ -171,8 +162,12 @@ def fetch_and_post_videos():
         if not next_page_token:
             break
 
+    # 새로운 동영상을 오래된 순서로 정렬합니다.
+    new_videos.sort(key=lambda x: x['published_at'])
+
     # 새로운 동영상 정보를 Discord에 전송 (오래된 순서대로)
     for video in new_videos:
+        formatted_published_at = convert_to_kst_and_format(video['published_at'])
         if LANGUAGE == 'Korean':
             message = (
                 f"`{video['channel_title']} - YouTube`\n"
@@ -180,7 +175,7 @@ def fetch_and_post_videos():
                 f"{video['video_url']}\n\n"
                 f"📁 카테고리: `{video['category']}`\n"
                 f"⌛️ 영상시간: `{video['duration']}`\n"
-                f"📅 게시일: `{video['published_at']} (KST)`\n"
+                f"📅 게시일: `{formatted_published_at} (KST)`\n"
                 f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
             )
         else:
@@ -190,7 +185,7 @@ def fetch_and_post_videos():
                 f"{video['video_url']}\n\n"
                 f"📁 Category: `{video['category']}`\n"
                 f"⌛️ Duration: `{video['duration']}`\n"
-                f"📅 Published: `{video['published_at']}`\n"
+                f"📅 Published: `{formatted_published_at}`\n"
                 f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
             )
 
