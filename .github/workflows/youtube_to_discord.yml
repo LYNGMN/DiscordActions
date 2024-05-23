@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '*/30 * * * *'  # 매 30분마다 실행
   workflow_dispatch:  # 수동 트리거
-  
+
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
@@ -19,15 +19,19 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install --upgrade google-api-python-client requests PyGithub
+        pip install --upgrade google-api-python-client requests isodate
 
-    - name: Execute YouTube to Discord Script
+    - name: Notify Discord of New YouTube Videos
       env:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        IS_FIRST_RUN: ${{ secrets.IS_FIRST_RUN }}
-        GIST_ID_YOUTUBE: ${{ secrets.GIST_ID_YOUTUBE }}
-        GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        RESET_DB: ${{ secrets.RESET_DB }}
       run: |
         python .github/scripts/youtube_to_discord.py
+
+    - name: Upload SQLite DB
+      uses: actions/upload-artifact@v2
+      with:
+        name: videos-db
+        path: videos.db
