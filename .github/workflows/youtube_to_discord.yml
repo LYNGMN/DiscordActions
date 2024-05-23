@@ -24,11 +24,13 @@ jobs:
           path: .
         continue-on-error: true
 
-      - name: Ensure DB file exists
+      - name: Ensure DB file exists and initialize if needed
         run: |
           if [ ! -f videos.db ]; then
-            touch videos.db
-          fi
+            echo "Initializing new SQLite DB"
+            python -c "import sqlite3; conn = sqlite3.connect('videos.db'); cursor = conn.cursor(); cursor.execute('CREATE TABLE IF NOT EXISTS posted_videos (video_id TEXT PRIMARY KEY, channel_title TEXT, title TEXT, video_url TEXT, description TEXT, duration TEXT, published_at TEXT, tags TEXT, category TEXT, thumbnail_url TEXT)'); conn.commit(); conn.close()"
+          else
+            echo "Using existing SQLite DB"
 
       - name: Install Dependencies
         run: |
