@@ -27,7 +27,7 @@ def check_env_variables():
         missing_vars.append('YOUTUBE_API_KEY')
     if not DISCORD_YOUTUBE_WEBHOOK:
         missing_vars.append('DISCORD_YOUTUBE_WEBHOOK')
-
+    
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
 
@@ -88,7 +88,7 @@ def convert_to_kst_and_format(published_at):
 def fetch_and_post_videos():
     global last_published_at
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-
+    
     # 초기 실행 여부에 따라 last_published_at을 초기화합니다.
     if INIT_RUN == '1':
         last_published_at = None
@@ -108,7 +108,7 @@ def fetch_and_post_videos():
             channelId=YOUTUBE_CHANNEL_ID,
             order='date',
             type='video',
-            part='snippet',
+            part='snippet,id',
             maxResults=max_results,
             pageToken=next_page_token
         ).execute()
@@ -117,17 +117,14 @@ def fetch_and_post_videos():
             print("동영상을 찾을 수 없습니다.")
             break
 
-        for video in response['items']:
-            video_id = video['id']['videoId']
-            video_details = youtube.videos().list(
-                part="snippet,contentDetails",
-                id=video_id
-            ).execute()
+        video_ids = [item['id']['videoId'] for item in response['items']]
 
-            if not video_details['items']:
-                continue
+        video_details_response = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=','.join(video_ids)
+        ).execute()
 
-            video_detail = video_details['items'][0]
+        for video_detail in video_details_response['items']:
             snippet = video_detail['snippet']
             content_details = video_detail['contentDetails']
 
@@ -140,7 +137,7 @@ def fetch_and_post_videos():
             category_name = get_category_name(category_id)
             thumbnail_url = snippet['thumbnails']['high']['url']
             duration = parse_duration(content_details['duration'])
-            video_url = f"https://youtu.be/{video_id}"
+            video_url = f"https://youtu.be/{video_detail['id']}"
 
             new_videos.append({
                 'channel_title': channel_title,
