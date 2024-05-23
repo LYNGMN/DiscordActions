@@ -89,18 +89,21 @@ def fetch_and_post_videos():
     global last_published_at
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     
-    # 초기 실행 여부에 따라 last_published_at을 초기화하고 MAX_RESULTS 값을 설정합니다.
+    # 초기 실행 여부에 따라 last_published_at을 초기화합니다.
     if INIT_RUN == '1':
         last_published_at = None
-        max_results = INIT_MAX_RESULTS
-    else:
-        max_results = MAX_RESULTS
 
     # YouTube에서 동영상을 가져옵니다.
     new_videos = []
     next_page_token = None
 
     while True:
+        # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
+        if INIT_RUN == '1':
+            max_results = INIT_MAX_RESULTS
+        else:
+            max_results = MAX_RESULTS
+
         response = youtube.search().list(
             channelId=YOUTUBE_CHANNEL_ID,
             order='date',
@@ -154,6 +157,10 @@ def fetch_and_post_videos():
                 'category': category_name,
                 'thumbnail_url': thumbnail_url
             })
+
+        # 초기 실행이고 지정된 개수만큼 동영상을 가져왔으면 중지합니다.
+        if INIT_RUN == '1' and len(new_videos) >= INIT_MAX_RESULTS:
+            break
 
         # 다음 페이지 토큰을 가져옵니다.
         next_page_token = response.get('nextPageToken')
