@@ -5,6 +5,7 @@ import time
 from googleapiclient.discovery import build
 import isodate
 from datetime import datetime, timezone, timedelta
+import json
 
 # 환경 변수에서 필요한 정보를 가져오거나 기본값을 사용합니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
@@ -84,6 +85,22 @@ def convert_to_kst_and_format(published_at):
     kst_time = utc_time.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
     return kst_time.strftime("%Y-%m-%d %H:%M:%S")
 
+# last_published_at 값을 파일에 저장하는 함수
+def save_last_published_at():
+    if last_published_at is not None:
+        with open('last_published_at.json', 'w') as f:
+            json.dump({'last_published_at': last_published_at}, f)
+
+# 프로그램 시작 시 last_published_at 값을 파일에서 로드하는 함수
+def load_last_published_at():
+    global last_published_at
+    try:
+        with open('last_published_at.json', 'r') as f:
+            data = json.load(f)
+            last_published_at = data['last_published_at']
+    except FileNotFoundError:
+        last_published_at = None
+
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
     global last_published_at
@@ -101,6 +118,9 @@ def fetch_and_post_videos():
         max_results = INIT_MAX_RESULTS
     else:
         max_results = MAX_RESULTS
+
+    print(f"INIT_RUN: {INIT_RUN}")
+    print(f"max_results: {max_results}")
 
     response = youtube.search().list(
         channelId=YOUTUBE_CHANNEL_ID,
@@ -182,11 +202,13 @@ def fetch_and_post_videos():
     # 새로운 영상이 있다면, 가장 최신 영상의 게시일을 저장합니다.
     if new_videos:
         last_published_at = new_videos[-1]['published_at']
+        save_last_published_at()
 
 # 프로그램 실행
 if __name__ == "__main__":
     try:
         check_env_variables()
+        load_last_published_at()  # 프로그램 시작 시 last_published_at 값을 로드합니다.
         fetch_and_post_videos()
     except Exception as e:
         print(f"오류 발생: {e}")
