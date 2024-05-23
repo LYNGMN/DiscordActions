@@ -13,6 +13,7 @@ DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
 INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))  # 초기 실행 시 가져올 영상 개수, 기본값은 30
 MAX_RESULTS = 10  # 초기 실행 이후 가져올 영상 개수
+INIT_RUN = os.getenv('INIT_RUN', '0')  # 초기 실행 여부를 결정하는 변수, 기본값은 0
 
 # 이전 실행에서 가장 최근에 게시된 영상의 게시일을 저장할 변수
 last_published_at = None
@@ -88,8 +89,9 @@ def fetch_and_post_videos():
     global last_published_at
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     
-    # 초기 실행 여부에 따라 MAX_RESULTS 값을 설정합니다.
-    if last_published_at is None:
+    # 초기 실행 여부에 따라 last_published_at을 초기화하고 MAX_RESULTS 값을 설정합니다.
+    if INIT_RUN == '1':
+        last_published_at = None
         max_results = INIT_MAX_RESULTS
     else:
         max_results = MAX_RESULTS
@@ -112,8 +114,11 @@ def fetch_and_post_videos():
             print("동영상을 찾을 수 없습니다.")
             break
 
-        # 오래된 순서대로 처리하기 위해 items 리스트를 뒤집습니다.
-        for video in response['items'][::-1]:  # 오래된 순서부터 처리
+        for video in response['items']:
+            # 최대 개수에 도달하면 중지합니다.
+            if len(new_videos) >= max_results:
+                break
+
             video_id = video['id']['videoId']
             video_details = youtube.videos().list(
                 part="snippet,contentDetails",
@@ -155,11 +160,15 @@ def fetch_and_post_videos():
                 'thumbnail_url': thumbnail_url
             })
 
+        # 최대 개수에 도달하면 중지합니다.
+        if len(new_videos) >= max_results:
+            break
+
         # 다음 페이지 토큰을 가져옵니다.
         next_page_token = response.get('nextPageToken')
 
         # 다음 페이지가 없으면 중지합니다.
-        if not next_page_token or len(new_videos) >= max_results:
+        if not next_page_token:
             break
 
     # 새로운 동영상 정보를 Discord에 전송 (오래된 순서대로)
@@ -189,7 +198,7 @@ def fetch_and_post_videos():
 
     # 새로운 영상이 있다면, 가장 최신 영상의 게시일을 저장합니다.
     if new_videos:
-        last_published_at = new_videos[0]['published_at']
+        last_published_at = new_videos[-1]['published_at']
 
 # 프로그램 실행
 if __name__ == "__main__":
