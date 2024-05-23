@@ -2,71 +2,32 @@ name: YouTube to Discord Notification
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 매 30분마다 실행
-  workflow_dispatch:  # 수동 트리거
+    - cron: '*/30 * * * *' # 매 30분마다 실행
+  workflow_dispatch: # 수동 트리거
 
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.8'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
 
-      - name: Download Previous SQLite DB if exists
-        id: download-db
-        uses: actions/download-artifact@v4
-        with:
-          name: videos-db
-          path: .
-        continue-on-error: true
+    - name: Install Dependencies
+      run: |
+        pip install --upgrade google-api-python-client requests isodate
 
-      - name: Ensure DB file exists
-        run: |
-          if [ ! -f videos.db ]; then
-            echo "Initializing new SQLite DB"
-            python -c "import sqlite3; conn = sqlite3.connect('videos.db'); cursor = conn.cursor(); cursor.execute('CREATE TABLE IF NOT EXISTS posted_videos (video_id TEXT PRIMARY KEY, channel_title TEXT, title TEXT, video_url TEXT, description TEXT, duration TEXT, published_at TEXT, tags TEXT, category TEXT, thumbnail_url TEXT)'); conn.commit(); conn.close()"
-          else
-            echo "Using existing SQLite DB"
-
-      - name: Install Dependencies
-        run: |
-          pip install --upgrade google-api-python-client requests isodate
-
-      - name: Notify Discord of New YouTube Videos
-        env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
-          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-          RESET_DB: ${{ secrets.RESET_DB }}
-          LANGUAGE: ${{ secrets.LANGUAGE }}
-        run: |
-          python .github/scripts/youtube_to_discord.py
-
-      - name: Upload SQLite DB
-        uses: actions/upload-artifact@v4
-        with:
-          name: videos-db
-          path: videos.db
-
-  verify-artifact:
-    needs: notify-discord
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Download SQLite DB
-        uses: actions/download-artifact@v4
-        with:
-          name: videos-db
-          path: .
-
-      - name: Verify Artifact
-        run: |
-          ls -al
-          file videos.db
+    - name: Notify Discord of New YouTube Videos
+      env:
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
+        YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+        LANGUAGE: ${{ secrets.LANGUAGE }}
+        INIT_MAX_RESULTS: ${{ secrets.INIT_MAX_RESULTS }}
+      run: |
+        python .github/scripts/youtube_to_discord.py
