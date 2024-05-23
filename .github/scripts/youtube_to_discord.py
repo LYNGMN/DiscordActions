@@ -5,12 +5,14 @@ import time
 import sqlite3
 from googleapiclient.discovery import build
 import isodate
+from datetime import datetime, timezone, timedelta
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 RESET_DB = os.getenv('RESET_DB', '0')
+LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
@@ -90,12 +92,20 @@ def parse_duration(duration):
     total_seconds = int(parsed_duration.total_seconds())
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    if hours > 0:
-        return f"{hours}h {minutes}m {seconds}s"
-    elif minutes > 0:
-        return f"{minutes}m {seconds}s"
+    if LANGUAGE == 'Korean':
+        if hours > 0:
+            return f"{hours}시간 {minutes}분 {seconds}초"
+        elif minutes > 0:
+            return f"{minutes}분 {seconds}초"
+        else:
+            return f"{seconds}초"
     else:
-        return f"{seconds}s"
+        if hours > 0:
+            return f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            return f"{minutes}m {seconds}s"
+        else:
+            return f"{seconds}s"
 
 # 카테고리 ID를 이름으로 변환하는 캐시를 이용한 함수
 category_cache = {}
@@ -110,100 +120,117 @@ def get_category_name(category_id):
             return category['snippet']['title']
     return "Unknown"
 
+# 게시일을 한국 시간(KST)으로 변환하고 형식을 지정하는 함수
+def convert_to_kst_and_format(published_at):
+    utc_time = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
+    kst_time = utc_time.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
+    return kst_time.strftime("%Y-%m-%d %H:%M:%S")
+
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
-    posted_video_ids = get_posted_videos()
-    print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
+    try:
+        posted_video_ids = get_posted_videos()
+        print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
 
-    # YouTube에서 동영상을 가져옵니다.
-    videos = youtube.search().list(
-        channelId=YOUTUBE_CHANNEL_ID,
-        order='date',
-        type='video',
-        part='snippet',
-        maxResults=50
-    ).execute()
-    print("YouTube에서 동영상 목록을 가져왔습니다.")
-
-    if 'items' not in videos:
-        print("동영상을 찾을 수 없습니다.")
-        return
-
-    new_videos = []
-
-    for video in videos['items']:
-        video_id = video['id']['videoId']
-
-        # 동영상이 이미 게시된 경우 건너뜁니다.
-        if video_id in posted_video_ids:
-            continue
-
-        video_details = youtube.videos().list(
-            part="snippet,contentDetails",
-            id=video_id
+        # YouTube에서 동영상을 가져옵니다.
+        videos = youtube.search().list(
+            channelId=YOUTUBE_CHANNEL_ID,
+            order='date',
+            type='video',
+            part='snippet',
+            maxResults=50
         ).execute()
+        print("YouTube에서 동영상 목록을 가져왔습니다.")
 
-        if not video_details['items']:
-            continue
+        if 'items' not in videos:
+            print("동영상을 찾을 수 없습니다.")
+            return
 
-        video_detail = video_details['items'][0]
-        snippet = video_detail['snippet']
-        content_details = video_detail['contentDetails']
+        new_videos = []
 
-        video_title = html.unescape(snippet['title'])
-        channel_title = html.unescape(snippet['channelTitle'])
-        description = html.unescape(snippet.get('description', ''))
-        published_at = snippet['publishedAt']
-        tags = ','.join(snippet.get('tags', []))
-        category_id = snippet.get('categoryId', '')
-        category_name = get_category_name(category_id)
-        thumbnail_url = snippet['thumbnails']['high']['url']
-        duration = parse_duration(content_details['duration'])
-        video_url = f"https://youtu.be/{video_id}"
+        for video in videos['items'][::-1]:  # 오래된 순서부터 처리
+            video_id = video['id']['videoId']
 
-        message = (
-            f"`{channel_title} - YouTube`\n"
-            f"**{video_title}**\n"
-            f"{video_url}\n\n"
-            f"📁 Category: `{category_name}`\n"
-            f"⌛️ Duration: `{duration}`\n"
-            f"📅 Published: `{published_at}`\n"
-            f"🖼️ [Thumbnail](<{thumbnail_url}>)"
-        )
-        post_to_discord(message)
-        new_videos.append({
-            'video_id': video_id,
-            'channel_title': channel_title,
-            'title': video_title,
-            'video_url': video_url,
-            'description': description,
-            'duration': duration,
-            'published_at': published_at,
-            'tags': tags,
-            'category': category_name,
-            'thumbnail_url': thumbnail_url
-        })
-        print(f"새로운 동영상 발견: {video_title}")
+            # 동영상이 이미 게시된 경우 건너뜁니다.
+            if video_id in posted_video_ids:
+                continue
 
-    # 새로운 동영상 ID를 데이터베이스에 업데이트합니다.
-    if new_videos:
-        update_posted_videos(new_videos)
+            video_details = youtube.videos().list(
+                part="snippet,contentDetails",
+                id=video_id
+            ).execute()
 
-# 메인 함수 실행
-def main():
+            if not video_details['items']:
+                continue
+
+            video_detail = video_details['items'][0]
+            snippet = video_detail['snippet']
+            content_details = video_detail['contentDetails']
+
+            video_title = html.unescape(snippet['title'])
+            channel_title = html.unescape(snippet['channelTitle'])
+            description = html.unescape(snippet.get('description', ''))
+            published_at = snippet['publishedAt']
+            formatted_published_at = convert_to_kst_and_format(published_at) if LANGUAGE == 'Korean' else published_at
+            tags = ','.join(snippet.get('tags', []))
+            category_id = snippet.get('categoryId', '')
+            category_name = get_category_name(category_id)
+            thumbnail_url = snippet['thumbnails']['high']['url']
+            duration = parse_duration(content_details['duration'])
+            video_url = f"https://youtu.be/{video_id}"
+
+            new_videos.append({
+                'video_id': video_id,
+                'channel_title': channel_title,
+                'title': video_title,
+                'video_url': video_url,
+                'description': description,
+                'duration': duration,
+                'published_at': published_at,
+                'tags': tags,
+                'category': category_name,
+                'thumbnail_url': thumbnail_url
+            })
+            print(f"새로운 동영상 발견: {video_title}")
+
+        # 새로운 동영상 정보를 Discord에 전송
+        for video in new_videos:
+            if LANGUAGE == 'Korean':
+                message = (
+                    f"`{video['channel_title']} - YouTube`\n"
+                    f"**{video['title']}**\n"
+                    f"{video['video_url']}\n\n"
+                    f"📁 카테고리: `{video['category']}`\n"
+                    f"⌛️ 영상시간: `{video['duration']}`\n"
+                    f"📅 게시일: `{convert_to_kst_and_format(video['published_at'])} (KST)`\n"
+                    f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
+                )
+            else:
+                message = (
+                    f"`{video['channel_title']} - YouTube`\n"
+                    f"**{video['title']}**\n"
+                    f"{video['video_url']}\n\n"
+                    f"📁 Category: `{video['category']}`\n"
+                    f"⌛️ Duration: `{video['duration']}`\n"
+                    f"📅 Published: `{video['published_at']}`\n"
+                    f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
+                )
+
+            post_to_discord(message)
+
+        # 새로운 동영상 ID를 데이터베이스에 업데이트합니다.
+        if new_videos:
+            update_posted_videos(new_videos)
+    except Exception as e:
+        print(f"오류 발생: {e}")
+
+# 프로그램 실행
+if __name__ == "__main__":
     try:
         check_env_variables()
         fetch_and_post_videos()
-        print_database_content()
     except Exception as e:
-        print(f"오류 발생: {str(e)}")
-
-# 데이터베이스 내용 출력 함수
-def print_database_content():
-    cursor.execute('SELECT * FROM posted_videos')
-    rows = cursor.fetchall()
-    for row in rows:
-        print(row)
-
-if __name__ == "__main__":
-    main()
+        print(f"오류 발생: {e}")
+    finally:
+        conn.close()
+        print("데이터베이스 연결 종료")
