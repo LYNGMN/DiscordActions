@@ -144,7 +144,7 @@ def fetch_and_post_videos():
     print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
 
     # 초기 설정 여부에 따라 MAX_RESULTS 값을 설정합니다.
-    if is_initial_setup() or is_database_empty():
+    if is_database_empty():
         max_results = INIT_MAX_RESULTS
     else:
         max_results = MAX_RESULTS
