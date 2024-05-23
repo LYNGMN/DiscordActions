@@ -20,13 +20,15 @@ jobs:
     - name: Install Dependencies
       run: |
         pip install --upgrade google-api-python-client requests isodate
+        pip list
 
     - name: Notify Discord of New YouTube Videos
       env:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        RESET_DB: ${{ secrets.RESET_DB }}
+        RESET_DB: ${{ secrets.RESET_DB || '0' }}
+        LANGUAGE: ${{ secrets.LANGUAGE || 'English' }}
       run: |
         python .github/scripts/youtube_to_discord.py
 
