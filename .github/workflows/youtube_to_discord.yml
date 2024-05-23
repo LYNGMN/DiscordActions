@@ -29,7 +29,6 @@ jobs:
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
         RESET_DB: ${{ secrets.RESET_DB }}
         LANGUAGE: ${{ secrets.LANGUAGE }}
-        MAX_RESULTS: ${{ secrets.MAX_RESULTS || '50' }}
       run: |
         python .github/scripts/youtube_to_discord.py
 
