@@ -18,7 +18,7 @@ jobs:
           python-version: '3.8'
 
       - name: Download Previous SQLite DB if exists
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: videos-db
           path: .
@@ -46,12 +46,10 @@ jobs:
           python .github/scripts/youtube_to_discord.py
 
       - name: Upload SQLite DB
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: videos-db
           path: videos.db
-        env:
-          ACTIONS_STEP_DEBUG: true
 
   verify-artifact:
     needs: notify-discord
@@ -61,7 +59,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download SQLite DB
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: videos-db
           path: .
