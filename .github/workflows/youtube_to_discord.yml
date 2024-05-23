@@ -2,7 +2,7 @@ name: YouTube to Discord Notification
 
 on:
   schedule:
-    - cron: '* 6 * * *' # 매 30분마다 실행
+    - cron: '0 * * * *' # 매일 6시에 실행
   workflow_dispatch: # 수동 트리거
 
 jobs:
@@ -29,5 +29,6 @@ jobs:
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
         LANGUAGE: ${{ secrets.LANGUAGE }}
         INIT_MAX_RESULTS: ${{ secrets.INIT_MAX_RESULTS }}
+        INIT_RUN: ${{ secrets.INIT_RUN }}  # 추가된 환경 변수
       run: |
         python .github/scripts/youtube_to_discord.py
