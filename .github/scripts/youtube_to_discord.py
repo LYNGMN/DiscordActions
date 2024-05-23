@@ -13,6 +13,7 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 RESET_DB = os.getenv('RESET_DB', '0')
 LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
+MAX_RESULTS = int(os.getenv('MAX_RESULTS', '50'))  # 기본값은 50
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
@@ -128,27 +129,29 @@ def convert_to_kst_and_format(published_at):
 
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
-    try:
-        posted_video_ids = get_posted_videos()
-        print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
+    posted_video_ids = get_posted_videos()
+    print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
 
-        # YouTube에서 동영상을 가져옵니다.
-        videos = youtube.search().list(
+    # YouTube에서 동영상을 가져옵니다.
+    new_videos = []
+    next_page_token = None
+
+    while True:
+        response = youtube.search().list(
             channelId=YOUTUBE_CHANNEL_ID,
             order='date',
             type='video',
             part='snippet',
-            maxResults=50
+            maxResults=MAX_RESULTS,
+            pageToken=next_page_token
         ).execute()
         print("YouTube에서 동영상 목록을 가져왔습니다.")
 
-        if 'items' not in videos:
+        if 'items' not in response:
             print("동영상을 찾을 수 없습니다.")
-            return
+            break
 
-        new_videos = []
-
-        for video in videos['items'][::-1]:  # 오래된 순서부터 처리
+        for video in response['items'][::-1]:  # 오래된 순서부터 처리
             video_id = video['id']['videoId']
 
             # 동영상이 이미 게시된 경우 건너뜁니다.
@@ -171,7 +174,7 @@ def fetch_and_post_videos():
             channel_title = html.unescape(snippet['channelTitle'])
             description = html.unescape(snippet.get('description', ''))
             published_at = snippet['publishedAt']
-            formatted_published_at = convert_to_kst_and_format(published_at) if LANGUAGE == 'Korean' else published_at
+            formatted_published_at = convert_to_kst_and_format(published_at)
             tags = ','.join(snippet.get('tags', []))
             category_id = snippet.get('categoryId', '')
             category_name = get_category_name(category_id)
@@ -186,43 +189,48 @@ def fetch_and_post_videos():
                 'video_url': video_url,
                 'description': description,
                 'duration': duration,
-                'published_at': published_at,
+                'published_at': formatted_published_at,
                 'tags': tags,
                 'category': category_name,
                 'thumbnail_url': thumbnail_url
             })
             print(f"새로운 동영상 발견: {video_title}")
 
-        # 새로운 동영상 정보를 Discord에 전송
-        for video in new_videos:
-            if LANGUAGE == 'Korean':
-                message = (
-                    f"`{video['channel_title']} - YouTube`\n"
-                    f"**{video['title']}**\n"
-                    f"{video['video_url']}\n\n"
-                    f"📁 카테고리: `{video['category']}`\n"
-                    f"⌛️ 영상시간: `{video['duration']}`\n"
-                    f"📅 게시일: `{convert_to_kst_and_format(video['published_at'])} (KST)`\n"
-                    f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
-                )
-            else:
-                message = (
-                    f"`{video['channel_title']} - YouTube`\n"
-                    f"**{video['title']}**\n"
-                    f"{video['video_url']}\n\n"
-                    f"📁 Category: `{video['category']}`\n"
-                    f"⌛️ Duration: `{video['duration']}`\n"
-                    f"📅 Published: `{video['published_at']}`\n"
-                    f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
-                )
+        # 다음 페이지 토큰을 가져옵니다.
+        next_page_token = response.get('nextPageToken')
 
-            post_to_discord(message)
+        # 다음 페이지가 없으면 중지합니다.
+        if not next_page_token:
+            break
 
-        # 새로운 동영상 ID를 데이터베이스에 업데이트합니다.
-        if new_videos:
-            update_posted_videos(new_videos)
-    except Exception as e:
-        print(f"오류 발생: {e}")
+    # 새로운 동영상 정보를 Discord에 전송
+    for video in new_videos:
+        if LANGUAGE == 'Korean':
+            message = (
+                f"`{video['channel_title']} - YouTube`\n"
+                f"**{video['title']}**\n"
+                f"{video['video_url']}\n\n"
+                f"📁 카테고리: `{video['category']}`\n"
+                f"⌛️ 영상시간: `{video['duration']}`\n"
+                f"📅 게시일: `{video['published_at']} (KST)`\n"
+                f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
+            )
+        else:
+            message = (
+                f"`{video['channel_title']} - YouTube`\n"
+                f"**{video['title']}**\n"
+                f"{video['video_url']}\n\n"
+                f"📁 Category: `{video['category']}`\n"
+                f"⌛️ Duration: `{video['duration']}`\n"
+                f"📅 Published: `{video['published_at']}`\n"
+                f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
+            )
+
+        post_to_discord(message)
+
+    # 새로운 동영상 ID를 데이터베이스에 업데이트합니다.
+    if new_videos:
+        update_posted_videos(new_videos)
 
 # 프로그램 실행
 if __name__ == "__main__":
