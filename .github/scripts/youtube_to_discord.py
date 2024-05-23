@@ -33,29 +33,27 @@ def check_env_variables():
 
 # SQLite 데이터베이스 초기화
 def initialize_database():
-    if not os.path.exists(DB_PATH) or RESET_DB == '1':
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    if RESET_DB == '1':
         cursor.execute('DROP TABLE IF EXISTS posted_videos')
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS posted_videos (
-            video_id TEXT PRIMARY KEY,
-            channel_title TEXT,
-            title TEXT,
-            video_url TEXT,
-            description TEXT,
-            duration TEXT,
-            published_at TEXT,
-            tags TEXT,
-            category TEXT,
-            thumbnail_url TEXT
-        )
-        ''')
-        conn.commit()
-        conn.close()
-        print("데이터베이스 초기화 완료")
-    else:
-        print("데이터베이스가 이미 초기화되어 있습니다.")
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS posted_videos (
+        video_id TEXT PRIMARY KEY,
+        channel_title TEXT,
+        title TEXT,
+        video_url TEXT,
+        description TEXT,
+        duration TEXT,
+        published_at TEXT,
+        tags TEXT,
+        category TEXT,
+        thumbnail_url TEXT
+    )
+    ''')
+    conn.commit()
+    conn.close()
+    print("데이터베이스 초기화 완료")
 
 # 데이터베이스에서 동영상 ID 목록을 가져오는 함수
 def get_posted_videos():
@@ -65,6 +63,15 @@ def get_posted_videos():
     video_ids = [row[0] for row in cursor.fetchall()]
     conn.close()
     return video_ids
+
+# 데이터베이스가 비어 있는지 확인하는 함수
+def is_database_empty():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT count(*) FROM posted_videos')
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count == 0
 
 # 데이터베이스에 동영상 정보를 추가하는 함수
 def update_posted_videos(videos):
@@ -137,7 +144,7 @@ def fetch_and_post_videos():
     print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
 
     # 초기 설정 여부에 따라 MAX_RESULTS 값을 설정합니다.
-    if is_initial_setup():
+    if is_initial_setup() or is_database_empty():
         max_results = INIT_MAX_RESULTS
     else:
         max_results = MAX_RESULTS
