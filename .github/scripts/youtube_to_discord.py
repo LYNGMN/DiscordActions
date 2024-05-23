@@ -13,7 +13,9 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 RESET_DB = os.getenv('RESET_DB', '0')
 LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
-MAX_RESULTS = int(os.getenv('MAX_RESULTS', '50'))  # 기본값은 50
+INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '50'))  # 초기 설정 기본값은 50
+MAX_RESULTS = int(os.getenv('MAX_RESULTS', '10'))  # 초기 설정 이후 기본값은 10
+STATE_FILE = 'state.txt'
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
@@ -28,6 +30,14 @@ def check_env_variables():
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
     print("환경 변수 확인 완료")
+
+# 초기 설정 여부를 확인하는 함수
+def is_initial_setup():
+    if not os.path.exists(STATE_FILE):
+        with open(STATE_FILE, 'w') as f:
+            f.write('initialized')
+        return True
+    return False
 
 # YouTube Data API 초기화
 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
@@ -132,6 +142,12 @@ def fetch_and_post_videos():
     posted_video_ids = get_posted_videos()
     print("기존에 게시된 동영상 ID를 데이터베이스에서 가져왔습니다.")
 
+    # 초기 설정 여부에 따라 MAX_RESULTS 값을 설정합니다.
+    if is_initial_setup():
+        max_results = INIT_MAX_RESULTS
+    else:
+        max_results = MAX_RESULTS
+
     # YouTube에서 동영상을 가져옵니다.
     new_videos = []
     next_page_token = None
@@ -142,15 +158,16 @@ def fetch_and_post_videos():
             order='date',
             type='video',
             part='snippet',
-            maxResults=MAX_RESULTS,
+            maxResults=max_results,
             pageToken=next_page_token
         ).execute()
-        print("YouTube에서 동영상 목록을 가져왔습니다.")
+        print(f"YouTube에서 동영상 목록을 가져왔습니다. 다음 페이지 토큰: {next_page_token}")
 
         if 'items' not in response:
             print("동영상을 찾을 수 없습니다.")
             break
 
+        # 오래된 순서대로 처리하기 위해 items 리스트를 뒤집습니다.
         for video in response['items'][::-1]:  # 오래된 순서부터 처리
             video_id = video['id']['videoId']
 
@@ -200,10 +217,10 @@ def fetch_and_post_videos():
         next_page_token = response.get('nextPageToken')
 
         # 다음 페이지가 없으면 중지합니다.
-        if not next_page_token:
+        if not next_page_token or len(new_videos) >= max_results:
             break
 
-    # 새로운 동영상 정보를 Discord에 전송
+    # 새로운 동영상 정보를 Discord에 전송 (오래된 순서대로)
     for video in new_videos:
         if LANGUAGE == 'Korean':
             message = (
@@ -228,7 +245,7 @@ def fetch_and_post_videos():
 
         post_to_discord(message)
 
-    # 새로운 동영상 ID를 데이터베이스에 업데이트합니다.
+    # 새로운 동영상 ID를 데이터베이스에 업데이트
     if new_videos:
         update_posted_videos(new_videos)
 
