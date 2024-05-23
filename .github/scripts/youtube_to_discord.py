@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 import isodate
 from datetime import datetime, timezone, timedelta
 
-# 환경 변수에서 필요한 정보를 가져옵니다.
+# 환경 변수에서 필요한 정보를 가져오거나 기본값을 사용합니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
@@ -27,7 +27,7 @@ def check_env_variables():
         missing_vars.append('YOUTUBE_API_KEY')
     if not DISCORD_YOUTUBE_WEBHOOK:
         missing_vars.append('DISCORD_YOUTUBE_WEBHOOK')
-    
+
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
 
@@ -88,7 +88,7 @@ def convert_to_kst_and_format(published_at):
 def fetch_and_post_videos():
     global last_published_at
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-    
+
     # 초기 실행 여부에 따라 last_published_at을 초기화합니다.
     if INIT_RUN == '1':
         last_published_at = None
@@ -131,11 +131,7 @@ def fetch_and_post_videos():
             snippet = video_detail['snippet']
             content_details = video_detail['contentDetails']
 
-            # 이전에 처리한 영상보다 오래된 영상은 건너뜁니다.
             published_at = snippet['publishedAt']
-            if last_published_at and published_at < last_published_at:
-                continue
-
             video_title = html.unescape(snippet['title'])
             channel_title = html.unescape(snippet['channelTitle'])
             description = html.unescape(snippet.get('description', ''))
