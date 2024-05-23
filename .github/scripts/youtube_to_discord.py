@@ -13,9 +13,9 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 RESET_DB = os.getenv('RESET_DB', '0')
 LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
-INIT_MAX_RESULTS = 30  # 초기 설정 기본값은 30
+INIT_MAX_RESULTS = 50  # 초기 설정 기본값은 50
 MAX_RESULTS = 10  # 초기 설정 이후 기본값은 10
-STATE_FILE = 'state.txt'
+DB_PATH = 'videos.db'
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
@@ -31,58 +31,52 @@ def check_env_variables():
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
     print("환경 변수 확인 완료")
 
-# 초기 설정 여부를 확인하는 함수
-def is_initial_setup():
-    if not os.path.exists(STATE_FILE):
-        with open(STATE_FILE, 'w') as f:
-            f.write('initialized')
-        return True
-    return False
-
-# YouTube Data API 초기화
-youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-
-# SQLite 데이터베이스 연결
-conn = sqlite3.connect('videos.db')
-cursor = conn.cursor()
-
-# 데이터베이스 초기화 (RESET_DB가 설정된 경우)
-if RESET_DB == '1':
-    cursor.execute('DROP TABLE IF EXISTS posted_videos')
-    conn.commit()
-    print("데이터베이스 초기화 완료")
-
-# 테이블 생성 (존재하지 않을 경우)
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS posted_videos (
-    video_id TEXT PRIMARY KEY,
-    channel_title TEXT,
-    title TEXT,
-    video_url TEXT,
-    description TEXT,
-    duration TEXT,
-    published_at TEXT,
-    tags TEXT,
-    category TEXT,
-    thumbnail_url TEXT
-)
-''')
-conn.commit()
-print("테이블 생성 완료")
+# SQLite 데이터베이스 초기화
+def initialize_database():
+    if not os.path.exists(DB_PATH) or RESET_DB == '1':
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('DROP TABLE IF EXISTS posted_videos')
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS posted_videos (
+            video_id TEXT PRIMARY KEY,
+            channel_title TEXT,
+            title TEXT,
+            video_url TEXT,
+            description TEXT,
+            duration TEXT,
+            published_at TEXT,
+            tags TEXT,
+            category TEXT,
+            thumbnail_url TEXT
+        )
+        ''')
+        conn.commit()
+        conn.close()
+        print("데이터베이스 초기화 완료")
+    else:
+        print("데이터베이스가 이미 초기화되어 있습니다.")
 
 # 데이터베이스에서 동영상 ID 목록을 가져오는 함수
 def get_posted_videos():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     cursor.execute('SELECT video_id FROM posted_videos')
-    return [row[0] for row in cursor.fetchall()]
+    video_ids = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return video_ids
 
 # 데이터베이스에 동영상 정보를 추가하는 함수
 def update_posted_videos(videos):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     cursor.executemany('''
         INSERT OR IGNORE INTO posted_videos 
         (video_id, channel_title, title, video_url, description, duration, published_at, tags, category, thumbnail_url) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', [(video['video_id'], video['channel_title'], video['title'], video['video_url'], video['description'], video['duration'], video['published_at'], video['tags'], video['category'], video['thumbnail_url']) for video in videos])
     conn.commit()
+    conn.close()
     print(f"{len(videos)}개의 새로운 동영상 정보 업데이트 완료")
 
 # Discord에 메시지를 게시하는 함수
@@ -253,9 +247,9 @@ def fetch_and_post_videos():
 if __name__ == "__main__":
     try:
         check_env_variables()
+        initialize_database()
         fetch_and_post_videos()
     except Exception as e:
         print(f"오류 발생: {e}")
     finally:
-        conn.close()
-        print("데이터베이스 연결 종료")
+        print("프로그램 실행 종료")
