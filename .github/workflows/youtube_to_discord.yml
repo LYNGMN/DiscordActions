@@ -9,34 +9,51 @@ jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.8'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
 
-    - name: Install Dependencies
-      run: |
-        pip install --upgrade google-api-python-client requests isodate
-        pip list
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade google-api-python-client requests isodate
+          pip list
 
-    - name: Notify Discord of New YouTube Videos
-      env:
-        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
-        YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        RESET_DB: ${{ secrets.RESET_DB }}
-        LANGUAGE: ${{ secrets.LANGUAGE }}
-      run: |
-        python .github/scripts/youtube_to_discord.py
+      - name: Notify Discord of New YouTube Videos
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          RESET_DB: ${{ secrets.RESET_DB }}
+          LANGUAGE: ${{ secrets.LANGUAGE }}
+        run: |
+          python .github/scripts/youtube_to_discord.py
 
-    - name: Upload SQLite DB
-      uses: actions/upload-artifact@v2
-      with:
-        name: videos-db
-        path: videos.db
-        if-no-files-found: warn
-      env:
-        ACTIONS_STEP_DEBUG: true
+      - name: Upload SQLite DB
+        uses: actions/upload-artifact@v2
+        with:
+          name: videos-db
+          path: videos.db
+          if-no-files-found: warn
+        env:
+          ACTIONS_STEP_DEBUG: true
+
+  download-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download SQLite DB
+        uses: actions/download-artifact@v4
+        with:
+          name: videos-db
+          path: .
+
+      - name: Verify Artifact
+        run: |
+          ls -al
+          file videos.db
