@@ -7,7 +7,7 @@ import isodate
 from datetime import datetime, timezone, timedelta
 import json
 
-# 환경 변수에서 필요한 정보를 가져오거나 기본값을 사용합니다.
+# 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
@@ -87,9 +87,9 @@ def convert_to_kst_and_format(published_at):
 
 # last_published_at 값을 파일에 저장하는 함수
 def save_last_published_at():
-    if last_published_at is not None:
-        with open('last_published_at.json', 'w') as f:
-            json.dump({'last_published_at': last_published_at}, f)
+    global last_published_at
+    with open('last_published_at.json', 'w') as f:
+        json.dump({'last_published_at': last_published_at}, f)
 
 # 프로그램 시작 시 last_published_at 값을 파일에서 로드하는 함수
 def load_last_published_at():
@@ -114,13 +114,15 @@ def fetch_and_post_videos():
     new_videos = []
 
     # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
-    if INIT_RUN == '1':
+    if INIT_RUN == '1' or last_published_at is None:
         max_results = INIT_MAX_RESULTS
     else:
         max_results = MAX_RESULTS
 
+    # 디버깅 로그 추가
     print(f"INIT_RUN: {INIT_RUN}")
     print(f"max_results: {max_results}")
+    print(f"last_published_at: {last_published_at}")
 
     response = youtube.search().list(
         channelId=YOUTUBE_CHANNEL_ID,
