@@ -22,6 +22,13 @@ jobs:
       run: |
         pip install --upgrade google-api-python-client requests isodate
 
+    - name: Download previous database
+      uses: actions/download-artifact@v4
+      with:
+        name: database
+        path: .
+      continue-on-error: true
+
     - name: Notify Discord of New YouTube Videos
       env:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -29,6 +36,13 @@ jobs:
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
         LANGUAGE: ${{ secrets.LANGUAGE }}
         INIT_MAX_RESULTS: ${{ secrets.INIT_MAX_RESULTS }}
-        INIT_RUN: ${{ secrets.INIT_RUN }}
+        MAX_RESULTS: ${{ secrets.MAX_RESULTS }}
       run: |
         python .github/scripts/youtube_to_discord.py
+
+    - name: Upload database
+      uses: actions/upload-artifact@v4
+      with:
+        name: database
+        path: youtube_videos.db
+        retention-days: 1
