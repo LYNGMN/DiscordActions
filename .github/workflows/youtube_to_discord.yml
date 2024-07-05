@@ -23,11 +23,18 @@ jobs:
         pip install --upgrade google-api-python-client requests isodate
 
     - name: Download previous database
-      uses: actions/download-artifact@v4
-      with:
-        name: youtube_database
-        path: .
-      continue-on-error: true
+          uses: actions/download-artifact@v4
+          with:
+            name: youtube_database
+            path: .
+          continue-on-error: true
+
+    - name: Create empty database if not exists
+      run: |
+        if [ ! -f youtube_videos.db ]; then
+          echo "Creating empty database file"
+          touch youtube_videos.db
+        fi
 
     - name: Notify Discord of New YouTube Videos
       env:
