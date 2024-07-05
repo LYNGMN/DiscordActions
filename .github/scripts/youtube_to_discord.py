@@ -6,29 +6,26 @@ import sqlite3
 from googleapiclient.discovery import build
 import isodate
 from datetime import datetime, timezone, timedelta
+import logging
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
-LANGUAGE = os.getenv('LANGUAGE', 'English')  # 기본값은 영어, Korean을 지정 가능
-INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))  # 초기 실행 시 가져올 영상 개수, 기본값은 30
-MAX_RESULTS = 10  # 초기 실행 이후 가져올 영상 개수
-INIT_RUN = os.getenv('INIT_RUN', '0')  # 초기 실행 여부를 결정하는 변수, 기본값은 0
+LANGUAGE = os.getenv('LANGUAGE', 'English')
+INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))
+MAX_RESULTS = int(os.getenv('MAX_RESULTS', '10'))
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
-    missing_vars = []
-    if not YOUTUBE_CHANNEL_ID:
-        missing_vars.append('YOUTUBE_CHANNEL_ID')
-    if not YOUTUBE_API_KEY:
-        missing_vars.append('YOUTUBE_API_KEY')
-    if not DISCORD_YOUTUBE_WEBHOOK:
-        missing_vars.append('DISCORD_YOUTUBE_WEBHOOK')
-    
+    required_vars = ['YOUTUBE_CHANNEL_ID', 'YOUTUBE_API_KEY', 'DISCORD_YOUTUBE_WEBHOOK']
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
 
@@ -38,10 +35,10 @@ def post_to_discord(message):
     headers = {'Content-Type': 'application/json'}
     response = requests.post(DISCORD_YOUTUBE_WEBHOOK, json=payload, headers=headers)
     if response.status_code != 204:
-        print(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
-        print(response.text)
+        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
+        logging.error(response.text)
     else:
-        print("Discord에 메시지 게시 완료")
+        logging.info("Discord에 메시지 게시 완료")
         time.sleep(3)  # 메시지 게시 후 3초 대기
 
 # ISO 8601 기간을 사람이 읽기 쉬운 형식으로 변환하는 함수
@@ -93,6 +90,7 @@ def init_db():
                  (video_id TEXT PRIMARY KEY, published_at TEXT)''')
     conn.commit()
     conn.close()
+    logging.info("데이터베이스 초기화 완료")
 
 # DB에 새로운 동영상 저장 함수
 def save_video(video_id, published_at):
@@ -101,6 +99,7 @@ def save_video(video_id, published_at):
     c.execute("INSERT OR REPLACE INTO videos (video_id, published_at) VALUES (?, ?)", (video_id, published_at))
     conn.commit()
     conn.close()
+    logging.info(f"새 비디오 저장: {video_id}")
 
 # DB에서 저장된 동영상 불러오기 함수
 def load_videos():
@@ -109,6 +108,7 @@ def load_videos():
     c.execute("SELECT video_id, published_at FROM videos ORDER BY published_at DESC")
     rows = c.fetchall()
     conn.close()
+    logging.info(f"저장된 비디오 수: {len(rows)}")
     return rows
 
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
@@ -120,18 +120,14 @@ def fetch_and_post_videos():
 
     # DB에서 저장된 동영상 불러오기
     saved_videos = load_videos()
-    last_published_at = saved_videos[0][1] if saved_videos else None
+    
+    # 초기 실행 여부 확인
+    is_initial_run = len(saved_videos) == 0
+    logging.info(f"초기 실행 여부: {is_initial_run}")
 
     # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
-    if INIT_RUN == '1' or last_published_at is None:
-        max_results = INIT_MAX_RESULTS
-    else:
-        max_results = MAX_RESULTS
-
-    # 디버깅 로그 추가
-    print(f"INIT_RUN: {INIT_RUN}")
-    print(f"max_results: {max_results}")
-    print(f"last_published_at: {last_published_at}")
+    max_results = INIT_MAX_RESULTS if is_initial_run else MAX_RESULTS
+    logging.info(f"가져올 최대 비디오 수: {max_results}")
 
     response = youtube.search().list(
         channelId=YOUTUBE_CHANNEL_ID,
@@ -142,7 +138,7 @@ def fetch_and_post_videos():
     ).execute()
 
     if 'items' not in response:
-        print("동영상을 찾을 수 없습니다.")
+        logging.warning("동영상을 찾을 수 없습니다.")
         return
 
     video_ids = [item['id']['videoId'] for item in response['items']]
@@ -171,7 +167,7 @@ def fetch_and_post_videos():
         video_url = f"https://youtu.be/{video_detail['id']}"
 
         # 새로운 영상인지 확인합니다.
-        if not any(saved_video[0] == video_id for saved_video in saved_videos):
+        if is_initial_run or not any(saved_video[0] == video_id for saved_video in saved_videos):
             new_videos.append({
                 'video_id': video_id,
                 'channel_title': channel_title,
@@ -187,6 +183,7 @@ def fetch_and_post_videos():
 
     # 새로운 동영상을 오래된 순서로 정렬합니다.
     new_videos.sort(key=lambda x: x['published_at'])
+    logging.info(f"새로운 비디오 수: {len(new_videos)}")
 
     # 새로운 동영상 정보를 Discord에 전송 (오래된 순서대로)
     for video in new_videos:
@@ -221,6 +218,6 @@ if __name__ == "__main__":
         check_env_variables()
         fetch_and_post_videos()
     except Exception as e:
-        print(f"오류 발생: {e}")
+        logging.error(f"오류 발생: {e}", exc_info=True)
     finally:
-        print("프로그램 실행 종료")
+        logging.info("프로그램 실행 종료")
