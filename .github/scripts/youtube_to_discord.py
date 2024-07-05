@@ -17,17 +17,56 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 LANGUAGE = os.getenv('LANGUAGE', 'English')
 INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))
-MAX_RESULTS = int(os.getenv('MAX_RESULTS', '10'))
+MAX_RESULTS = int(os.getenv('MAX_RESULTS') or '10')
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
 
-# 환경 변수가 설정되었는지 확인하는 함수
-def check_env_variables():
-    required_vars = ['YOUTUBE_CHANNEL_ID', 'YOUTUBE_API_KEY', 'DISCORD_YOUTUBE_WEBHOOK']
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    if missing_vars:
-        raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
+# DB 초기화 함수
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS videos
+                 (published_at TEXT,
+                  channel_title TEXT,
+                  title TEXT,
+                  video_id TEXT PRIMARY KEY,
+                  video_url TEXT,
+                  description TEXT,
+                  category TEXT,
+                  duration TEXT,
+                  thumbnail_url TEXT)''')
+    conn.commit()
+    conn.close()
+    logging.info("데이터베이스 초기화 완료")
+
+# DB에 새로운 동영상 저장 함수
+def save_video(video_data):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO videos 
+                 (published_at, channel_title, title, video_id, video_url, description, category, duration, thumbnail_url) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+              (video_data['published_at'], video_data['channel_title'], video_data['title'],
+               video_data['video_id'], video_data['video_url'], video_data['description'], 
+               video_data['category'], video_data['duration'], video_data['thumbnail_url']))
+    conn.commit()
+    conn.close()
+    logging.info(f"새 비디오 저장: {video_data['video_id']}")
+
+# DB에서 저장된 동영상 불러오기 함수
+def load_videos():
+    if not os.path.exists(DB_PATH):
+        logging.info("데이터베이스 파일이 없습니다. 새로 생성합니다.")
+        return []
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM videos ORDER BY published_at DESC")
+    rows = c.fetchall()
+    conn.close()
+    logging.info(f"저장된 비디오 수: {len(rows)}")
+    return rows
 
 # Discord에 메시지를 게시하는 함수
 def post_to_discord(message):
@@ -82,35 +121,6 @@ def convert_to_kst_and_format(published_at):
     kst_time = utc_time.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
     return kst_time.strftime("%Y-%m-%d %H:%M:%S")
 
-# DB 초기화 함수
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS videos
-                 (video_id TEXT PRIMARY KEY, published_at TEXT)''')
-    conn.commit()
-    conn.close()
-    logging.info("데이터베이스 초기화 완료")
-
-# DB에 새로운 동영상 저장 함수
-def save_video(video_id, published_at):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO videos (video_id, published_at) VALUES (?, ?)", (video_id, published_at))
-    conn.commit()
-    conn.close()
-    logging.info(f"새 비디오 저장: {video_id}")
-
-# DB에서 저장된 동영상 불러오기 함수
-def load_videos():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT video_id, published_at FROM videos ORDER BY published_at DESC")
-    rows = c.fetchall()
-    conn.close()
-    logging.info(f"저장된 비디오 수: {len(rows)}")
-    return rows
-
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
@@ -159,27 +169,27 @@ def fetch_and_post_videos():
         video_title = html.unescape(snippet['title'])
         channel_title = html.unescape(snippet['channelTitle'])
         description = html.unescape(snippet.get('description', ''))
-        tags = ','.join(snippet.get('tags', []))
         category_id = snippet.get('categoryId', '')
         category_name = get_category_name(category_id)
         thumbnail_url = snippet['thumbnails']['high']['url']
         duration = parse_duration(content_details['duration'])
         video_url = f"https://youtu.be/{video_detail['id']}"
 
+        video_data = {
+            'published_at': published_at,
+            'channel_title': channel_title,
+            'title': video_title,
+            'video_id': video_id,
+            'video_url': video_url,
+            'description': description,
+            'category': category_name,
+            'duration': duration,
+            'thumbnail_url': thumbnail_url
+        }
+
         # 새로운 영상인지 확인합니다.
-        if is_initial_run or not any(saved_video[0] == video_id for saved_video in saved_videos):
-            new_videos.append({
-                'video_id': video_id,
-                'channel_title': channel_title,
-                'title': video_title,
-                'video_url': video_url,
-                'description': description,
-                'duration': duration,
-                'published_at': published_at,
-                'tags': tags,
-                'category': category_name,
-                'thumbnail_url': thumbnail_url
-            })
+        if is_initial_run or not any(saved_video[3] == video_id for saved_video in saved_videos):
+            new_videos.append(video_data)
 
     # 새로운 동영상을 오래된 순서로 정렬합니다.
     new_videos.sort(key=lambda x: x['published_at'])
@@ -210,7 +220,7 @@ def fetch_and_post_videos():
             )
 
         post_to_discord(message)
-        save_video(video['video_id'], video['published_at'])
+        save_video(video)
 
 # 프로그램 실행
 if __name__ == "__main__":
