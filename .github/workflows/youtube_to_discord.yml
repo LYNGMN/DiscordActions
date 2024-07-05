@@ -22,12 +22,29 @@ jobs:
       run: |
         pip install --upgrade google-api-python-client requests isodate
 
+    - name: List Artifacts
+      id: list_artifacts
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const artifacts = await github.rest.actions.listArtifactsForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          })
+          console.log('Available artifacts:', artifacts.data.artifacts.map(a => a.name))
+          const dbArtifact = artifacts.data.artifacts.find(a => a.name === 'youtube_database')
+          if (dbArtifact) {
+            console.log('Found youtube_database artifact:', dbArtifact)
+            return true
+          }
+          return false
+
     - name: Download previous database
+      if: steps.list_artifacts.outputs.result == 'true'
       uses: actions/download-artifact@v4
       with:
         name: youtube_database
         path: .
-      continue-on-error: true
 
     - name: Create empty database if not exists
       run: |
@@ -44,6 +61,7 @@ jobs:
         LANGUAGE: ${{ secrets.LANGUAGE }}
         INIT_MAX_RESULTS: ${{ secrets.INIT_MAX_RESULTS }}
         MAX_RESULTS: ${{ secrets.MAX_RESULTS }}
+        IS_FIRST_RUN: ${{ steps.list_artifacts.outputs.result != 'true' }}
       run: |
         python .github/scripts/youtube_to_discord.py
 
@@ -53,3 +71,13 @@ jobs:
         name: youtube_database
         path: youtube_videos.db
         retention-days: 90
+
+    - name: Debug Information
+      if: always()
+      run: |
+        echo "Workspace contents:"
+        ls -la
+        echo "Database file size:"
+        ls -lh youtube_videos.db || echo "Database file not found"
+        echo "Database contents (if exists):"
+        sqlite3 youtube_videos.db "SELECT COUNT(*) FROM videos;" || echo "Unable to query database"
