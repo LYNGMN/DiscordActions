@@ -70,9 +70,17 @@ def load_videos():
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT * FROM videos ORDER BY published_at DESC")
-    rows = c.fetchall()
-    conn.close()
+    try:
+        c.execute("SELECT * FROM videos ORDER BY published_at DESC")
+        rows = c.fetchall()
+    except sqlite3.OperationalError:
+        logging.info("테이블이 존재하지 않습니다. 새로 생성합니다.")
+        conn.close()
+        init_db()
+        return []
+    finally:
+        conn.close()
+    
     logging.info(f"저장된 비디오 수: {len(rows)}")
     return rows
 
@@ -149,7 +157,7 @@ def fetch_and_post_videos():
         order='date',
         type='video',
         part='snippet,id',
-        maxResults=MAX_RESULTS
+        maxResults=MAX_RESULTS if latest_saved_time else INIT_MAX_RESULTS
     ).execute()
 
     if 'items' not in response:
@@ -172,6 +180,10 @@ def fetch_and_post_videos():
         video_id = video_detail['id']
         published_at = snippet['publishedAt']
         
+        # 이미 저장된 비디오는 건너뜁니다.
+        if any(saved_video[3] == video_id for saved_video in saved_videos):
+            continue
+
         # 이미 저장된 비디오보다 새로운 비디오만 처리합니다.
         if latest_saved_time and published_at <= latest_saved_time:
             continue
