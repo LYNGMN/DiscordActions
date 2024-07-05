@@ -22,6 +22,13 @@ MAX_RESULTS = int(os.getenv('MAX_RESULTS') or '10')
 # DB 설정
 DB_PATH = 'youtube_videos.db'
 
+# 환경 변수가 설정되었는지 확인하는 함수
+def check_env_variables():
+    required_vars = ['YOUTUBE_CHANNEL_ID', 'YOUTUBE_API_KEY', 'DISCORD_YOUTUBE_WEBHOOK']
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
+
 # DB 초기화 함수
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -58,6 +65,7 @@ def save_video(video_data):
 def load_videos():
     if not os.path.exists(DB_PATH):
         logging.info("데이터베이스 파일이 없습니다. 새로 생성합니다.")
+        init_db()
         return []
     
     conn = sqlite3.connect(DB_PATH)
@@ -125,26 +133,23 @@ def convert_to_kst_and_format(published_at):
 def fetch_and_post_videos():
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     
-    # DB 초기화
-    init_db()
+    # DB 초기화 (필요한 경우)
+    if not os.path.exists(DB_PATH):
+        init_db()
 
     # DB에서 저장된 동영상 불러오기
     saved_videos = load_videos()
     
-    # 초기 실행 여부 확인
-    is_initial_run = len(saved_videos) == 0
-    logging.info(f"초기 실행 여부: {is_initial_run}")
+    # 가장 최근에 저장된 비디오의 게시 시간을 가져옵니다.
+    latest_saved_time = saved_videos[0][0] if saved_videos else None
 
-    # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
-    max_results = INIT_MAX_RESULTS if is_initial_run else MAX_RESULTS
-    logging.info(f"가져올 최대 비디오 수: {max_results}")
-
+    # YouTube API로 최신 비디오 목록을 가져옵니다.
     response = youtube.search().list(
         channelId=YOUTUBE_CHANNEL_ID,
         order='date',
         type='video',
         part='snippet,id',
-        maxResults=max_results
+        maxResults=MAX_RESULTS
     ).execute()
 
     if 'items' not in response:
@@ -166,6 +171,11 @@ def fetch_and_post_videos():
 
         video_id = video_detail['id']
         published_at = snippet['publishedAt']
+        
+        # 이미 저장된 비디오보다 새로운 비디오만 처리합니다.
+        if latest_saved_time and published_at <= latest_saved_time:
+            continue
+
         video_title = html.unescape(snippet['title'])
         channel_title = html.unescape(snippet['channelTitle'])
         description = html.unescape(snippet.get('description', ''))
@@ -187,15 +197,13 @@ def fetch_and_post_videos():
             'thumbnail_url': thumbnail_url
         }
 
-        # 새로운 영상인지 확인합니다.
-        if is_initial_run or not any(saved_video[3] == video_id for saved_video in saved_videos):
-            new_videos.append(video_data)
+        new_videos.append(video_data)
 
     # 새로운 동영상을 오래된 순서로 정렬합니다.
     new_videos.sort(key=lambda x: x['published_at'])
     logging.info(f"새로운 비디오 수: {len(new_videos)}")
 
-    # 새로운 동영상 정보를 Discord에 전송 (오래된 순서대로)
+    # 새로운 동영상 정보를 Discord에 전송하고 DB에 저장 (오래된 순서대로)
     for video in new_videos:
         formatted_published_at = convert_to_kst_and_format(video['published_at'])
         if LANGUAGE == 'Korean':
