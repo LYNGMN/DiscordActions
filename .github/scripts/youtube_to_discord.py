@@ -2,10 +2,10 @@ import os
 import requests
 import html
 import time
+import sqlite3
 from googleapiclient.discovery import build
 import isodate
 from datetime import datetime, timezone, timedelta
-import json
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
@@ -16,8 +16,8 @@ INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))  # 초기 실행 시
 MAX_RESULTS = 10  # 초기 실행 이후 가져올 영상 개수
 INIT_RUN = os.getenv('INIT_RUN', '0')  # 초기 실행 여부를 결정하는 변수, 기본값은 0
 
-# 이전 실행에서 가장 최근에 게시된 영상의 게시일을 저장할 변수
-last_published_at = None
+# DB 설정
+DB_PATH = 'youtube_videos.db'
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
@@ -85,33 +85,42 @@ def convert_to_kst_and_format(published_at):
     kst_time = utc_time.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
     return kst_time.strftime("%Y-%m-%d %H:%M:%S")
 
-# last_published_at 값을 파일에 저장하는 함수
-def save_last_published_at():
-    global last_published_at
-    with open('last_published_at.json', 'w') as f:
-        json.dump({'last_published_at': last_published_at}, f)
+# DB 초기화 함수
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS videos
+                 (video_id TEXT PRIMARY KEY, published_at TEXT)''')
+    conn.commit()
+    conn.close()
 
-# 프로그램 시작 시 last_published_at 값을 파일에서 로드하는 함수
-def load_last_published_at():
-    global last_published_at
-    try:
-        with open('last_published_at.json', 'r') as f:
-            data = json.load(f)
-            last_published_at = data['last_published_at']
-    except FileNotFoundError:
-        last_published_at = None
+# DB에 새로운 동영상 저장 함수
+def save_video(video_id, published_at):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO videos (video_id, published_at) VALUES (?, ?)", (video_id, published_at))
+    conn.commit()
+    conn.close()
+
+# DB에서 저장된 동영상 불러오기 함수
+def load_videos():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT video_id, published_at FROM videos ORDER BY published_at DESC")
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
-    global last_published_at
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     
-    # 초기 실행 여부에 따라 last_published_at을 초기화합니다.
-    if INIT_RUN == '1':
-        last_published_at = None
+    # DB 초기화
+    init_db()
 
-    # YouTube에서 동영상을 가져옵니다.
-    new_videos = []
+    # DB에서 저장된 동영상 불러오기
+    saved_videos = load_videos()
+    last_published_at = saved_videos[0][1] if saved_videos else None
 
     # 초기 실행 여부에 따라 maxResults 값을 설정합니다.
     if INIT_RUN == '1' or last_published_at is None:
@@ -143,10 +152,13 @@ def fetch_and_post_videos():
         id=','.join(video_ids)
     ).execute()
 
+    new_videos = []
+
     for video_detail in video_details_response['items']:
         snippet = video_detail['snippet']
         content_details = video_detail['contentDetails']
 
+        video_id = video_detail['id']
         published_at = snippet['publishedAt']
         video_title = html.unescape(snippet['title'])
         channel_title = html.unescape(snippet['channelTitle'])
@@ -159,8 +171,9 @@ def fetch_and_post_videos():
         video_url = f"https://youtu.be/{video_detail['id']}"
 
         # 새로운 영상인지 확인합니다.
-        if last_published_at is None or published_at > last_published_at:
+        if not any(saved_video[0] == video_id for saved_video in saved_videos):
             new_videos.append({
+                'video_id': video_id,
                 'channel_title': channel_title,
                 'title': video_title,
                 'video_url': video_url,
@@ -200,17 +213,12 @@ def fetch_and_post_videos():
             )
 
         post_to_discord(message)
-
-    # 새로운 영상이 있다면, 가장 최신 영상의 게시일을 저장합니다.
-    if new_videos:
-        last_published_at = new_videos[-1]['published_at']
-        save_last_published_at()
+        save_video(video['video_id'], video['published_at'])
 
 # 프로그램 실행
 if __name__ == "__main__":
     try:
         check_env_variables()
-        load_last_published_at()  # 프로그램 시작 시 last_published_at 값을 로드합니다.
         fetch_and_post_videos()
     except Exception as e:
         print(f"오류 발생: {e}")
