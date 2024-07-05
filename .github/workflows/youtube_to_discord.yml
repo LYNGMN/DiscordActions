@@ -25,7 +25,7 @@ jobs:
     - name: Download previous database
       uses: actions/download-artifact@v4
       with:
-        name: database
+        name: youtube_database
         path: .
       continue-on-error: true
 
@@ -40,9 +40,9 @@ jobs:
       run: |
         python .github/scripts/youtube_to_discord.py
 
-    - name: Upload database
+    - name: Upload updated database
       uses: actions/upload-artifact@v4
       with:
-        name: database
+        name: youtube_database
         path: youtube_videos.db
-        retention-days: 1
+        retention-days: 90
