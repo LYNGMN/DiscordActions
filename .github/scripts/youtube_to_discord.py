@@ -18,6 +18,7 @@ DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
 LANGUAGE = os.getenv('LANGUAGE', 'English')
 INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))
 MAX_RESULTS = int(os.getenv('MAX_RESULTS') or '10')
+IS_FIRST_RUN = os.getenv('IS_FIRST_RUN', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
@@ -157,7 +158,7 @@ def fetch_and_post_videos():
         order='date',
         type='video',
         part='snippet,id',
-        maxResults=MAX_RESULTS if latest_saved_time else INIT_MAX_RESULTS
+        maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN else MAX_RESULTS
     ).execute()
 
     if 'items' not in response:
@@ -247,6 +248,18 @@ if __name__ == "__main__":
     try:
         check_env_variables()
         fetch_and_post_videos()
+        
+        # 디버그 정보 출력
+        logging.info(f"IS_FIRST_RUN: {IS_FIRST_RUN}")
+        logging.info(f"Database file size: {os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 'File not found'}")
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM videos")
+        count = c.fetchone()[0]
+        logging.info(f"Number of videos in database: {count}")
+        conn.close()
+        
     except Exception as e:
         logging.error(f"오류 발생: {e}", exc_info=True)
     finally:
