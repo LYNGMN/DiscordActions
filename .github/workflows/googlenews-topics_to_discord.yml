@@ -5,10 +5,12 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
+env:
+  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE }}
+
 jobs:
   fetch-and-post:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -38,7 +40,7 @@ jobs:
           return workflow.data.workflow_runs[0]?.id.toString() || '';
 
     - name: Download previous database
-      if: steps.get_latest_run.outputs.result != ''
+      if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
         name: googlenews_database
@@ -46,19 +48,22 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
 
-    - name: Check if database exists
+    - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ -f google_news_topic.db ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
+        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news_topic.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Initializing or creating new database"
+          rm -f google_news_topic.db
+          touch google_news_topic.db
+        else
+          echo "exists=true" >> $GITHUB_OUTPUT
         fi
 
     - name: Read Google News RSS and Post to Discord
       env:
         DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}
-        IS_FIRST_RUN: ${{ steps.check_db.outputs.exists == 'false' }}
+        INITIALIZE: ${{ env.INITIALIZE_MODE }}
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
 
@@ -73,7 +78,7 @@ jobs:
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "IS_FIRST_RUN: ${{ steps.check_db.outputs.exists == 'false' }}"
+        echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
