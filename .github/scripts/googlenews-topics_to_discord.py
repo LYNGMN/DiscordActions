@@ -7,37 +7,81 @@ import time
 from datetime import datetime
 from dateutil import parser
 from dateutil.tz import gettz
+import sqlite3
+import logging
+from bs4 import BeautifulSoup
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# 환경 변수에서 필요한 정보를 가져옵니다.
+DISCORD_WEBHOOK_TOPICS = os.environ.get('DISCORD_WEBHOOK_TOPICS')
+
+# DB 설정
+DB_PATH = 'google_news_topic.db'
+
+def check_env_variables():
+    if not DISCORD_WEBHOOK_TOPICS:
+        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPICS")
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS news_items
+                 (guid TEXT PRIMARY KEY,
+                  pub_date TEXT,
+                  title TEXT,
+                  link TEXT,
+                  related_news TEXT,
+                  posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    conn.commit()
+    conn.close()
+    logging.info("데이터베이스 초기화 완료")
+
+def is_guid_posted(guid):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM news_items WHERE guid = ?", (guid,))
+    result = c.fetchone()
+    conn.close()
+    return result is not None
+
+def save_news_item(guid, pub_date, title, link, related_news):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""INSERT OR REPLACE INTO news_items 
+                 (guid, pub_date, title, link, related_news) 
+                 VALUES (?, ?, ?, ?, ?)""", 
+              (guid, pub_date, title, link, related_news))
+    conn.commit()
+    conn.close()
+    logging.info(f"새 뉴스 항목 저장: {guid}")
 
 def fetch_rss_feed(url):
-    # 주어진 URL에서 RSS 피드를 가져옵니다.
     response = requests.get(url)
     return response.content
 
 def replace_brackets(text):
-    # 대괄호를 한글 괄호로 변경하는 함수
     return text.replace("[", "〔").replace("]", "〕")
     
 def parse_html_description(html_desc):
-    # HTML 내용에서 뉴스 기사 정보를 추출하는 함수
-    # HTML 엔티티를 디코딩하고, <ol> 태그 내의 <li> 태그를 찾아 뉴스 정보를 추출합니다.
     html_desc = unescape(html_desc)
     items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
 
     news_items = []
-    full_content_link = ""  # "전체 콘텐츠 보기" 링크 초기화
+    full_content_link = ""
     for item in items:
         if 'Google 뉴스에서 전체 콘텐츠 보기' in item:
             full_content_link_match = re.search(r'<a href="(https://news\.google\.com/stories/.*?)"', item)
             if full_content_link_match:
                 full_content_link = full_content_link_match.group(1)
-            continue  # "전체 콘텐츠 보기" 링크는 뉴스 목록에 추가하지 않음
+            continue
 
-        # 일반 뉴스 항목 처리
         title_match = re.search(r'<a href="(.*?)".*?>(.*?)</a>', item)
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             link, title_text = title_match.groups()
-            title_text = replace_brackets(title_text)  # 대괄호를 한글 괄호로 변경
+            title_text = replace_brackets(title_text)
             press_name = press_match.group(1)
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
@@ -49,67 +93,69 @@ def parse_html_description(html_desc):
     return news_string
 
 def parse_rss_date(pub_date):
-    # RSS 피드의 날짜를 파싱하여 지역 시간대로 변환하는 함수
     dt = parser.parse(pub_date)
     dt_kst = dt.astimezone(gettz('Asia/Seoul'))
     return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
 
 def send_discord_message(webhook_url, message):
-    # Discord 웹훅 URL로 메시지를 전송하는 함수
     payload = {"content": message}
     headers = {"Content-Type": "application/json"}
     response = requests.post(webhook_url, json=payload, headers=headers)
-    return response
+    if response.status_code != 204:
+        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
+        logging.error(response.text)
+    else:
+        logging.info("Discord에 메시지 게시 완료")
+    time.sleep(3)
+
+def extract_news_items(description):
+    news_items = []
+    soup = BeautifulSoup(description, 'html.parser')
+    for li in soup.find_all('li'):
+        a_tag = li.find('a')
+        if a_tag:
+            title = a_tag.text
+            link = a_tag['href']
+            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            news_items.append({"title": title, "link": link, "press": press})
+    return news_items
 
 def main():
-    # 메인 함수: Google 뉴스 RSS 피드를 가져오고, 파싱한 후 Discord로 메시지를 전송합니다.
     rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
 
-    # Gist 관련 설정
-    gist_id = os.environ.get('GIST_ID_TOPICS')
-    gist_token = os.environ.get('GIST_TOKEN')
-    gist_url = f"https://api.github.com/gists/{gist_id}"
+    init_db()
 
-    # 이전에 게시된 게시물의 ID를 Gist에서 가져옵니다.
-    gist_headers = {"Authorization": f"token {gist_token}"}
-    gist_response = requests.get(gist_url, headers=gist_headers).json()
-    posted_guids = gist_response['files']['googlenews-topics_posted_guids.txt']['content'].splitlines()
-
-    webhook_url = os.environ.get('DISCORD_WEBHOOK_TOPICS')
-
-    # 뉴스 항목을 처리합니다.
     news_items = root.findall('.//item')
-    for index, item in reversed(list(enumerate(news_items))):  # 역순으로 순회
+    for index, item in reversed(list(enumerate(news_items))):
         guid = item.find('guid').text
 
-        # 이미 게시된 GUID인지 확인
-        if guid in posted_guids:
-            continue  # 중복된 항목은 무시
+        if is_guid_posted(guid):
+            continue
 
         title = item.find('title').text
         link = item.find('link').text
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
-        description = parse_html_description(description_html)
-
-        title = replace_brackets(title)  # 대괄호를 한글 괄호로 변경
+        
+        title = replace_brackets(title)
         formatted_date = parse_rss_date(pub_date)
 
-        # Discord에 메시지를 포맷하여 전송합니다.
-        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n📅 {formatted_date}"
-        send_discord_message(webhook_url, discord_message)
+        related_news = extract_news_items(description_html)
+        related_news_json = json.dumps(related_news)
 
-        # 게시된 GUID 목록에 추가
-        posted_guids.append(guid)
-        time.sleep(3)
+        description = parse_html_description(description_html)
+        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n\n📅 {formatted_date}"
+        send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
-    # 게시된 뉴스 항목의 GUID를 업데이트하여 Gist에 저장합니다.
-    updated_guids = '\n'.join(posted_guids)
-    gist_files = {'googlenews-topics_posted_guids.txt': {'content': updated_guids}}
-    gist_payload = {'files': gist_files}
-    gist_update_response = requests.patch(gist_url, json=gist_payload, headers=gist_headers)
+        save_news_item(guid, pub_date, title, link, related_news_json)
 
 if __name__ == "__main__":
-    main()
+    try:
+        check_env_variables()
+        main()
+    except Exception as e:
+        logging.error(f"오류 발생: {e}", exc_info=True)
+    finally:
+        logging.info("프로그램 실행 종료")
