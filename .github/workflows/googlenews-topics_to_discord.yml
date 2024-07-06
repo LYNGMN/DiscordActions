@@ -22,8 +22,7 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install --upgrade pip
-        pip install aiohttp requests python-dateutil beautifulsoup4
+        pip install requests python-dateutil beautifulsoup4
 
     - name: Get latest successful run ID
       id: get_latest_run
@@ -40,23 +39,23 @@ jobs:
           });
           return workflow.data.workflow_runs[0]?.id.toString() || '';
 
-    - name: Download previous databases
+    - name: Download previous database
       if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
-        name: googlenews_databases
+        name: googlenews_database
         run-id: ${{ steps.get_latest_run.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
 
-    - name: Check if databases exist or initialize
+    - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news_topic.db ] || [ ! -f link_cache.db ]; then
+        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news_topic.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
-          echo "Initializing or creating new databases"
-          rm -f google_news_topic.db link_cache.db
-          touch google_news_topic.db link_cache.db
+          echo "Initializing or creating new database"
+          rm -f google_news_topic.db
+          touch google_news_topic.db
         else
           echo "exists=true" >> $GITHUB_OUTPUT
         fi
@@ -68,13 +67,11 @@ jobs:
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
 
-    - name: Upload updated databases
+    - name: Upload updated database
       uses: actions/upload-artifact@v4
       with:
-        name: googlenews_databases
-        path: |
-          google_news_topic.db
-          link_cache.db
+        name: googlenews_database
+        path: google_news_topic.db
         retention-days: 90
 
     - name: Debug Information
@@ -84,8 +81,7 @@ jobs:
         echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE }}"
         echo "Workspace contents:"
         ls -la
-        echo "Database file sizes:"
-        ls -lh google_news_topic.db link_cache.db || echo "Database files not found"
+        echo "Database file size:"
+        ls -lh google_news_topic.db || echo "Database file not found"
         echo "Database contents (if exists):"
-        sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query news_items database"
-        sqlite3 link_cache.db "SELECT COUNT(*) FROM link_cache;" || echo "Unable to query link_cache database"
+        sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
