@@ -10,12 +10,14 @@ from dateutil.tz import gettz
 import sqlite3
 import logging
 from bs4 import BeautifulSoup
+import json
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 DISCORD_WEBHOOK_TOPICS = os.environ.get('DISCORD_WEBHOOK_TOPICS')
+IS_FIRST_RUN = os.environ.get('IS_FIRST_RUN', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'google_news_topic.db'
@@ -128,10 +130,15 @@ def main():
     init_db()
 
     news_items = root.findall('.//item')
-    for index, item in reversed(list(enumerate(news_items))):
+    if IS_FIRST_RUN:
+        news_items = list(news_items)  # 초기 실행 시 모든 항목 처리 (오래된 순)
+    else:
+        news_items = reversed(news_items)  # 일반 실행 시 최신 항목부터 처리
+
+    for item in news_items:
         guid = item.find('guid').text
 
-        if is_guid_posted(guid):
+        if not IS_FIRST_RUN and is_guid_posted(guid):
             continue
 
         title = item.find('title').text
@@ -150,6 +157,9 @@ def main():
         send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
         save_news_item(guid, pub_date, title, link, related_news_json)
+
+        if not IS_FIRST_RUN:
+            time.sleep(3)  # 일반 실행 시에만 딜레이 적용
 
 if __name__ == "__main__":
     try:
