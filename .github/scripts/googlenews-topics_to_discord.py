@@ -99,6 +99,14 @@ def fetch_rss_feed(url):
 def replace_brackets(text):
     return text.replace("[", "〔").replace("]", "〕")
 
+def get_original_link(google_link):
+    try:
+        response = requests.get(google_link, allow_redirects=True, timeout=10)
+        return response.url
+    except requests.RequestException:
+        logging.warning(f"원본 링크를 가져오는 데 실패했습니다: {google_link}")
+        return google_link
+
 def parse_html_description(html_desc):
     html_desc = unescape(html_desc)
     items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
@@ -115,7 +123,8 @@ def parse_html_description(html_desc):
         title_match = re.search(r'<a href="(.*?)".*?>(.*?)</a>', item)
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
-            link, title_text = title_match.groups()
+            google_link, title_text = title_match.groups()
+            link = get_original_link(google_link)  # 여기서 원본 링크를 가져옵니다
             title_text = replace_brackets(title_text)
             press_name = press_match.group(1)
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
@@ -149,8 +158,9 @@ def extract_news_items(description):
     for li in soup.find_all('li'):
         a_tag = li.find('a')
         if a_tag:
-            title = a_tag.text  # 이미 디코딩된 상태
-            link = a_tag['href']
+            title = a_tag.text
+            google_link = a_tag['href']
+            link = get_original_link(google_link)  # 여기서 원본 링크를 가져옵니다
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -179,7 +189,8 @@ def main():
             continue
 
         title = item.find('title').text
-        link = item.find('link').text
+        google_link = item.find('link').text
+        link = get_original_link(google_link)  # 여기서 원본 링크를 가져옵니다
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
