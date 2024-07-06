@@ -2,7 +2,7 @@ name: Google News (Topics) RSS to Discord
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -44,6 +44,7 @@ jobs:
         name: googlenews_database
         run-id: ${{ steps.get_latest_run.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
 
     - name: Create empty database if not exists
       run: |
