@@ -40,7 +40,8 @@ def init_db(reset=False):
                  (pub_date TEXT,
                   guid TEXT PRIMARY KEY,
                   title TEXT,
-                  link TEXT)''')
+                  link TEXT,
+                  related_news TEXT)''')
     conn.commit()
     conn.close()
     logging.info("데이터베이스 초기화 완료")
@@ -80,40 +81,8 @@ def is_guid_posted(guid):
 def save_news_item(pub_date, guid, title, link, related_news):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
-    # 기존 테이블 구조 확인
-    c.execute("PRAGMA table_info(news_items)")
-    columns = [column[1] for column in c.fetchall()]
-    
-    # 관련 뉴스 항목 수 확인
-    related_news_count = len(related_news)
-    
-    # 필요한 열 추가
-    for i in range(related_news_count):
-        title_col = f"related_title_{i+1}"
-        press_col = f"related_press_{i+1}"
-        link_col = f"related_link_{i+1}"
-        
-        if title_col not in columns:
-            c.execute(f"ALTER TABLE news_items ADD COLUMN {title_col} TEXT")
-        if press_col not in columns:
-            c.execute(f"ALTER TABLE news_items ADD COLUMN {press_col} TEXT")
-        if link_col not in columns:
-            c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
-    
-    # 데이터 삽입을 위한 SQL 쿼리 준비
-    columns = ["pub_date", "guid", "title", "link"]
-    values = [pub_date, guid, title, link]
-    
-    for i, item in enumerate(related_news):
-        columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
-        values.extend([item['title'], item['press'], item['link']])
-    
-    placeholders = ", ".join(["?" for _ in values])
-    columns_str = ", ".join(columns)
-    
-    c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
-    
+    c.execute("INSERT OR REPLACE INTO news_items (pub_date, guid, title, link, related_news) VALUES (?, ?, ?, ?, ?)",
+              (pub_date, guid, title, link, related_news))
     conn.commit()
     conn.close()
     logging.info(f"새 뉴스 항목 저장: {guid}")
@@ -133,7 +102,7 @@ async def get_original_link(session, google_link, max_retries=3):
     
     for attempt in range(max_retries):
         try:
-            async with session.get(google_link, allow_redirects=True, timeout=5) as response:
+            async with session.get(google_link, allow_redirects=True, timeout=10) as response:
                 original_link = str(response.url)
             cache_link(google_link, original_link)
             return original_link
@@ -243,7 +212,7 @@ async def main():
             discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n\n📅 {formatted_date}"
             await send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
-            save_news_item(pub_date, guid, title, link, related_news)
+            save_news_item(pub_date, guid, title, link, str(related_news))
 
             if not INITIALIZE:
                 await asyncio.sleep(3)
