@@ -46,17 +46,19 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
 
-    - name: Create empty database if not exists
+    - name: Check if database exists
+      id: check_db
       run: |
-        if [ ! -f google_news_topic.db ]; then
-          echo "Creating empty database file"
-          touch google_news_topic.db
+        if [ -f google_news_topic.db ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
         fi
 
     - name: Read Google News RSS and Post to Discord
       env:
         DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}
-        IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}
+        IS_FIRST_RUN: ${{ steps.check_db.outputs.exists == 'false' }}
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
 
@@ -71,7 +73,7 @@ jobs:
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}"
+        echo "IS_FIRST_RUN: ${{ steps.check_db.outputs.exists == 'false' }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
