@@ -26,9 +26,12 @@ def check_env_variables():
     if not DISCORD_WEBHOOK_TOPICS:
         raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPICS")
 
-def init_db():
+def init_db(reset=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    if reset:
+        c.execute("DROP TABLE IF EXISTS news_items")
+        logging.info("기존 news_items 테이블 삭제")
     c.execute('''CREATE TABLE IF NOT EXISTS news_items
                  (pub_date TEXT,
                   guid TEXT PRIMARY KEY,
@@ -157,12 +160,15 @@ def main():
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
 
-    init_db()
+    if INITIALIZE:
+        init_db(reset=True)  # DB 초기화
+        logging.info("초기화 모드로 실행 중: 데이터베이스를 재설정하고 모든 뉴스 항목을 처리합니다.")
+    else:
+        init_db()
 
     news_items = root.findall('.//item')
     if INITIALIZE:
         news_items = list(news_items)  # 초기화 실행 시 모든 항목 처리 (오래된 순)
-        logging.info("초기화 모드로 실행 중: 모든 뉴스 항목을 처리합니다.")
     else:
         news_items = reversed(news_items)  # 일반 실행 시 최신 항목부터 처리
 
