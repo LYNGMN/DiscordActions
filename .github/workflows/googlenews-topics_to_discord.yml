@@ -40,23 +40,23 @@ jobs:
           });
           return workflow.data.workflow_runs[0]?.id.toString() || '';
 
-    - name: Download previous database
+    - name: Download previous databases
       if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
-        name: googlenews_database
+        name: googlenews_databases
         run-id: ${{ steps.get_latest_run.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
 
-    - name: Check if database exists or initialize
+    - name: Check if databases exist or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news_topic.db ]; then
+        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news_topic.db ] || [ ! -f link_cache.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
-          echo "Initializing or creating new database"
-          rm -f google_news_topic.db
-          touch google_news_topic.db
+          echo "Initializing or creating new databases"
+          rm -f google_news_topic.db link_cache.db
+          touch google_news_topic.db link_cache.db
         else
           echo "exists=true" >> $GITHUB_OUTPUT
         fi
@@ -68,10 +68,10 @@ jobs:
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
 
-    - name: Upload updated database
+    - name: Upload updated databases
       uses: actions/upload-artifact@v4
       with:
-        name: googlenews_database
+        name: googlenews_databases
         path: |
           google_news_topic.db
           link_cache.db
@@ -84,9 +84,8 @@ jobs:
         echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE }}"
         echo "Workspace contents:"
         ls -la
-        echo "Database file size:"
-        ls -lh google_news_topic.db || echo "Database file not found"
-        echo "Cache database file size:"
-        ls -lh link_cache.db || echo "Cache database file not found"
+        echo "Database file sizes:"
+        ls -lh google_news_topic.db link_cache.db || echo "Database files not found"
         echo "Database contents (if exists):"
-        sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
+        sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query news_items database"
+        sqlite3 link_cache.db "SELECT COUNT(*) FROM link_cache;" || echo "Unable to query link_cache database"
