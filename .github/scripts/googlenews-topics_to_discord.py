@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 DISCORD_WEBHOOK_TOPICS = os.environ.get('DISCORD_WEBHOOK_TOPICS')
-IS_FIRST_RUN = os.environ.get('IS_FIRST_RUN', 'false').lower() == 'true'
+INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'google_news_topic.db'
@@ -30,12 +30,11 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS news_items
-                 (guid TEXT PRIMARY KEY,
-                  pub_date TEXT,
+                 (pub_date TEXT,
+                  guid TEXT PRIMARY KEY,
                   title TEXT,
                   link TEXT,
-                  related_news TEXT,
-                  posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                  related_news TEXT)''')
     conn.commit()
     conn.close()
     logging.info("데이터베이스 초기화 완료")
@@ -48,13 +47,44 @@ def is_guid_posted(guid):
     conn.close()
     return result is not None
 
-def save_news_item(guid, pub_date, title, link, related_news):
+def save_news_item(pub_date, guid, title, link, related_news):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""INSERT OR REPLACE INTO news_items 
-                 (guid, pub_date, title, link, related_news) 
-                 VALUES (?, ?, ?, ?, ?)""", 
-              (guid, pub_date, title, link, related_news))
+    
+    # 기존 테이블 구조 확인
+    c.execute("PRAGMA table_info(news_items)")
+    columns = [column[1] for column in c.fetchall()]
+    
+    # 관련 뉴스 항목 수 확인
+    related_news_count = len(json.loads(related_news))
+    
+    # 필요한 열 추가
+    for i in range(related_news_count):
+        title_col = f"related_title_{i+1}"
+        press_col = f"related_press_{i+1}"
+        link_col = f"related_link_{i+1}"
+        
+        if title_col not in columns:
+            c.execute(f"ALTER TABLE news_items ADD COLUMN {title_col} TEXT")
+        if press_col not in columns:
+            c.execute(f"ALTER TABLE news_items ADD COLUMN {press_col} TEXT")
+        if link_col not in columns:
+            c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
+    
+    # 데이터 삽입을 위한 SQL 쿼리 준비
+    columns = ["pub_date", "guid", "title", "link", "related_news"]
+    values = [pub_date, guid, title, link, related_news]
+    
+    related_news_items = json.loads(related_news)
+    for i, item in enumerate(related_news_items):
+        columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
+        values.extend([item['title'], item['press'], item['link']])
+    
+    placeholders = ", ".join(["?" for _ in values])
+    columns_str = ", ".join(columns)
+    
+    c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
+    
     conn.commit()
     conn.close()
     logging.info(f"새 뉴스 항목 저장: {guid}")
@@ -65,7 +95,10 @@ def fetch_rss_feed(url):
 
 def replace_brackets(text):
     return text.replace("[", "〔").replace("]", "〕")
-    
+
+def decode_unicode_escape(text):
+    return text.encode('utf-8').decode('unicode_escape')
+
 def parse_html_description(html_desc):
     html_desc = unescape(html_desc)
     items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
@@ -83,8 +116,8 @@ def parse_html_description(html_desc):
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             link, title_text = title_match.groups()
-            title_text = replace_brackets(title_text)
-            press_name = press_match.group(1)
+            title_text = replace_brackets(decode_unicode_escape(title_text))
+            press_name = decode_unicode_escape(press_match.group(1))
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
@@ -116,9 +149,9 @@ def extract_news_items(description):
     for li in soup.find_all('li'):
         a_tag = li.find('a')
         if a_tag:
-            title = a_tag.text
+            title = decode_unicode_escape(a_tag.text)
             link = a_tag['href']
-            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            press = decode_unicode_escape(li.find('font', color="#6f6f6f").text) if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
 
@@ -130,15 +163,16 @@ def main():
     init_db()
 
     news_items = root.findall('.//item')
-    if IS_FIRST_RUN:
-        news_items = list(news_items)  # 초기 실행 시 모든 항목 처리 (오래된 순)
+    if INITIALIZE:
+        news_items = list(news_items)  # 초기화 실행 시 모든 항목 처리 (오래된 순)
+        logging.info("초기화 모드로 실행 중: 모든 뉴스 항목을 처리합니다.")
     else:
         news_items = reversed(news_items)  # 일반 실행 시 최신 항목부터 처리
 
     for item in news_items:
         guid = item.find('guid').text
 
-        if not IS_FIRST_RUN and is_guid_posted(guid):
+        if not INITIALIZE and is_guid_posted(guid):
             continue
 
         title = item.find('title').text
@@ -146,19 +180,19 @@ def main():
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
-        title = replace_brackets(title)
+        title = replace_brackets(decode_unicode_escape(title))
         formatted_date = parse_rss_date(pub_date)
 
         related_news = extract_news_items(description_html)
-        related_news_json = json.dumps(related_news)
+        related_news_json = json.dumps(related_news, ensure_ascii=False)
 
         description = parse_html_description(description_html)
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n\n📅 {formatted_date}"
         send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
-        save_news_item(guid, pub_date, title, link, related_news_json)
+        save_news_item(pub_date, guid, title, link, related_news_json)
 
-        if not IS_FIRST_RUN:
+        if not INITIALIZE:
             time.sleep(3)  # 일반 실행 시에만 딜레이 적용
 
 if __name__ == "__main__":
