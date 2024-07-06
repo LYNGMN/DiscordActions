@@ -96,9 +96,6 @@ def fetch_rss_feed(url):
 def replace_brackets(text):
     return text.replace("[", "〔").replace("]", "〕")
 
-def decode_unicode_escape(text):
-    return text.encode('utf-8').decode('unicode_escape')
-
 def parse_html_description(html_desc):
     html_desc = unescape(html_desc)
     items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
@@ -116,8 +113,8 @@ def parse_html_description(html_desc):
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             link, title_text = title_match.groups()
-            title_text = replace_brackets(decode_unicode_escape(title_text))
-            press_name = decode_unicode_escape(press_match.group(1))
+            title_text = replace_brackets(title_text)
+            press_name = press_match.group(1)
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
@@ -134,7 +131,7 @@ def parse_rss_date(pub_date):
 
 def send_discord_message(webhook_url, message):
     payload = {"content": message}
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json; charset=utf-8"}
     response = requests.post(webhook_url, json=payload, headers=headers)
     if response.status_code != 204:
         logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
@@ -149,9 +146,9 @@ def extract_news_items(description):
     for li in soup.find_all('li'):
         a_tag = li.find('a')
         if a_tag:
-            title = decode_unicode_escape(a_tag.text)
+            title = a_tag.text  # 이미 디코딩된 상태
             link = a_tag['href']
-            press = decode_unicode_escape(li.find('font', color="#6f6f6f").text) if li.find('font', color="#6f6f6f") else ""
+            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
 
@@ -180,7 +177,7 @@ def main():
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
-        title = replace_brackets(decode_unicode_escape(title))
+        title = replace_brackets(title)
         formatted_date = parse_rss_date(pub_date)
 
         related_news = extract_news_items(description_html)
