@@ -11,7 +11,6 @@ from dateutil.tz import gettz
 import sqlite3
 import logging
 from bs4 import BeautifulSoup
-import json
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,8 +40,7 @@ def init_db(reset=False):
                  (pub_date TEXT,
                   guid TEXT PRIMARY KEY,
                   title TEXT,
-                  link TEXT,
-                  related_news TEXT)''')
+                  link TEXT)''')
     conn.commit()
     conn.close()
     logging.info("데이터베이스 초기화 완료")
@@ -88,7 +86,7 @@ def save_news_item(pub_date, guid, title, link, related_news):
     columns = [column[1] for column in c.fetchall()]
     
     # 관련 뉴스 항목 수 확인
-    related_news_count = len(json.loads(related_news))
+    related_news_count = len(related_news)
     
     # 필요한 열 추가
     for i in range(related_news_count):
@@ -104,11 +102,10 @@ def save_news_item(pub_date, guid, title, link, related_news):
             c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
     
     # 데이터 삽입을 위한 SQL 쿼리 준비
-    columns = ["pub_date", "guid", "title", "link", "related_news"]
-    values = [pub_date, guid, title, link, related_news]
+    columns = ["pub_date", "guid", "title", "link"]
+    values = [pub_date, guid, title, link]
     
-    related_news_items = json.loads(related_news)
-    for i, item in enumerate(related_news_items):
+    for i, item in enumerate(related_news):
         columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
         values.extend([item['title'], item['press'], item['link']])
     
@@ -142,60 +139,42 @@ async def get_original_link(session, google_link, max_retries=3):
             return original_link
         except Exception as e:
             if attempt < max_retries - 1:
-                await asyncio.sleep(1)  # 재시도 전 1초 대기
+                await asyncio.sleep(1)
             else:
                 logging.warning(f"원본 링크를 가져오는 데 실패했습니다: {google_link}. 오류: {e}")
                 return google_link
 
-async def process_news_items(description):
+async def process_news_items(session, description):
     news_items = []
     soup = BeautifulSoup(description, 'html.parser')
-    async with aiohttp.ClientSession(headers={'User-Agent': USER_AGENT}) as session:
-        tasks = []
-        for li in soup.find_all('li'):
-            a_tag = li.find('a')
-            if a_tag:
-                title = a_tag.text
-                google_link = a_tag['href']
-                press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
-                task = asyncio.ensure_future(get_original_link(session, google_link))
-                tasks.append((title, task, press))
-        
-        for title, task, press in tasks:
-            link = await task
-            news_items.append({"title": title, "link": link, "press": press})
-            await asyncio.sleep(0.1)  # 짧은 딜레이 추가
+    tasks = []
+    for li in soup.find_all('li'):
+        a_tag = li.find('a')
+        if a_tag:
+            title = a_tag.text
+            google_link = a_tag['href']
+            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            task = asyncio.ensure_future(get_original_link(session, google_link))
+            tasks.append((title, task, press))
+    
+    for title, task, press in tasks:
+        link = await task
+        news_items.append({"title": title, "link": link, "press": press})
+        await asyncio.sleep(0.1)
     
     return news_items
 
 async def parse_html_description(session, html_desc):
-    html_desc = unescape(html_desc)
-    items = re.findall(r'<li>(.*?)</li>', html_desc, re.DOTALL)
-
-    news_items = []
-    full_content_link = ""
-    for item in items:
-        if 'Google 뉴스에서 전체 콘텐츠 보기' in item:
-            full_content_link_match = re.search(r'<a href="(https://news\.google\.com/stories/.*?)"', item)
-            if full_content_link_match:
-                full_content_link = full_content_link_match.group(1)
-            continue
-
-        title_match = re.search(r'<a href="(.*?)".*?>(.*?)</a>', item)
-        press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
-        if title_match and press_match:
-            google_link, title_text = title_match.groups()
-            link = await get_original_link(session, google_link)
-            title_text = replace_brackets(title_text)
-            press_name = press_match.group(1)
-            news_item = f"- [{title_text}](<{link}>) | {press_name}"
-            news_items.append(news_item)
-
-    news_string = '\n'.join(news_items)
-    if full_content_link:
+    news_items = await process_news_items(session, html_desc)
+    
+    news_string = '\n'.join([f"- [{item['title']}](<{item['link']}>) | {item['press']}" for item in news_items])
+    
+    full_content_link_match = re.search(r'<a href="(https://news\.google\.com/stories/.*?)"', html_desc)
+    if full_content_link_match:
+        full_content_link = full_content_link_match.group(1)
         news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
 
-    return news_string
+    return news_string, news_items
 
 def parse_rss_date(pub_date):
     dt = parser.parse(pub_date)
@@ -259,14 +238,12 @@ async def main():
             title = replace_brackets(title)
             formatted_date = parse_rss_date(pub_date)
 
-            related_news = await process_news_items(description_html)
-            related_news_json = json.dumps(related_news, ensure_ascii=False)
-
-            description = await parse_html_description(session, description_html)
+            description, related_news = await parse_html_description(session, description_html)
+            
             discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n\n📅 {formatted_date}"
             await send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
-            save_news_item(pub_date, guid, title, link, related_news_json)
+            save_news_item(pub_date, guid, title, link, related_news)
 
             if not INITIALIZE:
                 await asyncio.sleep(3)
