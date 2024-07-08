@@ -2,13 +2,15 @@ name: YouTube to Discord Notification
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *'  # 매시간 실행
+  workflow_dispatch:  # 수동 실행 옵션
+
+env:
+  INITIALIZE_MODE_YOUTUBE: ${{ secrets.INITIALIZE_MODE_YOUTUBE }}
 
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -38,18 +40,24 @@ jobs:
           return workflow.data.workflow_runs[0]?.id.toString() || '';
 
     - name: Download previous database
-      if: steps.get_latest_run.outputs.result != ''
+      if: env.INITIALIZE_MODE_YOUTUBE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
         name: youtube_database
         run-id: ${{ steps.get_latest_run.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
 
-    - name: Create empty database if not exists
+    - name: Check if database exists or initialize
+      id: check_db
       run: |
-        if [ ! -f youtube_videos.db ]; then
-          echo "Creating empty database file"
+        if [ "${{ env.INITIALIZE_MODE_YOUTUBE }}" == "true" ] || [ ! -f youtube_videos.db ]; then
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Initializing or creating new database"
+          rm -f youtube_videos.db
           touch youtube_videos.db
+        else
+          echo "exists=true" >> $GITHUB_OUTPUT
         fi
 
     - name: Notify Discord of New YouTube Videos
@@ -61,6 +69,7 @@ jobs:
         INIT_MAX_RESULTS: ${{ secrets.INIT_MAX_RESULTS }}
         MAX_RESULTS: ${{ secrets.MAX_RESULTS }}
         IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}
+        INITIALIZE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
       run: |
         python .github/scripts/youtube_to_discord.py
 
@@ -76,6 +85,7 @@ jobs:
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
         echo "IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}"
+        echo "INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
