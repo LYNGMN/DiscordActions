@@ -102,6 +102,11 @@ def decode_google_news_url(source_url):
             decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
             decoded_str = decoded_bytes.decode('latin1')
 
+            # YouTube 링크 처리
+            youtube_match = re.search(r'(https?://(www\.)?youtube\.com/watch\?v=[\w-]+)', decoded_str)
+            if youtube_match:
+                return youtube_match.group(1)
+
             prefix = bytes([0x08, 0x13, 0x22]).decode('latin1')
             if decoded_str.startswith(prefix):
                 decoded_str = decoded_str[len(prefix):]
@@ -128,6 +133,10 @@ def decode_google_news_url(source_url):
 def get_original_link(google_link, session, max_retries=5):
     decoded_url = decode_google_news_url(google_link)
     if decoded_url != google_link:
+        # YouTube 링크 확인
+        if 'youtube.com' in decoded_url or 'youtu.be' in decoded_url:
+            return decoded_url
+        # 다른 링크들에 대한 처리
         return decoded_url
 
     # 디코딩 실패 시 requests 사용
