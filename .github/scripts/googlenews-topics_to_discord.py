@@ -4,16 +4,15 @@ import re
 import os
 import time
 import random
+import logging
+import json
+import base64
+import sqlite3
+from urllib.parse import urlparse
 from datetime import datetime
 from dateutil import parser
 from dateutil.tz import gettz
-import sqlite3
-import logging
 from bs4 import BeautifulSoup
-import json
-import base64
-from urllib.parse import urlparse
-import sys
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,10 +25,12 @@ INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 DB_PATH = 'google_news_topic.db'
 
 def check_env_variables():
+    """환경 변수가 설정되어 있는지 확인합니다."""
     if not DISCORD_WEBHOOK_TOPICS:
         raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPICS")
 
 def init_db(reset=False):
+    """데이터베이스를 초기화합니다."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if reset:
@@ -44,12 +45,14 @@ def init_db(reset=False):
         logging.info("데이터베이스 초기화 완료")
 
 def is_guid_posted(guid):
+    """주어진 GUID가 이미 게시되었는지 확인합니다."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
         return c.fetchone() is not None
 
 def save_news_item(pub_date, guid, title, link, related_news):
+    """뉴스 항목을 데이터베이스에 저장합니다."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         
@@ -90,6 +93,7 @@ def save_news_item(pub_date, guid, title, link, related_news):
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
 def decode_google_news_url(source_url):
+    """Google 뉴스 URL을 디코딩합니다."""
     url = urlparse(source_url)
     path = url.path.split('/')
     if (
@@ -101,11 +105,6 @@ def decode_google_news_url(source_url):
         try:
             decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
             decoded_str = decoded_bytes.decode('latin1')
-
-            # YouTube 링크 처리
-            youtube_match = re.search(r'(https?://(www\.)?youtube\.com/watch\?v=[\w-]+)', decoded_str)
-            if youtube_match:
-                return youtube_match.group(1)
 
             prefix = bytes([0x08, 0x13, 0x22]).decode('latin1')
             if decoded_str.startswith(prefix):
@@ -131,25 +130,24 @@ def decode_google_news_url(source_url):
     return source_url
 
 def get_original_link(google_link, session, max_retries=5):
+    """원본 링크를 가져옵니다."""
     decoded_url = decode_google_news_url(google_link)
-    if decoded_url != google_link:
-        # YouTube 링크 확인
-        if 'youtube.com' in decoded_url or 'youtu.be' in decoded_url:
-            return decoded_url
-        # 다른 링크들에 대한 처리
+    
+    if decoded_url.startswith('http'):
         return decoded_url
 
-    # 디코딩 실패 시 requests 사용
-    logging.info(f"Google News URL 디코딩 실패. requests를 사용하여 재시도합니다.")
+    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
+    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
     
     wait_times = [5, 10, 30, 45, 60]
     for attempt in range(max_retries):
         try:
             response = session.get(google_link, allow_redirects=True, timeout=10)
-            if 'news.google.com' not in response.url:
-                logging.info(f"Requests를 사용하여 성공 - Google 링크: {google_link}")
-                logging.info(f"최종 URL: {response.url}")
-                return response.url
+            final_url = response.url
+            if 'news.google.com' not in final_url:
+                logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
+                logging.info(f"최종 URL: {final_url}")
+                return final_url
         except requests.RequestException as e:
             if attempt == max_retries - 1:
                 logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
@@ -162,10 +160,12 @@ def get_original_link(google_link, session, max_retries=5):
     return google_link
 
 def fetch_rss_feed(url):
+    """RSS 피드를 가져옵니다."""
     response = requests.get(url)
     return response.content
 
 def replace_brackets(text):
+    """대괄호와 꺾쇠괄호를 유니코드 문자로 대체합니다."""
     text = text.replace('[', '［').replace(']', '］')
     text = text.replace('<', '〈').replace('>', '〉')
     text = re.sub(r'(?<!\s)(?<!^)［', ' ［', text)
@@ -175,6 +175,7 @@ def replace_brackets(text):
     return text
 
 def parse_html_description(html_desc, session):
+    """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(html_desc, 'html.parser')
     items = soup.find_all('li')
 
@@ -204,11 +205,13 @@ def parse_html_description(html_desc, session):
     return news_string
 
 def parse_rss_date(pub_date):
+    """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
     dt = parser.parse(pub_date)
     dt_kst = dt.astimezone(gettz('Asia/Seoul'))
     return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
 
 def send_discord_message(webhook_url, message):
+    """Discord 웹훅을 사용하여 메시지를 전송합니다."""
     payload = {"content": message}
     headers = {"Content-Type": "application/json"}
     response = requests.post(webhook_url, json=payload, headers=headers)
@@ -220,6 +223,7 @@ def send_discord_message(webhook_url, message):
     time.sleep(3)
 
 def extract_news_items(description, session):
+    """HTML 설명에서 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
     for li in soup.find_all('li'):
@@ -233,6 +237,7 @@ def extract_news_items(description, session):
     return news_items
 
 def main():
+    """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
