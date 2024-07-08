@@ -101,25 +101,27 @@ def replace_brackets(text):
     return text.replace("[", "〔").replace("]", "〕")
 
 def get_original_link(google_link, max_retries=5):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+    session = requests.Session()
+    wait_times = [5, 10, 30, 45, 60]  # 기본 대기 시간 (초)
     
     for attempt in range(max_retries):
         try:
-            response = requests.get(google_link, headers=headers, allow_redirects=True, timeout=10)
-            if 'news.google.com' not in response.url:
-                return response.url
+            response = session.get(google_link, allow_redirects=True, timeout=10)
+            final_url = response.url
+            if 'news.google.com' not in final_url:
+                return final_url
             else:
-                wait_time = (2 ** attempt) + random.random()  # 지수 백오프 + 작은 랜덤값
+                base_wait_time = wait_times[min(attempt, len(wait_times) - 1)]
+                wait_time = base_wait_time + random.uniform(0, 5)  # 0-5초의 랜덤 시간 추가
                 logging.warning(f"시도 {attempt + 1}/{max_retries}: 원본 링크를 가져오지 못했습니다. {wait_time:.2f}초 후 재시도합니다.")
                 time.sleep(wait_time)
         except requests.RequestException as e:
-            wait_time = (2 ** attempt) + random.random()
+            base_wait_time = wait_times[min(attempt, len(wait_times) - 1)]
+            wait_time = base_wait_time + random.uniform(0, 5)
             logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 중 오류 발생. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
             time.sleep(wait_time)
     
-    logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {google_link}")
+    logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다. 원래의 Google 링크를 사용합니다: {google_link}")
     return google_link
 
 def parse_html_description(html_desc):
@@ -205,7 +207,7 @@ def main():
 
         title = item.find('title').text
         google_link = item.find('link').text
-        link = get_original_link(google_link)  # 여기서 원본 링크를 가져옵니다
+        link = get_original_link(google_link)
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
