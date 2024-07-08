@@ -12,7 +12,7 @@ import logging
 from bs4 import BeautifulSoup
 import json
 import base64
-import urllib.parse
+from urllib.parse import urlparse
 import sys
 
 # 로깅 설정
@@ -89,35 +89,45 @@ def save_news_item(pub_date, guid, title, link, related_news):
         
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
-def decode_google_news_url(url):
-    # 정규 표현식을 사용하여 base64 부분 추출
-    match = re.search(r'/articles/(.+?)(\?|$)', url)
-    if not match:
-        return None
+def decode_google_news_url(source_url):
+    url = urlparse(source_url)
+    path = url.path.split('/')
+    if (
+        url.hostname == "news.google.com" and
+        len(path) > 1 and
+        path[len(path) - 2] == "articles"
+    ):
+        base64_str = path[len(path) - 1]
+        try:
+            decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
+            decoded_str = decoded_bytes.decode('latin1')
 
-    base64_url = match.group(1)
+            prefix = bytes([0x08, 0x13, 0x22]).decode('latin1')
+            if decoded_str.startswith(prefix):
+                decoded_str = decoded_str[len(prefix):]
+
+            suffix = bytes([0xd2, 0x01, 0x00]).decode('latin1')
+            if decoded_str.endswith(suffix):
+                decoded_str = decoded_str[:-len(suffix)]
+
+            bytes_array = bytearray(decoded_str, 'latin1')
+            length = bytes_array[0]
+            if length >= 0x80:
+                decoded_str = decoded_str[2:length+1]
+            else:
+                decoded_str = decoded_str[1:length+1]
+
+            logging.info(f"Google News URL 디코딩 성공: {source_url} -> {decoded_str}")
+            return decoded_str
+        except Exception as e:
+            logging.error(f"Google News URL 디코딩 중 오류 발생: {e}")
     
-    try:
-        # base64 디코딩
-        decoded = base64.urlsafe_b64decode(base64_url + '=' * (4 - len(base64_url) % 4))
-        
-        # 디코딩된 문자열에서 URL 추출
-        url_match = re.search(br'(https?://\S+)', decoded)
-        if url_match:
-            extracted_url = url_match.group(1).decode('utf-8')
-            
-            # URL 디코딩
-            return urllib.parse.unquote(extracted_url)
-    except Exception as e:
-        logging.error(f"URL 디코딩 중 오류 발생: {e}")
-    
-    return None
+    logging.warning(f"Google News URL 디코딩 실패, 원본 URL 반환: {source_url}")
+    return source_url
 
 def get_original_link(google_link, session, max_retries=5):
     decoded_url = decode_google_news_url(google_link)
-    if decoded_url:
-        logging.info(f"Google News URL 디코딩 성공 - Google 링크: {google_link}")
-        logging.info(f"추출된 원본 URL: {decoded_url}")
+    if decoded_url != google_link:
         return decoded_url
 
     # 디코딩 실패 시 requests 사용
