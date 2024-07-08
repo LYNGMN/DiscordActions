@@ -245,10 +245,7 @@ def main():
     init_db(reset=INITIALIZE)
 
     session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    })
-
+    
     news_items = root.findall('.//item')
     if INITIALIZE:
         news_items = list(news_items)
