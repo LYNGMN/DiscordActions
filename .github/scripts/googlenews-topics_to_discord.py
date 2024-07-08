@@ -152,7 +152,7 @@ def get_original_link(google_link, max_retries=5):
         except requests.RequestException as e:
             base_wait_time = wait_times[min(attempt, len(wait_times) - 1)]
             wait_time = base_wait_time + random.uniform(0, 5)
-            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 중 오류 발생. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
+            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 중 오류 발생. {waittime:.2f}초 후 재시도합니다. 오류: {str(e)}")
             time.sleep(wait_time)
     
     logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다. 원래의 Google 링크를 사용합니다: {google_link}")
@@ -252,7 +252,10 @@ def main():
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
         description = parse_html_description(description_html)
-        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}\n>>> {description}\n\n📅 {formatted_date}"
+        if not description.strip():
+            description = "\n> \n"
+
+        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}\n>>> {description}\n📅 {formatted_date}"
         send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
         save_news_item(pub_date, guid, title, link, related_news_json)
