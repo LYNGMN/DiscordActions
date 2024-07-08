@@ -89,50 +89,56 @@ def save_news_item(pub_date, guid, title, link, related_news):
         
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
+def decode_google_news_url(url):
+    # 정규 표현식을 사용하여 base64 부분 추출
+    match = re.search(r'/articles/(.+?)(\?|$)', url)
+    if not match:
+        return None
+
+    base64_url = match.group(1)
+    
+    try:
+        # base64 디코딩
+        decoded = base64.urlsafe_b64decode(base64_url + '=' * (4 - len(base64_url) % 4))
+        
+        # 디코딩된 문자열에서 URL 추출
+        url_match = re.search(br'(https?://\S+)', decoded)
+        if url_match:
+            extracted_url = url_match.group(1).decode('utf-8')
+            
+            # URL 디코딩
+            return urllib.parse.unquote(extracted_url)
+    except Exception as e:
+        logging.error(f"URL 디코딩 중 오류 발생: {e}")
+    
+    return None
+
 def get_original_link(google_link, session, max_retries=5):
-    def base64_decode_url(url):
-        try:
-            if 'news.google.com/articles/' in url:
-                base64_url = url.replace("https://news.google.com/articles/", "").split("?")[0]
-                decoded_url = base64.urlsafe_b64decode(base64_url + '=' * (4 - len(base64_url) % 4))
-                actual_url = decoded_url[4:-3].decode('utf-8')
-                return urllib.parse.unquote(actual_url)
-            return None
-        except Exception as e:
-            logging.warning(f"Base64 디코딩 실패: {str(e)}")
-            return None
-
-    def requests_get_url(url, session, max_retries=5):
-        wait_times = [5, 10, 30, 45, 60]
-        for attempt in range(max_retries):
-            try:
-                response = session.get(url, allow_redirects=True, timeout=10)
-                return response.url
-            except requests.RequestException as e:
-                if attempt == max_retries - 1:
-                    logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
-                    return None
-                wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
-                logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
-                time.sleep(wait_time)
-
-    # 먼저 base64 디코딩 시도
-    decoded_url = base64_decode_url(google_link)
+    decoded_url = decode_google_news_url(google_link)
     if decoded_url:
-        logging.info(f"Base64 디코딩 성공 - Google 링크: {google_link}")
+        logging.info(f"Google News URL 디코딩 성공 - Google 링크: {google_link}")
         logging.info(f"추출된 원본 URL: {decoded_url}")
         return decoded_url
 
-    # base64 디코딩 실패 시 requests 사용
-    logging.info(f"Base64 디코딩 실패. requests를 사용하여 재시도합니다.")
+    # 디코딩 실패 시 requests 사용
+    logging.info(f"Google News URL 디코딩 실패. requests를 사용하여 재시도합니다.")
+    
+    wait_times = [5, 10, 30, 45, 60]
+    for attempt in range(max_retries):
+        try:
+            response = session.get(google_link, allow_redirects=True, timeout=10)
+            if 'news.google.com' not in response.url:
+                logging.info(f"Requests를 사용하여 성공 - Google 링크: {google_link}")
+                logging.info(f"최종 URL: {response.url}")
+                return response.url
+        except requests.RequestException as e:
+            if attempt == max_retries - 1:
+                logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
+                return google_link
+            wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
+            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
+            time.sleep(wait_time)
 
-    final_url = requests_get_url(google_link, session, max_retries)
-    if final_url:
-        logging.info(f"Requests를 사용하여 성공 - Google 링크: {google_link}")
-        logging.info(f"최종 URL: {final_url}")
-        return final_url
-
-    # 모든 방법 실패 시 원래 Google 링크 반환
     logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
     return google_link
 
