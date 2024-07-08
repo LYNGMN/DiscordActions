@@ -253,7 +253,7 @@ def main():
 
         description = parse_html_description(description_html)
         if not description.strip():
-            description = "\n> \n"
+            description = "> \n"
 
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}\n>>> {description}\n📅 {formatted_date}"
         send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
