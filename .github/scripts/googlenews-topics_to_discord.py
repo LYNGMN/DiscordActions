@@ -178,12 +178,12 @@ def parse_html_description(html_desc):
             link = get_original_link(google_link)
             title_text = replace_brackets(title_text)
             press_name = press_match.group(1)
-            news_item = f"- [{title_text}](<{link}>) | {press_name}"
+            news_item = f"- [{title_text}]({link}) | {press_name}"
             news_items.append(news_item)
 
     news_string = '\n'.join(news_items)
     if full_content_link:
-        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
+        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기]({full_content_link})"
 
     return news_string
 
@@ -252,7 +252,7 @@ def main():
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
         description = parse_html_description(description_html)
-        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**[{title}](<{link}>)**\n>>> {description}\n\n📅 {formatted_date}"
+        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}\n>>> {description}\n\n📅 {formatted_date}"
         send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
         save_news_item(pub_date, guid, title, link, related_news_json)
