@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE }}
+  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
 
 jobs:
   fetch-and-post:
