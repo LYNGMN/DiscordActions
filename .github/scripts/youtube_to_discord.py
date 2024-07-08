@@ -19,6 +19,7 @@ LANGUAGE = os.getenv('LANGUAGE', 'English')
 INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))
 MAX_RESULTS = int(os.getenv('MAX_RESULTS') or '10')
 IS_FIRST_RUN = os.getenv('IS_FIRST_RUN', 'false').lower() == 'true'
+INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
@@ -31,19 +32,28 @@ def check_env_variables():
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
 
 # DB 초기화 함수
-def init_db():
+def init_db(reset=False):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    if reset:
+        c.execute("DROP TABLE IF EXISTS videos")
+        logging.info("기존 videos 테이블 삭제")
     c.execute('''CREATE TABLE IF NOT EXISTS videos
                  (published_at TEXT,
                   channel_title TEXT,
+                  channel_id TEXT,
                   title TEXT,
                   video_id TEXT PRIMARY KEY,
                   video_url TEXT,
                   description TEXT,
                   category TEXT,
                   duration TEXT,
-                  thumbnail_url TEXT)''')
+                  thumbnail_url TEXT,
+                  tags TEXT,
+                  live_broadcast_content TEXT,
+                  scheduled_start_time TEXT,
+                  default_language TEXT,
+                  caption TEXT)''')
     conn.commit()
     conn.close()
     logging.info("데이터베이스 초기화 완료")
@@ -53,11 +63,13 @@ def save_video(video_data):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''INSERT OR REPLACE INTO videos 
-                 (published_at, channel_title, title, video_id, video_url, description, category, duration, thumbnail_url) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-              (video_data['published_at'], video_data['channel_title'], video_data['title'],
+                 (published_at, channel_title, channel_id, title, video_id, video_url, description, category, duration, thumbnail_url, tags, live_broadcast_content, scheduled_start_time, default_language, caption) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+              (video_data['published_at'], video_data['channel_title'], video_data['channel_id'], video_data['title'],
                video_data['video_id'], video_data['video_url'], video_data['description'], 
-               video_data['category'], video_data['duration'], video_data['thumbnail_url']))
+               video_data['category'], video_data['duration'], video_data['thumbnail_url'],
+               video_data['tags'], video_data['live_broadcast_content'], video_data['scheduled_start_time'],
+               video_data['default_language'], video_data['caption']))
     conn.commit()
     conn.close()
     logging.info(f"새 비디오 저장: {video_data['video_id']}")
@@ -158,7 +170,7 @@ def fetch_and_post_videos():
         order='date',
         type='video',
         part='snippet,id',
-        maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN else MAX_RESULTS
+        maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN or INITIALIZE else MAX_RESULTS
     ).execute()
 
     if 'items' not in response:
@@ -168,7 +180,7 @@ def fetch_and_post_videos():
     video_ids = [item['id']['videoId'] for item in response['items']]
 
     video_details_response = youtube.videos().list(
-        part="snippet,contentDetails",
+        part="snippet,contentDetails,liveStreamingDetails",
         id=','.join(video_ids)
     ).execute()
 
@@ -177,12 +189,13 @@ def fetch_and_post_videos():
     for video_detail in video_details_response['items']:
         snippet = video_detail['snippet']
         content_details = video_detail['contentDetails']
+        live_streaming_details = video_detail.get('liveStreamingDetails', {})
 
         video_id = video_detail['id']
         published_at = snippet['publishedAt']
         
         # 이미 저장된 비디오는 건너뜁니다.
-        if any(saved_video[3] == video_id for saved_video in saved_videos):
+        if any(saved_video[4] == video_id for saved_video in saved_videos):
             continue
 
         # 이미 저장된 비디오보다 새로운 비디오만 처리합니다.
@@ -191,23 +204,35 @@ def fetch_and_post_videos():
 
         video_title = html.unescape(snippet['title'])
         channel_title = html.unescape(snippet['channelTitle'])
+        channel_id = snippet['channelId']
         description = html.unescape(snippet.get('description', ''))
         category_id = snippet.get('categoryId', '')
         category_name = get_category_name(category_id)
         thumbnail_url = snippet['thumbnails']['high']['url']
         duration = parse_duration(content_details['duration'])
         video_url = f"https://youtu.be/{video_detail['id']}"
+        tags = ','.join(snippet.get('tags', []))
+        live_broadcast_content = snippet.get('liveBroadcastContent', '')
+        scheduled_start_time = live_streaming_details.get('scheduledStartTime', '')
+        default_language = snippet.get('defaultLanguage', '')
+        caption = content_details.get('caption', '')
 
         video_data = {
             'published_at': published_at,
             'channel_title': channel_title,
+            'channel_id': channel_id,
             'title': video_title,
             'video_id': video_id,
             'video_url': video_url,
             'description': description,
             'category': category_name,
             'duration': duration,
-            'thumbnail_url': thumbnail_url
+            'thumbnail_url': thumbnail_url,
+            'tags': tags,
+            'live_broadcast_content': live_broadcast_content,
+            'scheduled_start_time': scheduled_start_time,
+            'default_language': default_language,
+            'caption': caption
         }
 
         new_videos.append(video_data)
@@ -229,6 +254,9 @@ def fetch_and_post_videos():
                 f"📅 게시일: `{formatted_published_at} (KST)`\n"
                 f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
             )
+            if video['scheduled_start_time']:
+                formatted_start_time = convert_to_kst_and_format(video['scheduled_start_time'])
+                message += f"\n\n🔴 예정된 라이브 시작 시간: `{formatted_start_time} (KST)`"
         else:
             message = (
                 f"`{video['channel_title']} - YouTube`\n"
@@ -239,6 +267,9 @@ def fetch_and_post_videos():
                 f"📅 Published: `{formatted_published_at}`\n"
                 f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
             )
+            if video['scheduled_start_time']:
+                formatted_start_time = convert_to_kst_and_format(video['scheduled_start_time'])
+                message += f"\n\n🔴 Scheduled Live Start Time: `{formatted_start_time}`"
 
         post_to_discord(message)
         save_video(video)
@@ -247,9 +278,13 @@ def fetch_and_post_videos():
 if __name__ == "__main__":
     try:
         check_env_variables()
+        if INITIALIZE:
+            init_db(reset=True)  # DB 초기화
+            logging.info("초기화 모드로 실행 중: 데이터베이스를 재설정하고 모든 비디오를 다시 가져옵니다.")
         fetch_and_post_videos()
         
         # 디버그 정보 출력
+        logging.info(f"INITIALIZE: {INITIALIZE}")
         logging.info(f"IS_FIRST_RUN: {IS_FIRST_RUN}")
         logging.info(f"Database file size: {os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 'File not found'}")
         
