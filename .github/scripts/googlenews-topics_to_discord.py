@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 import json
 import base64
 import urllib.parse
+import sys
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -148,7 +149,7 @@ def replace_brackets(text):
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
 
-def parse_html_description(html_desc):
+def parse_html_description(html_desc, session):
     soup = BeautifulSoup(html_desc, 'html.parser')
     items = soup.find_all('li')
 
@@ -193,7 +194,7 @@ def send_discord_message(webhook_url, message):
         logging.info("Discord에 메시지 게시 완료")
     time.sleep(3)
 
-def extract_news_items(description):
+def extract_news_items(description, session):
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
     for li in soup.find_all('li'):
@@ -238,10 +239,10 @@ def main():
         
         formatted_date = parse_rss_date(pub_date)
 
-        related_news = extract_news_items(description_html)
+        related_news = extract_news_items(description_html, session)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-        description = parse_html_description(description_html)
+        description = parse_html_description(description_html, session)
 
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}"
         if description:
@@ -263,5 +264,6 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logging.error(f"오류 발생: {e}", exc_info=True)
-    finally:
-        logging.info("프로그램 실행 종료")
+        sys.exit(1)  # 오류 발생 시 비정상 종료
+    else:
+        logging.info("프로그램 정상 종료")
