@@ -178,12 +178,12 @@ def parse_html_description(html_desc):
             link = get_original_link(google_link)
             title_text = replace_brackets(title_text)
             press_name = press_match.group(1)
-            news_item = f"- [{title_text}]({link}) | {press_name}"
+            news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
     news_string = '\n'.join(news_items)
     if full_content_link:
-        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기]({full_content_link})"
+        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
 
     return news_string
 
