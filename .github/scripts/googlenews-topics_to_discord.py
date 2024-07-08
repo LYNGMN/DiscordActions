@@ -4,6 +4,7 @@ from html import unescape
 import re
 import os
 import time
+import random
 from datetime import datetime
 from dateutil import parser
 from dateutil.tz import gettz
@@ -99,13 +100,27 @@ def fetch_rss_feed(url):
 def replace_brackets(text):
     return text.replace("[", "〔").replace("]", "〕")
 
-def get_original_link(google_link):
-    try:
-        response = requests.get(google_link, allow_redirects=True, timeout=10)
-        return response.url
-    except requests.RequestException:
-        logging.warning(f"원본 링크를 가져오는 데 실패했습니다: {google_link}")
-        return google_link
+def get_original_link(google_link, max_retries=5):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(google_link, headers=headers, allow_redirects=True, timeout=10)
+            if 'news.google.com' not in response.url:
+                return response.url
+            else:
+                wait_time = (2 ** attempt) + random.random()  # 지수 백오프 + 작은 랜덤값
+                logging.warning(f"시도 {attempt + 1}/{max_retries}: 원본 링크를 가져오지 못했습니다. {wait_time:.2f}초 후 재시도합니다.")
+                time.sleep(wait_time)
+        except requests.RequestException as e:
+            wait_time = (2 ** attempt) + random.random()
+            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 중 오류 발생. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
+            time.sleep(wait_time)
+    
+    logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {google_link}")
+    return google_link
 
 def parse_html_description(html_desc):
     html_desc = unescape(html_desc)
@@ -124,7 +139,7 @@ def parse_html_description(html_desc):
         press_match = re.search(r'<font color="#6f6f6f">(.*?)</font>', item)
         if title_match and press_match:
             google_link, title_text = title_match.groups()
-            link = get_original_link(google_link)  # 여기서 원본 링크를 가져옵니다
+            link = get_original_link(google_link)
             title_text = replace_brackets(title_text)
             press_name = press_match.group(1)
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
@@ -160,7 +175,7 @@ def extract_news_items(description):
         if a_tag:
             title = a_tag.text
             google_link = a_tag['href']
-            link = get_original_link(google_link)  # 여기서 원본 링크를 가져옵니다
+            link = get_original_link(google_link)
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
