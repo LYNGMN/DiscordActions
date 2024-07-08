@@ -115,6 +115,8 @@ def get_original_link(google_link, max_retries=5):
                 msn_link = query_params['url'][0]
                 # URL 디코딩
                 msn_link = urllib.parse.unquote(msn_link)
+                # 추가 디코딩 처리
+                msn_link = urllib.parse.unquote(msn_link)
                 logging.info(f"추출된 MSN 링크: {msn_link}")
                 return msn_link
         except Exception as e:
