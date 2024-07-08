@@ -252,10 +252,14 @@ def main():
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
         description = parse_html_description(description_html)
-        if not description.strip():
-            description = "> \n"
 
-        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}\n>>> {description}\n📅 {formatted_date}"
+        discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}"
+        if description:
+            discord_message += f"\n>>> {description}"
+        else:
+            discord_message += f"\n>>> "
+        discord_message += f"\n\n📅 {formatted_date}"
+
         send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
 
         save_news_item(pub_date, guid, title, link, related_news_json)
