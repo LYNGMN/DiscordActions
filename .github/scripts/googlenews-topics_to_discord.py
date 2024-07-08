@@ -105,21 +105,29 @@ def get_original_link(google_link, max_retries=5):
     session = requests.Session()
     wait_times = [5, 10, 30, 45, 60]  # 기본 대기 시간 (초)
     
+    # MSN 링크 특별 처리
+    if 'news.google.com/rss/articles/' in google_link and 'msn.com' in google_link:
+        try:
+            # Google News RSS 링크에서 실제 MSN 링크 추출
+            parsed_url = urllib.parse.urlparse(google_link)
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            if 'url' in query_params:
+                msn_link = query_params['url'][0]
+                # URL 디코딩
+                msn_link = urllib.parse.unquote(msn_link)
+                logging.info(f"추출된 MSN 링크: {msn_link}")
+                return msn_link
+        except Exception as e:
+            logging.error(f"MSN 링크 추출 중 오류 발생: {str(e)}")
+    
     for attempt in range(max_retries):
         try:
             response = session.get(google_link, allow_redirects=True, timeout=10)
             final_url = response.url
+            # URL 디코딩
+            final_url = urllib.parse.unquote(final_url)
             logging.info(f"Google 링크: {google_link}")
             logging.info(f"최종 URL: {final_url}")
-            
-            # MSN 링크 특별 처리
-            if 'msn.com' in final_url and final_url.endswith('/'):
-                parsed_url = urllib.parse.urlparse(final_url)
-                query_params = urllib.parse.parse_qs(parsed_url.query)
-                if 'url' in query_params:
-                    msn_url = query_params['url'][0]
-                    logging.info(f"MSN 원본 URL: {msn_url}")
-                    return msn_url
             
             if 'news.google.com' not in final_url:
                 return final_url
