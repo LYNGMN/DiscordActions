@@ -12,6 +12,7 @@ import sqlite3
 import logging
 from bs4 import BeautifulSoup
 import json
+import urllib.parse
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -106,10 +107,20 @@ def get_original_link(google_link, max_retries=5):
     
     for attempt in range(max_retries):
         try:
-            response = session.get(google_link, allow_redirects=True, timeout=10)
-            final_url = response.url
-            if 'news.google.com' not in final_url:
-                return final_url
+            response = session.get(google_link, allow_redirects=False, timeout=10)
+            if response.status_code in (301, 302, 303, 307, 308):
+                redirect_url = response.headers.get('Location')
+                if redirect_url:
+                    if redirect_url.startswith('/'):
+                        # 상대 URL인 경우 절대 URL로 변환
+                        redirect_url = f"https://news.google.com{redirect_url}"
+                    # URL 디코딩 수행
+                    decoded_url = urllib.parse.unquote(redirect_url)
+                    return decoded_url
+            elif 'news.google.com' not in response.url:
+                # URL 디코딩 수행
+                decoded_url = urllib.parse.unquote(response.url)
+                return decoded_url
             else:
                 base_wait_time = wait_times[min(attempt, len(wait_times) - 1)]
                 wait_time = base_wait_time + random.uniform(0, 5)  # 0-5초의 랜덤 시간 추가
