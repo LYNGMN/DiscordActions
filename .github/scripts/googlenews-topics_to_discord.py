@@ -99,7 +99,18 @@ def fetch_rss_feed(url):
     return response.content
 
 def replace_brackets(text):
-    return text.replace("[", "〔").replace("]", "〕")
+    # 대괄호를 특수문자로 변환
+    text = text.replace('[', '［').replace(']', '］')
+    # 꺽쇠괄호를 특수문자로 변환
+    text = text.replace('<', '〈').replace('>', '〉')
+    
+    # 변환된 특수문자 뒤에 공백이 없으면 공백 추가, 단 맨 앞부분은 제외
+    text = re.sub(r'(?<!\s)(?<!^)［', ' ［', text)
+    text = re.sub(r'］(?!\s)', '］ ', text)
+    text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
+    text = re.sub(r'〉(?!\s)', '〉 ', text)
+    
+    return text
 
 def get_original_link(google_link, max_retries=5):
     session = requests.Session()
