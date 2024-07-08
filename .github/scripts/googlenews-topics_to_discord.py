@@ -107,20 +107,22 @@ def get_original_link(google_link, max_retries=5):
     
     for attempt in range(max_retries):
         try:
-            response = session.get(google_link, allow_redirects=False, timeout=10)
-            if response.status_code in (301, 302, 303, 307, 308):
-                redirect_url = response.headers.get('Location')
-                if redirect_url:
-                    if redirect_url.startswith('/'):
-                        # 상대 URL인 경우 절대 URL로 변환
-                        redirect_url = f"https://news.google.com{redirect_url}"
-                    # URL 디코딩 수행
-                    decoded_url = urllib.parse.unquote(redirect_url)
-                    return decoded_url
-            elif 'news.google.com' not in response.url:
-                # URL 디코딩 수행
-                decoded_url = urllib.parse.unquote(response.url)
-                return decoded_url
+            response = session.get(google_link, allow_redirects=True, timeout=10)
+            final_url = response.url
+            logging.info(f"Google 링크: {google_link}")
+            logging.info(f"최종 URL: {final_url}")
+            
+            # MSN 링크 특별 처리
+            if 'msn.com' in final_url and final_url.endswith('/'):
+                parsed_url = urllib.parse.urlparse(final_url)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                if 'url' in query_params:
+                    msn_url = query_params['url'][0]
+                    logging.info(f"MSN 원본 URL: {msn_url}")
+                    return msn_url
+            
+            if 'news.google.com' not in final_url:
+                return final_url
             else:
                 base_wait_time = wait_times[min(attempt, len(wait_times) - 1)]
                 wait_time = base_wait_time + random.uniform(0, 5)  # 0-5초의 랜덤 시간 추가
