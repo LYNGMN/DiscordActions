@@ -1,36 +1,29 @@
----
 name: Google News (Keyword) RSS to Discord
-
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 15분마다 실행
+    - cron: '*/15 * '*  # 15분마다 실행
   workflow_dispatch:  # 수동 실행 옵션
-
 env:
-  INITIALIZE_MODE_GOOGLENEWS_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
-  DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-  DISCORD_AVATAR_GOOGLENEWS_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-  DISCORD_USERNAME_GOOGLENEWS_KEYWORD: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
+  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
+  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
+  DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
+  DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
   KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
   KEYWORD: ${{ secrets.KEYWORD }}
   RSS_URL: ${{ secrets.RSS_URL }}
-
 jobs:
   fetch-and-post:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
-
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.8'
-
     - name: Install Dependencies
       run: |
         pip install requests python-dateutil beautifulsoup4
-
     - name: Get latest successful run ID
       id: get_latest_run
       uses: actions/github-script@v7
@@ -45,20 +38,18 @@ jobs:
             status: 'success'
           });
           return workflow.data.workflow_runs[0]?.id.toString() || '';
-
     - name: Download previous database
-      if: env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD != 'true' && steps.get_latest_run.outputs.result != ''
+      if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
         name: googlenews_keyword_database
         run-id: ${{ steps.get_latest_run.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
-
     - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news.db ]; then
+        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "Initializing or creating new database"
           rm -f google_news.db
@@ -66,26 +57,23 @@ jobs:
         else
           echo "exists=true" >> $GITHUB_OUTPUT
         fi
-
     - name: Read Google News RSS and Post to Discord
       env:
-        DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-        DISCORD_AVATAR_GOOGLENEWS_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-        DISCORD_USERNAME_GOOGLENEWS_KEYWORD: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
+        DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
+        DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
         KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
         KEYWORD: ${{ secrets.KEYWORD }}
         RSS_URL: ${{ secrets.RSS_URL }}
         INITIALIZE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
       run: |
         python .github/scripts/googlenews_to_discord.py
-
     - name: Upload updated database
       uses: actions/upload-artifact@v4
       with:
         name: googlenews_keyword_database
         path: google_news.db
         retention-days: 90
-
     - name: Debug Information
       if: always()
       run: |
