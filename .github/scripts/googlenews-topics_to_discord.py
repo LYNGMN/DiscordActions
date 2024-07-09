@@ -19,18 +19,18 @@ from bs4 import BeautifulSoup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK_GOOGLENEWS_TOPIC')
-DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR_GOOGLENEWS_TOPIC')
-DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME_GOOGLENEWS_TOPIC')
-INITIALIZE = os.environ.get('INITIALIZE_MODE_GOOGLENEWS_TOPIC', 'false').lower() == 'true'
+DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
+DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR')
+DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME')
+INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'google_news_topic.db'
 
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
-    if not DISCORD_WEBHOOK_TOPIC:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPIC")
+    if not DISCORD_WEBHOOK:
+        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK")
 
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
@@ -257,9 +257,9 @@ def main():
     init_db(reset=INITIALIZE)
 
     # 환경 변수 가져오기
-    discord_webhook_url = os.environ.get('DISCORD_WEBHOOK_TOPICS')
-    discord_avatar_url = os.environ.get('DISCORD_AVATAR_TOPICS', '').strip()
-    discord_username = os.environ.get('DISCORD_USERNAME_TOPICS', '').strip()
+    discord_webhook_url = os.environ.get('DISCORD_WEBHOOK')
+    discord_avatar_url = os.environ.get('DISCORD_AVATAR', '').strip()
+    discord_username = os.environ.get('DISCORD_USERNAME', '').strip()
 
     session = requests.Session()
     
