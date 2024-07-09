@@ -19,9 +19,9 @@ from bs4 import BeautifulSoup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK_TOPICS = os.environ.get('DISCORD_WEBHOOK_GOOGLENEWS_TOPIC')
-DISCORD_AVATAR_TOPICS = os.environ.get('DISCORD_AVATAR_GOOGLENEWS_TOPIC')
-DISCORD_USERNAME_TOPICS = os.environ.get('DISCORD_USERNAME_GOOGLENEWS_TOPIC')
+DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK_GOOGLENEWS_TOPIC')
+DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR_GOOGLENEWS_TOPIC')
+DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME_GOOGLENEWS_TOPIC')
 INITIALIZE = os.environ.get('INITIALIZE_MODE_GOOGLENEWS_TOPIC', 'false').lower() == 'true'
 
 # DB 설정
