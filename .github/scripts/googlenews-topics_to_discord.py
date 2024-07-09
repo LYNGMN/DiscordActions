@@ -8,6 +8,7 @@ import logging
 import json
 import base64
 import sqlite3
+import sys
 from urllib.parse import urlparse
 from datetime import datetime
 from dateutil import parser
@@ -19,6 +20,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 DISCORD_WEBHOOK_TOPICS = os.environ.get('DISCORD_WEBHOOK_TOPICS')
+DISCORD_AVATAR_TOPICS = os.environ.get('DISCORD_AVATAR_TOPICS')
+DISCORD_USERNAME_TOPICS = os.environ.get('DISCORD_USERNAME_TOPICS')
 INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 
 # DB 설정
@@ -173,7 +176,7 @@ def replace_brackets(text):
     text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
-
+	
 def parse_html_description(html_desc, session):
     """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(html_desc, 'html.parser')
@@ -210,9 +213,18 @@ def parse_rss_date(pub_date):
     dt_kst = dt.astimezone(gettz('Asia/Seoul'))
     return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
 
-def send_discord_message(webhook_url, message):
+def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅을 사용하여 메시지를 전송합니다."""
     payload = {"content": message}
+    
+    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
+    if avatar_url and avatar_url.strip():
+        payload["avatar_url"] = avatar_url
+    
+    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
+    if username and username.strip():
+        payload["username"] = username
+    
     headers = {"Content-Type": "application/json"}
     response = requests.post(webhook_url, json=payload, headers=headers)
     if response.status_code != 204:
@@ -243,6 +255,11 @@ def main():
     root = ET.fromstring(rss_data)
 
     init_db(reset=INITIALIZE)
+
+    # 환경 변수 가져오기
+    discord_webhook_url = os.environ.get('DISCORD_WEBHOOK_TOPICS')
+    discord_avatar_url = os.environ.get('DISCORD_AVATAR_TOPICS', '').strip()
+    discord_username = os.environ.get('DISCORD_USERNAME_TOPICS', '').strip()
 
     session = requests.Session()
     
@@ -278,7 +295,12 @@ def main():
             discord_message += f"\n>>> "
         discord_message += f"\n\n📅 {formatted_date}"
 
-        send_discord_message(DISCORD_WEBHOOK_TOPICS, discord_message)
+        send_discord_message(
+            discord_webhook_url,
+            discord_message,
+            avatar_url=discord_avatar_url,
+            username=discord_username
+        )
 
         save_news_item(pub_date, guid, title, link, related_news_json)
 
