@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 env:
-  INITIALIZE_MODE_GOOGLENEWS_TOPIC: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
-  DISCORD_WEBHOOK_GOOGLENEWS_TOPIC: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
-  DISCORD_AVATAR_GOOGLENEWS_TOPIC: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
-  DISCORD_USERNAME_GOOGLENEWS_TOPIC: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
+  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
+  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
+  DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
+  DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
 
 jobs:
   fetch-and-post:
@@ -43,7 +43,7 @@ jobs:
           return workflow.data.workflow_runs[0]?.id.toString() || '';
 
     - name: Download previous database
-      if: env.INITIALIZE_MODE_GOOGLENEWS_TOPIC != 'true' && steps.get_latest_run.outputs.result != ''
+      if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
         name: googlenews_database
@@ -54,20 +54,21 @@ jobs:
     - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}" == "true" ] || [ ! -f google_news_topic.db ]; then
+        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news_topic.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "Initializing or creating new database"
           rm -f google_news_topic.db
           touch google_news_topic.db
-        else:
+        else
           echo "exists=true" >> $GITHUB_OUTPUT
-          
+        fi
+
     - name: Read Google News RSS and Post to Discord
       env:
-        DISCORD_WEBHOOK_GOOGLENEWS_TOPIC: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
-        DISCORD_AVATAR_GOOGLENEWS_TOPIC: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
-        DISCORD_USERNAME_GOOGLENEWS_TOPIC: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
-        INITIALIZE_MODE_GOOGLENEWS_TOPIC: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR }}
+        DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME }}
+        INITIALIZE: ${{ secrets.INITIALIZE_MODE }}
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
 
@@ -82,7 +83,7 @@ jobs:
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "INITIALIZE_MODE_GOOGLENEWS_TOPIC: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}"
+        echo "INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
