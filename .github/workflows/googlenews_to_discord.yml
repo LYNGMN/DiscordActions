@@ -28,7 +28,7 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install requests python-dateutil
+        pip install requests python-dateutil beautifulsoup4
 
     - name: Get latest successful run ID
       id: get_latest_run
