@@ -1,89 +1,86 @@
-name: Google News (Keyword) RSS to Discord
+name: Google News (Topics) RSS to Discord
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 30분마다 실행
-  workflow_dispatch:  # 수동 실행 옵션
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
-env:
-  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
-  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-  DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-  DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
-  KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
-  KEYWORD: ${{ secrets.KEYWORD }}
-  RSS_URL: ${{ secrets.RSS_URL }}
 jobs:
   fetch-and-post:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.8'
+
     - name: Install Dependencies
       run: |
         pip install requests python-dateutil beautifulsoup4
+
     - name: Get latest successful run ID
       id: get_latest_run
       uses: actions/github-script@v7
       with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         result-encoding: string
         script: |
           const workflow = await github.rest.actions.listWorkflowRuns({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            workflow_id: 'googlenews_to_discord.yml',
+            workflow_id: 'googlenews-topics_to_discord.yml',
             status: 'success'
           });
           return workflow.data.workflow_runs[0]?.id.toString() || '';
+
     - name: Download previous database
       if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
       uses: actions/download-artifact@v4
       with:
-        name: googlenews_keyword_database
+        name: googlenews_database
         run-id: ${{ steps.get_latest_run.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
+
     - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news.db ]; then
+        if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}" == "true" ] || [ ! -f google_news_topic.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "Initializing or creating new database"
-          rm -f google_news.db
-          touch google_news.db
+          rm -f google_news_topic.db
+          touch google_news_topic.db
         else
           echo "exists=true" >> $GITHUB_OUTPUT
         fi
+
     - name: Read Google News RSS and Post to Discord
       env:
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-        DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-        DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
-        KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
-        KEYWORD: ${{ secrets.KEYWORD }}
-        RSS_URL: ${{ secrets.RSS_URL }}
-        INITIALIZE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
+        DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
+        DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
+        INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
       run: |
-        python .github/scripts/googlenews_to_discord.py
+        python .github/scripts/googlenews-topics_to_discord.py
+
     - name: Upload updated database
       uses: actions/upload-artifact@v4
       with:
-        name: googlenews_keyword_database
-        path: google_news.db
+        name: googlenews_database
+        path: google_news_topic.db
         retention-days: 90
+
     - name: Debug Information
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}"
+        echo "INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
-        ls -lh google_news.db || echo "Database file not found"
+        ls -lh google_news_topic.db || echo "Database file not found"
         echo "Database contents (if exists):"
-        sqlite3 google_news.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
+        sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
