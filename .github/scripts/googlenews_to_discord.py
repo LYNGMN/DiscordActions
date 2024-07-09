@@ -1,31 +1,31 @@
-import json
-import logging
-import os
-import random
+import xml.etree.ElementTree as ET
+import requests
 import re
+import os
+import time
+import random
+import logging
+import json
+import base64
 import sqlite3
 import sys
-import time
+from urllib.parse import urlparse
 from datetime import datetime
-from urllib.parse import parse_qs, unquote, urlparse
-
-import requests
-import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
 from dateutil import parser
 from dateutil.tz import gettz
+from bs4 import BeautifulSoup
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(level명)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK = os.getenv('DISCORD_WEBHOOK')
-DISCORD_AVATAR = os.getenv('DISCORD_AVATAR')
-DISCORD_USERNAME = os.getenv('DISCORD_USERNAME')
-INITIALIZE = os.getenv('INITIALIZE', 'false').lower() == 'true'
-KEYWORD_MODE = os.getenv('KEYWORD_MODE', 'false').lower() == 'true'
-KEYWORD = os.getenv('KEYWORD', '')
-RSS_URL = os.getenv('RSS_URL', '')
+DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
+DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR')
+DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME')
+INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
+KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
+KEYWORD = os.environ.get('KEYWORD', '')
+RSS_URL = os.environ.get('RSS_URL', '')
 
 # DB 설정
 DB_PATH = 'google_news.db'
@@ -69,8 +69,53 @@ def save_news_item(pub_date, guid, title, link, related_news):
                   (pub_date, guid, title, link, related_news))
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
+def decode_google_news_url(source_url):
+    """Google 뉴스 URL을 디코딩합니다."""
+    url = urlparse(source_url)
+    path = url.path.split('/')
+    if (
+        url.hostname == "news.google.com" and
+        len(path) > 1 and
+        path[len(path) - 2] == "articles"
+    ):
+        base64_str = path[len(path) - 1]
+        try:
+            decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
+            decoded_str = decoded_bytes.decode('latin1')
+
+            prefix = bytes([0x08, 0x13, 0x22]).decode('latin1')
+            if decoded_str.startswith(prefix):
+                decoded_str = decoded_str[len(prefix):]
+
+            suffix = bytes([0xd2, 0x01, 0x00]).decode('latin1')
+            if decoded_str.endswith(suffix):
+                decoded_str = decoded_str[:-len(suffix)]
+
+            bytes_array = bytearray(decoded_str, 'latin1')
+            length = bytes_array[0]
+            if length >= 0x80:
+                decoded_str = decoded_str[2:length+1]
+            else:
+                decoded_str = decoded_str[1:length+1]
+
+            logging.info(f"Google News URL 디코딩 성공: {source_url} -> {decoded_str}")
+            return decoded_str
+        except Exception as e:
+            logging.error(f"Google News URL 디코딩 중 오류 발생: {e}")
+    
+    logging.warning(f"Google News URL 디코딩 실패, 원본 URL 반환: {source_url}")
+    return source_url
+
 def get_original_link(google_link, session, max_retries=5):
     """원본 링크를 가져옵니다."""
+    decoded_url = decode_google_news_url(google_link)
+    
+    if decoded_url.startswith('http'):
+        return decoded_url
+
+    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
+    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
+    
     wait_times = [5, 10, 30, 45, 60]
     for attempt in range(max_retries):
         try:
@@ -167,7 +212,7 @@ def extract_keyword_from_url(url):
     if 'q' in query_params:
         encoded_keyword = query_params['q'][0]
         return unquote(encoded_keyword)
-    return "키워드"  # 기본값
+    return "디스코드"  # 기본값
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
