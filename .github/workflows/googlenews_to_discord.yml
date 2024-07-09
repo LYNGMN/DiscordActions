@@ -2,8 +2,9 @@ name: Google News (Keyword) RSS to Discord
 
 on:
   schedule:
-    - cron: '*/15 * '*  # 15분마다 실행
+    - cron: '*/15 * * * *'  # 15분마다 실행
   workflow_dispatch:  # 수동 실행 옵션
+
 env:
   INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
   DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
