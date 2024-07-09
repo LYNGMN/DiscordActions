@@ -1,4 +1,5 @@
 name: Google News (Keyword) RSS to Discord
+
 on:
   schedule:
     - cron: '*/15 * '*  # 15분마다 실행
@@ -49,7 +50,7 @@ jobs:
     - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news.db ]; then
+        if [ "${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "Initializing or creating new database"
           rm -f google_news.db
