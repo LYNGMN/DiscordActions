@@ -68,7 +68,7 @@ jobs:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR }}
         DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME }}
-        INITIALIZE: ${{ secrets.INITIALIZE_MODE }}
+        INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE }}
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
 
