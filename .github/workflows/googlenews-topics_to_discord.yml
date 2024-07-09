@@ -7,6 +7,9 @@ on:
 
 env:
   INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
+  DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}
+  DISCORD_AVATAR_TOPICS: ${{ secrets.DISCORD_AVATAR_TOPICS }}
+  DISCORD_USERNAME_TOPICS: ${{ secrets.DISCORD_USERNAME_TOPICS }}
 
 jobs:
   fetch-and-post:
@@ -63,6 +66,8 @@ jobs:
     - name: Read Google News RSS and Post to Discord
       env:
         DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}
+        DISCORD_AVATAR_TOPICS: ${{ secrets.DISCORD_AVATAR_TOPICS }}
+        DISCORD_USERNAME_TOPICS: ${{ secrets.DISCORD_USERNAME_TOPICS }}
         INITIALIZE: ${{ env.INITIALIZE_MODE }}
       run: |
         python .github/scripts/googlenews-topics_to_discord.py
