@@ -16,16 +16,16 @@ from dateutil import parser
 from dateutil.tz import gettz
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(level명)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD')
-DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR_GOOGLENEWS_KEYWORD')
-DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME_GOOGLENEWS_KEYWORD')
-INITIALIZE = os.environ.get('INITIALIZE_MODE_GOOGLENEWS_KEYWORD', 'false').lower() == 'true'
-KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
-KEYWORD = os.environ.get('KEYWORD', '')
-RSS_URL = os.environ.get('RSS_URL', '')
+DISCORD_WEBHOOK = os.getenv('DISCORD_WEBHOOK')
+DISCORD_AVATAR = os.getenv('DISCORD_AVATAR')
+DISCORD_USERNAME = os.getenv('DISCORD_USERNAME')
+INITIALIZE = os.getenv('INITIALIZE', 'false').lower() == 'true'
+KEYWORD_MODE = os.getenv('KEYWORD_MODE', 'false').lower() == 'true'
+KEYWORD = os.getenv('KEYWORD', '')
+RSS_URL = os.getenv('RSS_URL', '')
 
 # DB 설정
 DB_PATH = 'google_news.db'
@@ -33,7 +33,7 @@ DB_PATH = 'google_news.db'
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
     if not DISCORD_WEBHOOK:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD")
+        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK")
     if KEYWORD_MODE and not KEYWORD:
         raise ValueError("키워드 모드가 활성화되었지만 KEYWORD 환경 변수가 설정되지 않았습니다.")
     if not KEYWORD_MODE and not RSS_URL:
@@ -167,7 +167,7 @@ def extract_keyword_from_url(url):
     if 'q' in query_params:
         encoded_keyword = query_params['q'][0]
         return unquote(encoded_keyword)
-    return "주요 뉴스"  # 기본값
+    return "키워드"  # 기본값
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
