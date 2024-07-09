@@ -68,13 +68,13 @@ jobs:
 
     - name: Read Google News RSS and Post to Discord
       env:
-        DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_TOPICS }}
-        DISCORD_AVATAR_TOPICS: ${{ secrets.DISCORD_AVATAR_TOPICS }}
-        DISCORD_USERNAME_TOPICS: ${{ secrets.DISCORD_USERNAME_TOPICS }}
+        DISCORD_WEBHOOK_TOPICS: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
+        DISCORD_AVATAR_TOPICS: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
+        DISCORD_USERNAME_TOPICS: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
         KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
         KEYWORD: ${{ secrets.KEYWORD }}
         RSS_URL: ${{ secrets.RSS_URL }}
-        INITIALIZE: ${{ env.INITIALIZE_MODE }}
+        INITIALIZE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
       run: |
         python .github/scripts/googlenews_to_discord.py
 
@@ -89,7 +89,7 @@ jobs:
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE }}"
+        echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
