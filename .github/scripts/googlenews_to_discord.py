@@ -212,7 +212,7 @@ def extract_keyword_from_url(url):
     if 'q' in query_params:
         encoded_keyword = query_params['q'][0]
         return unquote(encoded_keyword)
-    return "디스코드"  # 기본값
+    return "주요 뉴스"  # 기본값
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
@@ -234,10 +234,7 @@ def main():
     session = requests.Session()
     
     news_items = root.findall('.//item')
-    if INITIALIZE:
-        news_items = list(news_items)
-    else:
-        news_items = reversed(news_items)
+    news_items = sorted(news_items, key=lambda item: parse_rss_date(item.find('pubDate').text))
 
     for item in news_items:
         guid = item.find('guid').text
