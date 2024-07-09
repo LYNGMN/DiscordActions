@@ -29,8 +29,8 @@ DB_PATH = 'google_news_topic.db'
 
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
-    if not DISCORD_WEBHOOK_TOPICS:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPICS")
+    if not DISCORD_WEBHOOK_TOPIC:
+        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPIC")
 
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
