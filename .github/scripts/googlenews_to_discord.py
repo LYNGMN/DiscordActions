@@ -29,9 +29,9 @@ RSS_URL = os.environ.get('RSS_URL', '')
 AFTER_DATE = os.environ.get('AFTER_DATE', '')
 BEFORE_DATE = os.environ.get('BEFORE_DATE', '')
 WHEN = os.environ.get('WHEN', '')
-HL = os.environ.get('HL', 'ko')
-GL = os.environ.get('GL', 'KR')
-CEID = os.environ.get('CEID', 'KR:ko')
+HL = os.environ.get('HL', '')
+GL = os.environ.get('GL', '')
+CEID = os.environ.get('CEID', '')
 
 # DB 설정
 DB_PATH = 'google_news.db'
@@ -53,8 +53,8 @@ def check_env_variables():
     if WHEN and (AFTER_DATE or BEFORE_DATE):
         logging.error("WHEN과 AFTER_DATE/BEFORE_DATE는 함께 사용할 수 없습니다. WHEN을 사용하거나 AFTER_DATE/BEFORE_DATE를 사용하세요.")
         raise ValueError("잘못된 날짜 쿼리 조합입니다.")
-    if not HL or not GL or not CEID:
-        raise ValueError("HL, GL, CEID 환경 변수가 모두 설정되어야 합니다.")
+    if (HL or GL or CEID) and not (HL and GL and CEID):
+        raise ValueError("HL, GL, CEID 환경 변수는 모두 설정되거나 모두 설정되지 않아야 합니다.")
 
 def is_valid_date(date_string):
     """날짜 문자열이 올바른 형식(YYYY-MM-DD)인지 확인합니다."""
@@ -244,7 +244,12 @@ def main():
                 query_params[-1] += f"+before:{BEFORE_DATE}"
         
         query_string = "+".join(query_params)
-        rss_url = f"{rss_base_url}?{query_string}&hl={HL}&gl={GL}&ceid={CEID}"
+        
+        if HL and GL and CEID:
+            rss_url = f"{rss_base_url}?{query_string}&hl={HL}&gl={GL}&ceid={CEID}"
+        else:
+            rss_url = f"{rss_base_url}?{query_string}&hl=ko&gl=KR&ceid=KR:ko"
+        
         category = KEYWORD
     else:
         rss_url = RSS_URL
