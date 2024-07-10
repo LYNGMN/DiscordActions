@@ -102,60 +102,37 @@ def decode_base64_url_part(encoded_str):
     try:
         decoded_bytes = base64.urlsafe_b64decode(base64_str)
         decoded_str = decoded_bytes.decode('latin1')
-        return decoded_str
+        return decoded_str.strip()  # 불필요한 공백 제거
     except Exception as e:
         return f"디코딩 중 오류 발생: {e}"
 
 def extract_youtube_id(decoded_str):
     """디코딩된 문자열에서 유튜브 영상 ID 추출"""
-    match = re.search(r'[a-zA-Z0-9_-]{11}', decoded_str)
-    if match:
-        youtube_id = match.group(0)
+    if decoded_str.startswith('\x08 "\x0b') and decoded_str.endswith('\x98\x01\x01'):
+        youtube_id = decoded_str[5:-3]  # "\x08 "\x0b" 제거하고 "\x98\x01\x01" 제거
         youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
         return youtube_url
     return None
 
-def decode_google_news_url(source_url):
-    """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
-    url = urlparse(source_url)
-    path = url.path.split('/')
-    if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
-        base64_str = path[-1]
-        decoded_str = decode_base64_url_part(base64_str)
-        # 유튜브 ID 추출
-        youtube_url = extract_youtube_id(decoded_str)
-        if youtube_url:
-            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
-            return youtube_url
-        # URL 패턴을 개선하여 정확한 URL을 추출합니다.
-        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-        match = url_pattern.search(decoded_str)
-        if match:
-            final_url = match.group(0)
-            logging.info(f"Google 뉴스 URL 디코딩 성공: {source_url} -> {final_url}")
-            return final_url
-    logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
-    return source_url
+def extract_regular_url(decoded_str):
+    """디코딩된 문자열에서 일반 URL 추출"""
+    if '\x08\x13"' in decoded_str:
+        url_start_index = decoded_str.index('https://') if 'https://' in decoded_str else decoded_str.index('http://')
+        url_end_index = decoded_str.rindex('Ò')
+        regular_url = decoded_str[url_start_index:url_end_index]
+        return regular_url
+    return None
 
-def get_original_link(google_link, session, max_retries=5):
-    """원본 링크를 가져옵니다."""
-    decoded_url = decode_google_news_url(google_link)
-    
-    if decoded_url.startswith('http'):
-        return decoded_url
-
-    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
-    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
-    
+def fetch_original_url_via_request(google_link, session, max_retries=5):
+    """원본 링크를 가져오기 위해 requests를 사용"""
     wait_times = [5, 10, 30, 45, 60]
     for attempt in range(max_retries):
         try:
             response = session.get(google_link, allow_redirects=True, timeout=10)
             final_url = response.url
-            if 'news.google.com' not in final_url:
-                logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
-                logging.info(f"최종 URL: {final_url}")
-                return final_url
+            logging.info(f"Requests 방식 성공 - Google 링크: {google_link}")
+            logging.info(f"최종 URL: {final_url}")
+            return final_url
         except requests.RequestException as e:
             if attempt == max_retries - 1:
                 logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
@@ -166,6 +143,36 @@ def get_original_link(google_link, session, max_retries=5):
 
     logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
     return google_link
+
+def decode_google_news_url(source_url):
+    """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
+    url = urlparse(source_url)
+    path = url.path.split('/')
+    if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
+        base64_str = path[-1]
+        decoded_str = decode_base64_url_part(base64_str)
+        # 유튜브 ID 형태인지 확인
+        youtube_url = extract_youtube_id(decoded_str)
+        if youtube_url:
+            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
+            return youtube_url
+        # 일반 URL 형태인지 확인
+        regular_url = extract_regular_url(decoded_str)
+        if regular_url:
+            logging.info(f"일반 링크 추출 성공: {source_url} -> {regular_url}")
+            return regular_url
+    logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
+    return source_url
+
+def get_original_link(google_link, session, max_retries=5):
+    """원본 링크를 가져옵니다."""
+    decoded_url = decode_google_news_url(google_link)
+    
+    if decoded_url.startswith('http'):
+        return decoded_url
+
+    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
+    return fetch_original_url_via_request(google_link, session, max_retries)
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
