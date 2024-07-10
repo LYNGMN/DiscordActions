@@ -97,28 +97,54 @@ def save_news_item(pub_date, guid, title, link, related_news):
                   (pub_date, guid, title, link, related_news))
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
+def decode_base64_url_part(encoded_str):
+    """base64로 인코딩된 문자열을 디코딩"""
+    base64_str = encoded_str + "=" * ((4 - len(encoded_str) % 4) % 4)
+    try:
+        decoded_bytes = base64.urlsafe_b64decode(base64_str)
+        decoded_str = decoded_bytes.decode('latin1')
+        return decoded_str
+    except Exception as e:
+        return f"디코딩 중 오류 발생: {e}"
+
+def extract_youtube_id(decoded_str):
+    """디코딩된 문자열에서 유튜브 영상 ID 추출"""
+    start_pattern = '\x08 "\x0b'
+    end_pattern = '\x98\x01\x01'
+    
+    if decoded_str.startswith(start_pattern) and decoded_str.endswith(end_pattern):
+        youtube_id = decoded_str[len(start_pattern):-len(end_pattern)]
+        if len(youtube_id) == 11:
+            youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
+            return youtube_url
+        else:
+            logging.error(f"유튜브 ID 길이 오류: {youtube_id}")
+    return None
+
+def extract_regular_url(decoded_str):
+    """디코딩된 문자열에서 일반 URL 추출"""
+    if '\x08\x13"' in decoded_str:
+        url_start_index = decoded_str.index('https://') if 'https://' in decoded_str else decoded_str.index('http://')
+        url_end_index = decoded_str.rindex('Ò')
+        regular_url = decoded_str[url_start_index:url_end_index]
+        return regular_url
+    return None
+
 def decode_google_news_url(source_url):
     """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
     url = urlparse(source_url)
     path = url.path.split('/')
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
         base64_str = path[-1]
-        # 패딩 동적 추가
-        base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
-        try:
-            decoded_bytes = base64.urlsafe_b64decode(base64_str)
-            decoded_str = decoded_bytes.decode('latin1')
-
-            # URL 패턴을 개선하여 정확한 URL을 추출합니다.
-            url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-            match = url_pattern.search(decoded_str)
-            if match:
-                final_url = match.group(0)
-                logging.info(f"Google 뉴스 URL 디코딩 성공: {source_url} -> {final_url}")
-                return final_url
-
-        except Exception as e:
-            logging.error(f"Base64 디코딩 중 오류 발생: {e}")
+        decoded_str = decode_base64_url_part(base64_str)
+        youtube_url = extract_youtube_id(decoded_str)
+        if youtube_url:
+            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
+            return youtube_url
+        regular_url = extract_regular_url(decoded_str)
+        if regular_url:
+            logging.info(f"일반 링크 추출 성공: {source_url} -> {regular_url}")
+            return regular_url
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
