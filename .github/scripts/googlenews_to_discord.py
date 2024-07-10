@@ -32,6 +32,7 @@ WHEN = os.environ.get('WHEN', '')
 HL = os.environ.get('HL', '')
 GL = os.environ.get('GL', '')
 CEID = os.environ.get('CEID', '')
+ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
 
 # DB 설정
 DB_PATH = 'google_news.db'
@@ -55,6 +56,8 @@ def check_env_variables():
         raise ValueError("잘못된 날짜 쿼리 조합입니다.")
     if (HL or GL or CEID) and not (HL and GL and CEID):
         raise ValueError("HL, GL, CEID 환경 변수는 모두 설정되거나 모두 설정되지 않아야 합니다.")
+    if ADVANCED_FILTER:
+        logging.info(f"고급 검색 필터가 설정되었습니다: {ADVANCED_FILTER}")
 
 def is_valid_date(date_string):
     """날짜 문자열이 올바른 형식(YYYY-MM-DD)인지 확인합니다."""
@@ -227,6 +230,33 @@ def extract_keyword_from_url(url):
         return unquote(encoded_keyword)
     return "주요 뉴스"  # 기본값
 
+def apply_advanced_filter(title, description, advanced_filter):
+    """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
+    if not advanced_filter:
+        return True
+
+    text_to_check = (title + ' ' + description).lower()
+
+    # 정규 표현식을 사용하여 고급 검색 쿼리 파싱
+    terms = re.findall(r'([+-]?)(?:"([^"]*)"|\S+)', advanced_filter)
+
+    for prefix, term in terms:
+        term = term.lower() if term else prefix.lower()
+        if prefix == '+' or not prefix:  # 포함해야 하는 단어
+            if term not in text_to_check:
+                return False
+        elif prefix == '-':  # 제외해야 하는 단어 또는 구문
+            # 여러 단어로 구성된 제외 구문 처리
+            exclude_terms = term.split()
+            if len(exclude_terms) > 1:
+                if ' '.join(exclude_terms) in text_to_check:
+                    return False
+            else:
+                if term in text_to_check:
+                    return False
+
+    return True
+
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     rss_base_url = "https://news.google.com/rss/search"
@@ -282,6 +312,11 @@ def main():
         formatted_date = parse_rss_date(pub_date)
 
         description, related_news = parse_html_description(description_html, session, title, link)
+
+        # 고급 검색 필터 적용
+        if not apply_advanced_filter(title, description, ADVANCED_FILTER):
+            logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
+            continue
 
         discord_message = f"`Google 뉴스 - {category} - 한국 🇰🇷`\n**{title}**\n{link}"
         if description:
