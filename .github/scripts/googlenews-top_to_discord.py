@@ -101,21 +101,17 @@ def decode_google_news_url(source_url):
     url = urlparse(source_url)
     path = url.path.split('/')
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
-        base64_str = path[-1]
+        base64_str = path[-1].replace('-', '+').replace('_', '/')
         # 패딩 동적 추가
         base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
         try:
             decoded_bytes = base64.urlsafe_b64decode(base64_str)
             decoded_str = decoded_bytes.decode('latin1')
-            # 유튜브 링크 패턴 추가
-            if 'youtube.com' in decoded_str or 'youtu.be' in decoded_str:
-                logging.info(f"Google 뉴스 URL 디코딩 성공 (유튜브 링크): {source_url} -> {decoded_str.strip()}")
-                return decoded_str.strip()
-            # URL 패턴을 개선하여 정확한 URL을 추출합니다.
-            url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+            # 정규 표현식을 사용하여 URL 패턴을 추출
+            url_pattern = re.compile(r'http[s]?://[^\s]+')
             match = url_pattern.search(decoded_str)
             if match:
-                final_url = match.group(0)
+                final_url = match.group(0).strip('R')
                 logging.info(f"Google 뉴스 URL 디코딩 성공: {source_url} -> {final_url}")
                 return final_url
         except Exception as e:
