@@ -9,7 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 from dateutil import parser
 from dateutil.tz import gettz
@@ -127,31 +127,28 @@ def get_original_link(google_link, session, max_retries=5):
     """원본 링크를 가져옵니다."""
     decoded_url = decode_google_news_url(google_link)
     
-    if decoded_url.startswith('http'):
-        return decoded_url
+    if not decoded_url.startswith('http'):
+        # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
+        logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
+        
+        wait_times = [5, 10, 30, 45, 60]
+        for attempt in range(max_retries):
+            try:
+                response = session.get(google_link, allow_redirects=True, timeout=10)
+                final_url = response.url
+                if 'news.google.com' not in final_url:
+                    logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
+                    logging.info(f"최종 URL: {final_url}")
+                    return final_url
+            except requests.RequestException as e:
+                if attempt == max_retries - 1:
+                    logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
+                    return google_link
+                wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
+                logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
+                time.sleep(wait_time)
 
-    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
-    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
-    
-    wait_times = [5, 10, 30, 45, 60]
-    for attempt in range(max_retries):
-        try:
-            response = session.get(google_link, allow_redirects=True, timeout=10)
-            final_url = response.url
-            if 'news.google.com' not in final_url:
-                logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
-                logging.info(f"최종 URL: {final_url}")
-                return final_url
-        except requests.RequestException as e:
-            if attempt == max_retries - 1:
-                logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
-                return google_link
-            wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
-            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
-            time.sleep(wait_time)
-
-    logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
-    return google_link
+    return decoded_url
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
