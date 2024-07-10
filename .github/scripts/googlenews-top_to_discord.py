@@ -110,8 +110,10 @@ def extract_youtube_id(decoded_str):
     """디코딩된 문자열에서 유튜브 영상 ID 추출"""
     if decoded_str.startswith('\x08 "\x0b') and decoded_str.endswith('\x98\x01\x01'):
         youtube_id = decoded_str[5:-3]  # "\x08 "\x0b" 제거하고 "\x98\x01\x01" 제거
-        youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
-        return youtube_url
+        # 유튜브 ID는 항상 11자로 고정되어 있으므로 길이를 확인하여 처리
+        if len(youtube_id) == 11:
+            youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
+            return youtube_url
     return None
 
 def extract_regular_url(decoded_str):
