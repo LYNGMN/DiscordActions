@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
 DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR')
 DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME')
-INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
+INITIALIZE = os.environ.get('INITIALIZE_MODE', 'false').lower() == 'true'
 ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
 
 # DB 설정
@@ -107,6 +107,10 @@ def decode_google_news_url(source_url):
         try:
             decoded_bytes = base64.urlsafe_b64decode(base64_str)
             decoded_str = decoded_bytes.decode('latin1')
+            # 유튜브 링크 패턴 추가
+            if 'youtube.com' in decoded_str or 'youtu.be' in decoded_str:
+                logging.info(f"Google 뉴스 URL 디코딩 성공 (유튜브 링크): {source_url} -> {decoded_str.strip()}")
+                return decoded_str.strip()
             # URL 패턴을 개선하여 정확한 URL을 추출합니다.
             url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
             match = url_pattern.search(decoded_str)
@@ -163,7 +167,7 @@ def replace_brackets(text):
     text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
-	
+
 def parse_html_description(html_desc, session):
     """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(html_desc, 'html.parser')
