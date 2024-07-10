@@ -26,6 +26,12 @@ INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
 KEYWORD = os.environ.get('KEYWORD', '')
 RSS_URL = os.environ.get('RSS_URL', '')
+AFTER_DATE = os.environ.get('AFTER_DATE', '')
+BEFORE_DATE = os.environ.get('BEFORE_DATE', '')
+WHEN = os.environ.get('WHEN', '')
+HL = os.environ.get('HL', 'ko')
+GL = os.environ.get('GL', 'KR')
+CEID = os.environ.get('CEID', 'KR:ko')
 
 # DB 설정
 DB_PATH = 'google_news.db'
@@ -38,6 +44,25 @@ def check_env_variables():
         raise ValueError("키워드 모드가 활성화되었지만 KEYWORD 환경 변수가 설정되지 않았습니다.")
     if not KEYWORD_MODE and not RSS_URL:
         raise ValueError("키워드 모드가 비활성화되었지만 RSS_URL 환경 변수가 설정되지 않았습니다.")
+    if AFTER_DATE and not is_valid_date(AFTER_DATE):
+        raise ValueError("AFTER_DATE 환경 변수가 올바른 형식(YYYY-MM-DD)이 아닙니다.")
+    if BEFORE_DATE and not is_valid_date(BEFORE_DATE):
+        raise ValueError("BEFORE_DATE 환경 변수가 올바른 형식(YYYY-MM-DD)이 아닙니다.")
+    if WHEN and not WHEN.endswith('d'):
+        raise ValueError("WHEN 환경 변수는 'd'로 끝나야 합니다. (예: '14d')")
+    if WHEN and (AFTER_DATE or BEFORE_DATE):
+        logging.error("WHEN과 AFTER_DATE/BEFORE_DATE는 함께 사용할 수 없습니다. WHEN을 사용하거나 AFTER_DATE/BEFORE_DATE를 사용하세요.")
+        raise ValueError("잘못된 날짜 쿼리 조합입니다.")
+    if not HL or not GL or not CEID:
+        raise ValueError("HL, GL, CEID 환경 변수가 모두 설정되어야 합니다.")
+
+def is_valid_date(date_string):
+    """날짜 문자열이 올바른 형식(YYYY-MM-DD)인지 확인합니다."""
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
@@ -204,15 +229,28 @@ def extract_keyword_from_url(url):
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
-    rss_base_url = "https://news.google.com/rss"
+    rss_base_url = "https://news.google.com/rss/search"
     
     if KEYWORD_MODE:
         encoded_keyword = requests.utils.quote(KEYWORD)
-        rss_url = f"{rss_base_url}?q={encoded_keyword}&hl=ko&gl=KR&ceid=KR:ko"
+        query_params = [f"q={encoded_keyword}"]
+        
+        if WHEN:
+            query_params[-1] += f"+when:{WHEN}"
+        elif AFTER_DATE or BEFORE_DATE:
+            if AFTER_DATE:
+                query_params[-1] += f"+after:{AFTER_DATE}"
+            if BEFORE_DATE:
+                query_params[-1] += f"+before:{BEFORE_DATE}"
+        
+        query_string = "+".join(query_params)
+        rss_url = f"{rss_base_url}?{query_string}&hl={HL}&gl={GL}&ceid={CEID}"
         category = KEYWORD
     else:
         rss_url = RSS_URL
         category = extract_keyword_from_url(rss_url)
+
+    logging.info(f"사용된 RSS URL: {rss_url}")
 
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
