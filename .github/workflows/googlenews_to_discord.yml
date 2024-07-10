@@ -1,10 +1,8 @@
 name: Google News (Keyword) RSS to Discord
-
 on:
   schedule:
     - cron: '*/30 * * * *'  # 30분마다 실행
   workflow_dispatch:  # 수동 실행 옵션
-
 env:
   INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
   DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
@@ -13,6 +11,12 @@ env:
   KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
   KEYWORD: ${{ secrets.KEYWORD }}
   RSS_URL: ${{ secrets.RSS_URL }}
+  AFTER_DATE: ${{ secrets.AFTER_DATE }}
+  BEFORE_DATE: ${{ secrets.BEFORE_DATE }}
+  WHEN: ${{ secrets.WHEN }}
+  HL: ${{ secrets.HL }}
+  GL: ${{ secrets.GL }}
+  CEID: ${{ secrets.CEID }}
 jobs:
   fetch-and-post:
     runs-on: ubuntu-latest
@@ -51,7 +55,7 @@ jobs:
     - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news.db ]; then
+        if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "Initializing or creating new database"
           rm -f google_news.db
@@ -67,7 +71,13 @@ jobs:
         KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
         KEYWORD: ${{ secrets.KEYWORD }}
         RSS_URL: ${{ secrets.RSS_URL }}
-        INITIALIZE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
+        INITIALIZE: ${{ env.INITIALIZE_MODE }}
+        AFTER_DATE: ${{ secrets.AFTER_DATE }}
+        BEFORE_DATE: ${{ secrets.BEFORE_DATE }}
+        WHEN: ${{ secrets.WHEN }}
+        HL: ${{ secrets.HL }}
+        GL: ${{ secrets.GL }}
+        CEID: ${{ secrets.CEID }}
       run: |
         python .github/scripts/googlenews_to_discord.py
     - name: Upload updated database
@@ -80,7 +90,7 @@ jobs:
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}"
+        echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
