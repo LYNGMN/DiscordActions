@@ -9,7 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse
 from datetime import datetime
 from dateutil import parser
 from dateutil.tz import gettz
@@ -96,32 +96,44 @@ def save_news_item(pub_date, guid, title, link, related_news):
         
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
+def decode_base64_url_part(encoded_str):
+    """base64로 인코딩된 문자열을 디코딩"""
+    base64_str = encoded_str + "=" * ((4 - len(encoded_str) % 4) % 4)
+    try:
+        decoded_bytes = base64.urlsafe_b64decode(base64_str)
+        decoded_str = decoded_bytes.decode('latin1')
+        return decoded_str
+    except Exception as e:
+        return f"디코딩 중 오류 발생: {e}"
+
+def extract_youtube_id(decoded_str):
+    """디코딩된 문자열에서 유튜브 영상 ID 추출"""
+    match = re.search(r'[a-zA-Z0-9_-]{11}', decoded_str)
+    if match:
+        youtube_id = match.group(0)
+        youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
+        return youtube_url
+    return None
+
 def decode_google_news_url(source_url):
     """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
     url = urlparse(source_url)
     path = url.path.split('/')
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
-        base64_str = path[-1].replace('-', '+').replace('_', '/')
-        base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
-        try:
-            decoded_bytes = base64.urlsafe_b64decode(base64_str)
-            decoded_str = decoded_bytes.decode('utf-8')
-
-            # 유튜브 영상 ID를 포함하고 있는지 확인
-            video_id_match = re.search(r'-([\w-]{11})', decoded_str)
-            if video_id_match:
-                video_id = video_id_match.group(1)
-                return f"https://www.youtube.com/watch?v={video_id}"
-
-            # URL 패턴 추출
-            url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-            match = url_pattern.search(decoded_str)
-            if match:
-                final_url = match.group(0).strip()
-                logging.info(f"Google 뉴스 URL 디코딩 성공: {source_url} -> {final_url}")
-                return final_url
-        except Exception as e:
-            logging.error(f"Base64 디코딩 중 오류 발생: {e}")
+        base64_str = path[-1]
+        decoded_str = decode_base64_url_part(base64_str)
+        # 유튜브 ID 추출
+        youtube_url = extract_youtube_id(decoded_str)
+        if youtube_url:
+            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
+            return youtube_url
+        # URL 패턴을 개선하여 정확한 URL을 추출합니다.
+        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+        match = url_pattern.search(decoded_str)
+        if match:
+            final_url = match.group(0)
+            logging.info(f"Google 뉴스 URL 디코딩 성공: {source_url} -> {final_url}")
+            return final_url
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
@@ -129,32 +141,31 @@ def get_original_link(google_link, session, max_retries=5):
     """원본 링크를 가져옵니다."""
     decoded_url = decode_google_news_url(google_link)
     
-    # 유튜브 링크일 경우 바로 반환
-    if decoded_url.startswith('https://www.youtube.com/watch?v='):
+    if decoded_url.startswith('http'):
         return decoded_url
 
-    if not decoded_url.startswith('http'):
-        # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
-        logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
-        
-        wait_times = [5, 10, 30, 45, 60]
-        for attempt in range(max_retries):
-            try:
-                response = session.get(google_link, allow_redirects=True, timeout=10)
-                final_url = response.url
-                if 'news.google.com' not in final_url:
-                    logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
-                    logging.info(f"최종 URL: {final_url}")
-                    return final_url
-            except requests.RequestException as e:
-                if attempt == max_retries - 1:
-                    logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
-                    return google_link
-                wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
-                logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
-                time.sleep(wait_time)
+    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
+    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
+    
+    wait_times = [5, 10, 30, 45, 60]
+    for attempt in range(max_retries):
+        try:
+            response = session.get(google_link, allow_redirects=True, timeout=10)
+            final_url = response.url
+            if 'news.google.com' not in final_url:
+                logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
+                logging.info(f"최종 URL: {final_url}")
+                return final_url
+        except requests.RequestException as e:
+            if attempt == max_retries - 1:
+                logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
+                return google_link
+            wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
+            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
+            time.sleep(wait_time)
 
-    return decoded_url
+    logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
+    return google_link
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
@@ -171,20 +182,35 @@ def replace_brackets(text):
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
 
-def parse_html_description(html_desc, session, main_title, main_link):
-    """HTML 설명을 파싱하여 관련 뉴스 문자열을 생성합니다."""
-    news_items = extract_news_items(html_desc, session)
-    
-    # 메인 뉴스와 동일한 제목과 링크를 가진 항목 제거
-    news_items = [item for item in news_items if item['title'] != main_title or item['link'] != main_link]
-    
-    if len(news_items) == 0:
-        return "", []  # 관련 뉴스가 없거나 메인 뉴스와 동일한 경우
-    elif len(news_items) == 1:
-        return "", news_items  # 관련 뉴스가 1개인 경우 (표시하지 않음)
-    else:
-        news_string = '\n'.join([f"> - [{item['title']}]({item['link']}) | {item['press']}" for item in news_items])
-        return news_string, news_items
+def parse_html_description(html_desc, session):
+    """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
+    soup = BeautifulSoup(html_desc, 'html.parser')
+    items = soup.find_all('li')
+
+    news_items = []
+    full_content_link = ""
+    for item in items:
+        if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text:
+            full_content_link_match = item.find('a')
+            if full_content_link_match:
+                full_content_link = full_content_link_match['href']
+            continue
+
+        title_match = item.find('a')
+        press_match = item.find('font', color="#6f6f6f")
+        if title_match and press_match:
+            google_link = title_match['href']
+            link = get_original_link(google_link, session)
+            title_text = replace_brackets(title_match.text)
+            press_name = press_match.text
+            news_item = f"- [{title_text}](<{link}>) | {press_name}"
+            news_items.append(news_item)
+
+    news_string = '\n'.join(news_items)
+    if full_content_link:
+        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
+
+    return news_string
 
 def parse_rss_date(pub_date):
     """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
@@ -196,9 +222,11 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅을 사용하여 메시지를 전송합니다."""
     payload = {"content": message}
     
+    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
     
+    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
     if username and username.strip():
         payload["username"] = username
     
@@ -224,15 +252,6 @@ def extract_news_items(description, session):
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
-
-def extract_keyword_from_url(url):
-    """RSS URL에서 키워드를 추출하고 디코딩합니다."""
-    parsed_url = urlparse(url)
-    query_params = parse_qs(parsed_url.query)
-    if 'q' in query_params:
-        encoded_keyword = query_params['q'][0]
-        return unquote(encoded_keyword)
-    return "주요 뉴스"  # 기본값
 
 def apply_advanced_filter(title, description, advanced_filter):
     """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
@@ -299,7 +318,7 @@ def main():
         related_news = extract_news_items(description_html, session)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-        description, related_news = parse_html_description(description_html, session, title, link)
+        description = parse_html_description(description_html, session)
 
         # 고급 검색 필터 적용
         if not apply_advanced_filter(title, description, ADVANCED_FILTER):
@@ -309,6 +328,8 @@ def main():
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n>>> {description}"
+        else:
+            discord_message += f"\n>>> "
         discord_message += f"\n\n📅 {formatted_date}"
 
         send_discord_message(
@@ -318,7 +339,7 @@ def main():
             username=discord_username
         )
 
-        save_news_item(pub_date, guid, title, link, json.dumps(related_news, ensure_ascii=False))
+        save_news_item(pub_date, guid, title, link, related_news_json)
 
         if not INITIALIZE:
             time.sleep(3)
