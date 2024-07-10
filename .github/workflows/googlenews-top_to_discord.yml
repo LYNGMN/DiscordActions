@@ -1,4 +1,4 @@
-name: Google News (Topics) RSS to Discord
+name: Google News (Top) RSS to Discord
 
 on:
   schedule:
@@ -6,10 +6,11 @@ on:
   workflow_dispatch:
 
 env:
-  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
-  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
-  DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
-  DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
+  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOP }}
+  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOP }}
+  DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOP }}
+  DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOP }}
+  ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_TOP }}
 
 jobs:
   fetch-and-post:
@@ -37,7 +38,7 @@ jobs:
           const workflow = await github.rest.actions.listWorkflowRuns({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            workflow_id: 'googlenews-topics_to_discord.yml',
+            workflow_id: 'googlenews-top_to_discord.yml',
             status: 'success'
           });
           return workflow.data.workflow_runs[0]?.id.toString() || '';
@@ -54,39 +55,40 @@ jobs:
     - name: Check if database exists or initialize
       id: check_db
       run: |
-        if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}" == "true" ] || [ ! -f google_news_topic.db ]; then
+        if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOP }}" == "true" ] || [ ! -f google_news_top.db ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "Initializing or creating new database"
-          rm -f google_news_topic.db
-          touch google_news_topic.db
+          rm -f google_news_top.db
+          touch google_news_top.db
         else
           echo "exists=true" >> $GITHUB_OUTPUT
         fi
 
     - name: Read Google News RSS and Post to Discord
       env:
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
-        DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
-        DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
-        INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOP }}
+        DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOP }}
+        DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOP }}
+        INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOP }}
+        ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_TOP }}
       run: |
-        python .github/scripts/googlenews-topics_to_discord.py
+        python .github/scripts/googlenews-top_to_discord.py
 
     - name: Upload updated database
       uses: actions/upload-artifact@v4
       with:
         name: googlenews_database
-        path: google_news_topic.db
+        path: google_news_top.db
         retention-days: 90
 
     - name: Debug Information
       if: always()
       run: |
         echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}"
+        echo "INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOP }}"
         echo "Workspace contents:"
         ls -la
         echo "Database file size:"
-        ls -lh google_news_topic.db || echo "Database file not found"
+        ls -lh google_news_top.db || echo "Database file not found"
         echo "Database contents (if exists):"
-        sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
+        sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
