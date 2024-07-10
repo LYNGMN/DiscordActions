@@ -9,7 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 from dateutil import parser
 from dateutil.tz import gettz
@@ -70,40 +70,28 @@ def save_news_item(pub_date, guid, title, link, related_news):
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
 def decode_google_news_url(source_url):
-    """Google 뉴스 URL을 디코딩합니다."""
+    """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
     url = urlparse(source_url)
     path = url.path.split('/')
-    if (
-        url.hostname == "news.google.com" and
-        len(path) > 1 and
-        path[len(path) - 2] == "articles"
-    ):
-        base64_str = path[len(path) - 1]
+    if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
+        base64_str = path[-1]
+        # 패딩 동적 추가
+        base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
         try:
-            decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
+            decoded_bytes = base64.urlsafe_b64decode(base64_str)
             decoded_str = decoded_bytes.decode('latin1')
 
-            prefix = bytes([0x08, 0x13, 0x22]).decode('latin1')
-            if decoded_str.startswith(prefix):
-                decoded_str = decoded_str[len(prefix):]
+            # URL 패턴을 개선하여 정확한 URL을 추출합니다.
+            url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+            match = url_pattern.search(decoded_str)
+            if match:
+                final_url = match.group(0)
+                logging.info(f"Google 뉴스 URL 디코딩 성공: {source_url} -> {final_url}")
+                return final_url
 
-            suffix = bytes([0xd2, 0x01, 0x00]).decode('latin1')
-            if decoded_str.endswith(suffix):
-                decoded_str = decoded_str[:-len(suffix)]
-
-            bytes_array = bytearray(decoded_str, 'latin1')
-            length = bytes_array[0]
-            if length >= 0x80:
-                decoded_str = decoded_str[2:length+1]
-            else:
-                decoded_str = decoded_str[1:length+1]
-
-            logging.info(f"Google News URL 디코딩 성공: {source_url} -> {decoded_str}")
-            return decoded_str
         except Exception as e:
-            logging.error(f"Google News URL 디코딩 중 오류 발생: {e}")
-    
-    logging.warning(f"Google News URL 디코딩 실패, 원본 URL 반환: {source_url}")
+            logging.error(f"Base64 디코딩 중 오류 발생: {e}")
+    logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
 def get_original_link(google_link, session, max_retries=5):
@@ -234,7 +222,7 @@ def main():
     session = requests.Session()
     
     news_items = root.findall('.//item')
-    news_items = sorted(news_items, key=lambda item: parse_rss_date(item.find('pubDate').text))
+    news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
 
     for item in news_items:
         guid = item.find('guid').text
