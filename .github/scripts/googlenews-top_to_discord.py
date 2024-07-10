@@ -102,18 +102,23 @@ def decode_base64_url_part(encoded_str):
     try:
         decoded_bytes = base64.urlsafe_b64decode(base64_str)
         decoded_str = decoded_bytes.decode('latin1')
-        return decoded_str.strip()  # 불필요한 공백 제거
+        return decoded_str  # 공백 제거하지 않음
     except Exception as e:
         return f"디코딩 중 오류 발생: {e}"
 
 def extract_youtube_id(decoded_str):
     """디코딩된 문자열에서 유튜브 영상 ID 추출"""
-    if decoded_str.startswith('\x08 "\x0b') and decoded_str.endswith('\x98\x01\x01'):
-        youtube_id = decoded_str[5:-3]  # "\x08 "\x0b" 제거하고 "\x98\x01\x01" 제거
+    start_pattern = '\x08 "\x0b'
+    end_pattern = '\x98\x01\x01'
+    
+    if decoded_str.startswith(start_pattern) and decoded_str.endswith(end_pattern):
+        youtube_id = decoded_str[len(start_pattern):-len(end_pattern)]
         # 유튜브 ID는 항상 11자로 고정되어 있으므로 길이를 확인하여 처리
         if len(youtube_id) == 11:
             youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
             return youtube_url
+        else:
+            logging.error(f"유튜브 ID 길이 오류: {youtube_id}")
     return None
 
 def extract_regular_url(decoded_str):
