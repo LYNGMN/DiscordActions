@@ -26,7 +26,7 @@ INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
 ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
 
 # DB 설정
-DB_PATH = 'google_news_topic.db'
+DB_PATH = 'google_news_top.db'
 
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
