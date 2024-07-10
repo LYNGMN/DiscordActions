@@ -23,6 +23,7 @@ DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
 DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR')
 DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME')
 INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
+ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
 
 # DB 설정
 DB_PATH = 'google_news_topic.db'
@@ -227,12 +228,39 @@ def extract_news_items(description, session):
     for li in soup.find_all('li'):
         a_tag = li.find('a')
         if a_tag:
-            title = a_tag.text
+            title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
             link = get_original_link(google_link, session)
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
+
+def apply_advanced_filter(title, description, advanced_filter):
+    """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
+    if not advanced_filter:
+        return True
+
+    text_to_check = (title + ' ' + description).lower()
+
+    # 정규 표현식을 사용하여 고급 검색 쿼리 파싱
+    terms = re.findall(r'([+-]?)(?:"([^"]*)"|\S+)', advanced_filter)
+
+    for prefix, term in terms:
+        term = term.lower() if term else prefix.lower()
+        if prefix == '+' or not prefix:  # 포함해야 하는 단어
+            if term not in text_to_check:
+                return False
+        elif prefix == '-':  # 제외해야 하는 단어 또는 구문
+            # 여러 단어로 구성된 제외 구문 처리
+            exclude_terms = term.split()
+            if len(exclude_terms) > 1:
+                if ' '.join(exclude_terms) in text_to_check:
+                    return False
+            else:
+                if term in text_to_check:
+                    return False
+
+    return True
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
@@ -273,6 +301,11 @@ def main():
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
         description = parse_html_description(description_html, session)
+
+        # 고급 검색 필터 적용
+        if not apply_advanced_filter(title, description, ADVANCED_FILTER):
+            logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
+            continue
 
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}"
         if description:
