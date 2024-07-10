@@ -122,11 +122,43 @@ def decode_google_news_url(source_url):
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
+def extract_video_id_from_google_news(url):
+    """Google News RSS URL에서 비디오 ID를 추출합니다."""
+    parsed_url = urlparse(url)
+    path_parts = parsed_url.path.split('/')
+    if len(path_parts) > 2 and path_parts[-2] == 'articles':
+        encoded_part = path_parts[-1]
+        try:
+            # Base64 디코딩 (패딩 추가)
+            padding = '=' * ((4 - len(encoded_part) % 4) % 4)
+            decoded = base64.urlsafe_b64decode(encoded_part + padding)
+            
+            # 디코딩된 바이트 문자열에서 YouTube 비디오 ID 패턴 찾기
+            match = re.search(b'-([\w-]{11})', decoded)
+            if match:
+                return match.group(1).decode('utf-8')
+        except Exception as e:
+            logging.error(f"비디오 ID 추출 중 오류 발생: {str(e)}")
+    return None
+
 def get_original_link(google_link, session, max_retries=5):
     """원본 링크를 가져옵니다."""
+    # Google News RSS 링크에서 직접 YouTube 비디오 ID 추출 시도
+    video_id = extract_video_id_from_google_news(google_link)
+    if video_id:
+        youtube_link = f"https://www.youtube.com/watch?v={video_id}"
+        # YouTube 링크 유효성 검사
+        if is_valid_youtube_link(youtube_link, session):
+            logging.info(f"Google News RSS에서 유효한 YouTube 링크 추출 성공: {youtube_link}")
+            return youtube_link
+        else:
+            logging.warning(f"추출된 YouTube 링크가 유효하지 않습니다: {youtube_link}")
+
     decoded_url = decode_google_news_url(google_link)
     
     if decoded_url.startswith('http'):
+        if 'youtube.com' in decoded_url or 'youtu.be' in decoded_url:
+            return decoded_url  # 유튜브 링크는 그대로 반환
         return decoded_url
 
     # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
@@ -138,6 +170,11 @@ def get_original_link(google_link, session, max_retries=5):
             response = session.get(google_link, allow_redirects=True, timeout=10)
             final_url = response.url
             if 'news.google.com' not in final_url:
+                if 'youtube.com' in final_url or 'youtu.be' in final_url:
+                    # 유튜브 링크의 경우 추가 처리
+                    video_id = extract_youtube_video_id(final_url)
+                    if video_id:
+                        return f"https://www.youtube.com/watch?v={video_id}"
                 logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
                 logging.info(f"최종 URL: {final_url}")
                 return final_url
@@ -151,6 +188,29 @@ def get_original_link(google_link, session, max_retries=5):
 
     logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
     return google_link
+
+def is_valid_youtube_link(url, session):
+    """YouTube 링크의 유효성을 확인합니다."""
+    try:
+        response = session.head(url, allow_redirects=True, timeout=10)
+        return response.status_code == 200 and 'youtube.com' in response.url
+    except requests.RequestException:
+        return False
+
+def extract_youtube_video_id(url):
+    """유튜브 URL에서 비디오 ID를 추출합니다."""
+    # 정규 표현식 패턴
+    patterns = [
+        r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=)?(?:embed\/)?(?:v\/)?(?:shorts\/)?([^&\n?#]+)',
+        r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=)?(?:embed\/)?(?:v\/)?(?:shorts\/)?([\w-]{11})'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    
+    return None
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
