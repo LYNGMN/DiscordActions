@@ -20,6 +20,8 @@ env:
   GL: ${{ secrets.GL }}
   CEID: ${{ secrets.CEID }}
   ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER }}
+  DATE_FILTER: ${{ secrets.DATE_FILTER }}
+  ORIGIN_LINK: ${{ secrets.ORIGIN_LINK }}
 
 jobs:
   fetch-and-post:
@@ -89,6 +91,8 @@ jobs:
           GL: ${{ secrets.GL }}
           CEID: ${{ secrets.CEID }}
           ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER }}
+          DATE_FILTER: ${{ secrets.DATE_FILTER }}
+          ORIGIN_LINK: ${{ secrets.ORIGIN_LINK }}
         run: |
           python .github/scripts/googlenews_to_discord.py
 
