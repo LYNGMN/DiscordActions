@@ -37,13 +37,19 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           result-encoding: string
           script: |
-            const workflow = await github.rest.actions.listWorkflowRuns({
+            const workflows = await github.rest.actions.listRepoWorkflows({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            const workflow = workflows.data.workflows.find(wf => wf.name === 'Google News (Top) RSS to Discord');
+            if (!workflow) throw new Error('Workflow not found');
+            const workflowRuns = await github.rest.actions.listWorkflowRuns({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'googlenews_top_to_discord.yml',
+              workflow_id: workflow.id,
               status: 'success'
             });
-            return workflow.data.workflow_runs[0]?.id.toString() || '';
+            return workflowRuns.data.workflow_runs[0]?.id.toString() || '';
 
       - name: Download previous database
         if: env.INITIALIZE_MODE_TOP != 'true' && steps.get_latest_run.outputs.result != ''
@@ -95,4 +101,4 @@ jobs:
           echo "Database file size:"
           ls -lh google_news_top.db || echo "Database file not found"
           echo "Database contents (if exists):"
-          sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
+          sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database
