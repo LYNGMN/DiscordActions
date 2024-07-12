@@ -138,11 +138,13 @@ def decode_google_news_url(source_url):
         base64_str = path[-1]
         decoded_str = decode_base64_url_part(base64_str)
         
+        # 일반 URL 형태인지 먼저 확인
         regular_url = extract_regular_url(decoded_str)
         if regular_url:
             logging.info(f"일반 링크 추출 성공: {source_url} -> {regular_url}")
             return regular_url
         
+        # 일반 URL이 아닌 경우 유튜브 ID 형태인지 확인
         youtube_id = extract_youtube_id(decoded_str)
         if youtube_id:
             youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
@@ -152,15 +154,37 @@ def decode_google_news_url(source_url):
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
+def fetch_original_url_via_request(google_link, session, max_retries=5):
+    """원본 링크를 가져오기 위해 requests를 사용"""
+    wait_times = [5, 10, 30, 45, 60]
+    for attempt in range(max_retries):
+        try:
+            response = session.get(google_link, allow_redirects=True, timeout=10)
+            final_url = response.url
+            logging.info(f"Requests 방식 성공 - Google 링크: {google_link}")
+            logging.info(f"최종 URL: {final_url}")
+            return final_url
+        except requests.RequestException as e:
+            if attempt == max_retries - 1:
+                logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
+                return google_link
+            wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
+            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
+            time.sleep(wait_time)
+
+    logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
+    return google_link
+
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
     logging.info(f"ORIGIN_LINK_KEYWORD 값 확인: {ORIGIN_LINK_KEYWORD}")
 
-    if ORIGIN_LINK_KEYWORD:
-        original_url = decode_google_news_url(google_link)
-        if original_url != google_link:
-            return original_url
+    # ORIGIN_LINK_KEYWORD 설정과 상관없이 항상 원본 링크를 시도
+    original_url = decode_google_news_url(google_link)
+    if original_url:
+        return original_url
 
+    # 디코딩 실패 시 requests 방식 시도
     retries = 0
     while retries < max_retries:
         try:
@@ -168,7 +192,7 @@ def get_original_url(google_link, session, max_retries=5):
             if response.status_code == 200:
                 return response.url
         except requests.RequestException as e:
-            logging.error(f"원본 URL 가져오기 실패: {e}")
+            logging.error(f"Failed to get original URL: {e}")
         retries += 1
 
     return google_link
