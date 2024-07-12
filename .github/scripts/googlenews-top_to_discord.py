@@ -20,10 +20,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
-DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR')
-DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME')
+DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR', '').strip()
+DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME', '').strip()
 INITIALIZE = os.environ.get('INITIALIZE_MODE', 'false').lower() == 'true'
 ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
+ORIGIN_LINK = os.environ.get('ORIGIN_LINK', 'true').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'google_news_top.db'
@@ -102,32 +103,26 @@ def decode_base64_url_part(encoded_str):
     try:
         decoded_bytes = base64.urlsafe_b64decode(base64_str)
         decoded_str = decoded_bytes.decode('latin1')
-        return decoded_str  # 공백 제거하지 않음
+        return decoded_str
     except Exception as e:
         return f"디코딩 중 오류 발생: {e}"
 
-def extract_youtube_id(decoded_str):
-    """디코딩된 문자열에서 유튜브 영상 ID 추출"""
-    start_pattern = '\x08 "\x0b'
-    end_pattern = '\x98\x01\x01'
-    
-    if decoded_str.startswith(start_pattern) and decoded_str.endswith(end_pattern):
-        youtube_id = decoded_str[len(start_pattern):-len(end_pattern)]
-        # 유튜브 ID는 항상 11자로 고정되어 있으므로 길이를 확인하여 처리
-        if len(youtube_id) == 11:
-            youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
-            return youtube_url
-        else:
-            logging.error(f"유튜브 ID 길이 오류: {youtube_id}")
-    return None
-
 def extract_regular_url(decoded_str):
     """디코딩된 문자열에서 일반 URL 추출"""
-    if '\x08\x13"' in decoded_str:
-        url_start_index = decoded_str.index('https://') if 'https://' in decoded_str else decoded_str.index('http://')
-        url_end_index = decoded_str.rindex('Ò')
-        regular_url = decoded_str[url_start_index:url_end_index]
-        return regular_url
+    parts = re.split(r'[^\x20-\x7E]+', decoded_str)
+    url_pattern = r'(https?://[^\s]+)'
+    for part in parts:
+        match = re.search(url_pattern, part)
+        if match:
+            return match.group(0)
+    return None
+
+def extract_youtube_id(decoded_str):
+    """디코딩된 문자열에서 유튜브 영상 ID 추출"""
+    pattern = r'\x08 "\x0b([\w-]{11})\x98\x01\x01'
+    match = re.search(pattern, decoded_str)
+    if match:
+        return match.group(1)
     return None
 
 def fetch_original_url_via_request(google_link, session, max_retries=5):
@@ -158,27 +153,35 @@ def decode_google_news_url(source_url):
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
         base64_str = path[-1]
         decoded_str = decode_base64_url_part(base64_str)
-        # 유튜브 ID 형태인지 확인
-        youtube_url = extract_youtube_id(decoded_str)
-        if youtube_url:
-            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
-            return youtube_url
-        # 일반 URL 형태인지 확인
+        
+        # 일반 URL 형태인지 먼저 확인
         regular_url = extract_regular_url(decoded_str)
         if regular_url:
             logging.info(f"일반 링크 추출 성공: {source_url} -> {regular_url}")
             return regular_url
+        
+        # 일반 URL이 아닌 경우 유튜브 ID 형태인지 확인
+        youtube_id = extract_youtube_id(decoded_str)
+        if youtube_id:
+            youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
+            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
+            return youtube_url
+    
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
-def get_original_link(google_link, session, max_retries=5):
-    """원본 링크를 가져옵니다."""
-    decoded_url = decode_google_news_url(google_link)
-    
-    if decoded_url.startswith('http'):
-        return decoded_url
+def get_original_url(google_link, session, max_retries=5):
+    """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
+    if not ORIGIN_LINK:
+        return google_link
 
-    logging.info(f"유효하지 않은 URL. request 방식으로 재시도: {google_link}")
+    original_url = decode_google_news_url(google_link)
+    
+    if original_url:
+        return original_url
+
+    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
+    logging.info(f"디코딩 실패 또는 유효하지 않은 URL. request 방식으로 재시도: {google_link}")
     return fetch_original_url_via_request(google_link, session, max_retries)
 
 def fetch_rss_feed(url):
@@ -214,7 +217,7 @@ def parse_html_description(html_desc, session):
         press_match = item.find('font', color="#6f6f6f")
         if title_match and press_match:
             google_link = title_match['href']
-            link = get_original_link(google_link, session)
+            link = get_original_url(google_link, session)
             title_text = replace_brackets(title_match.text)
             press_name = press_match.text
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
@@ -262,7 +265,7 @@ def extract_news_items(description, session):
         if a_tag:
             title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
-            link = get_original_link(google_link, session)
+            link = get_original_url(google_link, session)
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -302,11 +305,6 @@ def main():
 
     init_db(reset=INITIALIZE)
 
-    # 환경 변수 가져오기
-    discord_webhook_url = os.environ.get('DISCORD_WEBHOOK')
-    discord_avatar_url = os.environ.get('DISCORD_AVATAR', '').strip()
-    discord_username = os.environ.get('DISCORD_USERNAME', '').strip()
-
     session = requests.Session()
     
     news_items = root.findall('.//item')
@@ -323,7 +321,7 @@ def main():
 
         title = replace_brackets(item.find('title').text)
         google_link = item.find('link').text
-        link = get_original_link(google_link, session)
+        link = get_original_url(google_link, session)
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
@@ -341,16 +339,16 @@ def main():
 
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}"
         if description:
-            discord_message += f"\n>>> {description}"
+            discord_message += f"\n>>> {description}\n\n"  # 관련 뉴스가 있을 경우 두 줄 추가
         else:
-            discord_message += f"\n>>> "
-        discord_message += f"\n\n📅 {formatted_date}"
+            discord_message += "\n"  # 관련 뉴스가 없을 경우 한 줄만 추가
+        discord_message += f"📅 {formatted_date}"
 
         send_discord_message(
-            discord_webhook_url,
+            DISCORD_WEBHOOK,
             discord_message,
-            avatar_url=discord_avatar_url,
-            username=discord_username
+            avatar_url=DISCORD_AVATAR,
+            username=DISCORD_USERNAME
         )
 
         save_news_item(pub_date, guid, title, link, related_news_json)
