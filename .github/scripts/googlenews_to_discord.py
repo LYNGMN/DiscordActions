@@ -178,7 +178,7 @@ def fetch_original_url_via_request(google_link, session, max_retries=5):
 
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    if not ORIGIN_LINK:
+    if os.environ.get('ORIGIN_LINK', 'true').lower() != 'true':
         return google_link
 
     original_url = decode_google_news_url(google_link)
