@@ -123,7 +123,8 @@ def save_news_item(pub_date, guid, title, link, related_news):
         columns = [column[1] for column in c.fetchall()]
         
         # 관련 뉴스 항목 수 확인
-        related_news_count = len(json.loads(related_news))
+        related_news_items = json.loads(related_news)
+        related_news_count = len(related_news_items)
         
         # 필요한 열 추가
         for i in range(related_news_count):
@@ -142,17 +143,16 @@ def save_news_item(pub_date, guid, title, link, related_news):
         columns = ["pub_date", "guid", "title", "link", "related_news"]
         values = [pub_date, guid, title, link, related_news]
         
-        related_news_items = json.loads(related_news)
         for i, item in enumerate(related_news_items):
             columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
-            values.extend([item['title'], item['press'], item['link']])
+            values.extend([item.get('title', ''), item.get('press', ''), item.get('link', '')])
         
         placeholders = ", ".join(["?" for _ in values])
         columns_str = ", ".join(columns)
         
         c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
         
-        logging.info(f"새 뉴스 항목 저장: {guid}")
+        logging.info(f"뉴스 항목 저장/업데이트: {guid}")
 		
 def decode_base64_url_part(encoded_str):
     """Base64로 인코딩된 문자열을 디코딩"""

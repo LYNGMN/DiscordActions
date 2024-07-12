@@ -61,7 +61,6 @@ jobs:
           name: googlenews_keyword_database
           run-id: ${{ steps.get_latest_run.outputs.result }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        # continue-on-error: true  # 이 줄을 제거했습니다
 
       - name: Check if database exists and is valid
         id: check_db
