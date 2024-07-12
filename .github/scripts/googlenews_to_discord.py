@@ -383,7 +383,7 @@ def main():
         if title_element is not None:
             category = extract_rss_feed_category(title_element.text)
         else:
-            category = "주요 뉴스"
+            category = "디스코드"
 
     logging.info(f"사용된 RSS URL: {rss_url}")
 
