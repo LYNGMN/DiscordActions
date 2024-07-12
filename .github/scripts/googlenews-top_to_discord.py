@@ -173,16 +173,24 @@ def decode_google_news_url(source_url):
 
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    if ORIGIN_LINK_TOP:
-        original_url = decode_google_news_url(google_link)
-        if original_url:
-            return original_url
+    logging.info(f"ORIGIN_LINK_TOP 값 확인: {ORIGIN_LINK_TOP}")
 
-        # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
-        logging.info(f"디코딩 실패 또는 유효하지 않은 URL. request 방식으로 재시도: {google_link}")
-        return fetch_original_url_via_request(google_link, session, max_retries)
-    
-    # ORIGIN_LINK_KEYWORD가 비활성화된 경우 기본 Google 링크 반환
+    # ORIGIN_LINK_TOP 설정과 상관없이 항상 원본 링크를 시도
+    original_url = decode_google_news_url(google_link)
+    if original_url:
+        return original_url
+
+    # 디코딩 실패 시 requests 방식 시도
+    retries = 0
+    while retries < max_retries:
+        try:
+            response = session.get(google_link, allow_redirects=True)
+            if response.status_code == 200:
+                return response.url
+        except requests.RequestException as e:
+            logging.error(f"Failed to get original URL: {e}")
+        retries += 1
+
     return google_link
 
 def fetch_rss_feed(url):
