@@ -40,7 +40,7 @@ ORIGIN_LINK_KEYWORD = os.getenv('ORIGIN_LINK_KEYWORD', 'true').lower() in ['true
 DB_PATH = 'google_news_keyword.db'
 
 def check_env_variables():
-    """환경 변수가 설정되어 있는지 확인합니다."""
+    """환경 변수가 올바르게 설정되었는지 확인합니다."""
     if not DISCORD_WEBHOOK_KEYWORD:
         raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_KEYWORD")
     if KEYWORD_MODE and not KEYWORD:
@@ -101,6 +101,35 @@ def save_news_item(pub_date, guid, title, link, related_news):
                   (pub_date, guid, title, link, related_news))
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
+def decode_base64_url_part(encoded_str):
+    """Base64로 인코딩된 문자열을 디코딩합니다."""
+    base64_str = encoded_str.replace("-", "+").replace("_", "/")
+    base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
+    try:
+        decoded_bytes = base64.urlsafe_b64decode(base64_str)
+        decoded_str = decoded_bytes.decode('latin1')  # latin1을 사용하여 디코딩
+        return decoded_str
+    except Exception as e:
+        return f"디코딩 중 오류 발생: {e}"
+
+def extract_regular_url(decoded_str):
+    """디코딩된 문자열에서 첫 번째 URL만 정확히 추출합니다."""
+    parts = re.split(r'[^\x20-\x7E]+', decoded_str)
+    url_pattern = r'(https?://[^\s]+)'
+    for part in parts:
+        match = re.search(url_pattern, part)
+        if match:
+            return match.group(0)
+    return None
+
+def extract_youtube_id(decoded_str):
+    """디코딩된 문자열에서 유튜브 영상 ID를 추출합니다."""
+    pattern = r'\x08 "\x0b([\w-]{11})\x98\x01\x01'
+    match = re.search(pattern, decoded_str)
+    if match:
+        return match.group(1)
+    return None
+
 def decode_google_news_url(source_url):
     """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
     url = urlparse(source_url)
@@ -123,34 +152,14 @@ def decode_google_news_url(source_url):
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
 
-def fetch_original_url_via_request(google_link, session, max_retries=5):
-    """원본 링크를 가져오기 위해 requests를 사용"""
-    wait_times = [5, 10, 30, 45, 60]
-    for attempt in range(max_retries):
-        try:
-            response = session.get(google_link, allow_redirects=True, timeout=10)
-            final_url = response.url
-            logging.info(f"Requests 방식 성공 - Google 링크: {google_link}")
-            logging.info(f"최종 URL: {final_url}")
-            return final_url
-        except requests.RequestException as e:
-            if attempt == max_retries - 1:
-                logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
-                return google_link
-            wait_time = wait_times[min(attempt, len(wait_times) - 1)] + random.uniform(0, 5)
-            logging.warning(f"시도 {attempt + 1}/{max_retries}: 요청 실패. {wait_time:.2f}초 후 재시도합니다. 오류: {str(e)}")
-            time.sleep(wait_time)
-
-    logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
-    return google_link
-
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
     logging.info(f"ORIGIN_LINK_KEYWORD 값 확인: {ORIGIN_LINK_KEYWORD}")
 
-    original_url = decode_google_news_url(google_link)
-    if original_url:
-        return original_url
+    if ORIGIN_LINK_KEYWORD:
+        original_url = decode_google_news_url(google_link)
+        if original_url != google_link:
+            return original_url
 
     retries = 0
     while retries < max_retries:
@@ -159,7 +168,7 @@ def get_original_url(google_link, session, max_retries=5):
             if response.status_code == 200:
                 return response.url
         except requests.RequestException as e:
-            logging.error(f"Failed to get original URL: {e}")
+            logging.error(f"원본 URL 가져오기 실패: {e}")
         retries += 1
 
     return google_link
@@ -314,33 +323,49 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     
     return True
 
+def country_code_to_flag(country_code):
+    """국가 코드를 해당 국가의 국기 이모지로 변환합니다."""
+    if len(country_code) != 2:
+        return '🌐'  # 올바르지 않은 국가 코드인 경우 지구본 이모지 반환
+    
+    # 국가 코드의 각 문자를 유니코드 지역 지시자로 변환
+    return ''.join(chr(ord(c.upper()) + 127397) for c in country_code)
+
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
-    rss_base_url = "https://news.google.com/rss/search"
+    rss_base_url = "https://news.google.com/rss"
+    
+    # 언어 및 지역 설정
+    hl = HL if HL else "ko"
+    gl = GL if GL else "KR"
+    ceid = CEID if CEID else "KR:ko"
+    
+    # 국가 코드를 국기 이모지로 변환
+    country_flag = country_code_to_flag(gl)
     
     if KEYWORD_MODE:
         encoded_keyword = requests.utils.quote(KEYWORD)
         query_params = [f"q={encoded_keyword}"]
         
+        # RSS 피드 URL에 날짜 관련 쿼리 추가
         if WHEN:
             query_params[-1] += f"+when:{WHEN}"
-        elif AFTER_DATE or BEFORE_DATE:
-            if AFTER_DATE:
-                query_params[-1] += f"+after:{AFTER_DATE}"
-            if BEFORE_DATE:
-                query_params[-1] += f"+before:{BEFORE_DATE}"
+        elif AFTER_DATE and BEFORE_DATE:
+            query_params[-1] += f"+after:{AFTER_DATE}+before:{BEFORE_DATE}"
+        elif AFTER_DATE:
+            query_params[-1] += f"+after:{AFTER_DATE}"
+        elif BEFORE_DATE:
+            query_params[-1] += f"+before:{BEFORE_DATE}"
         
-        query_string = "+".join(query_params)
+        query_string = "&".join(query_params)
         
-        if HL and GL and CEID:
-            rss_url = f"{rss_base_url}?{query_string}&hl={HL}&gl={GL}&ceid={CEID}"
-        else:
-            rss_url = f"{rss_base_url}?{query_string}&hl=ko&gl=KR&ceid=KR:ko"
+        rss_url = f"{rss_base_url}?{query_string}&hl={hl}&gl={gl}&ceid={ceid}"
         
         category = KEYWORD
     else:
         rss_url = RSS_URL
-        category = extract_rss_feed_category(fetch_rss_feed(rss_url))
+        rss_data = fetch_rss_feed(rss_url)
+        category = extract_rss_feed_category(rss_data)
 
     logging.info(f"사용된 RSS URL: {rss_url}")
 
@@ -352,13 +377,14 @@ def main():
     session = requests.Session()
     
     news_items = root.findall('.//item')
-    news_items.sort(key=lambda item: parser.parse(item.find('pubDate').text))
+    news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
 
     for item in news_items:
         guid = item.find('guid').text
 
+        # GUID 확인 후 이미 처리된 항목 스킵
         if not INITIALIZE_KEYWORD and is_guid_posted(guid):
             logging.info(f"이미 처리된 GUID 스킵: {guid}")
             continue
@@ -371,17 +397,19 @@ def main():
         
         formatted_date = parse_rss_date(pub_date)
 
-        if not is_within_date_range(pub_date, since_date, until_date, past_date):
+        # 날짜 필터 적용 (DATE_FILTER_KEYWORD 사용)
+        if DATE_FILTER_KEYWORD and not is_within_date_range(pub_date, since_date, until_date, past_date):
             logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
 
         description, related_news = parse_html_description(description_html, session, title, link)
 
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER_KEYWORD):
+        # 고급 검색 필터 적용
+        if ADVANCED_FILTER_KEYWORD and not apply_advanced_filter(title, description, ADVANCED_FILTER_KEYWORD):
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
 
-        discord_message = f"`Google 뉴스 - {category} - 한국 🇰🇷`\n**{title}**\n{link}"
+        discord_message = f"{country_flag} `Google 뉴스 - {category} - {gl}`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n{description}"
         discord_message += f"\n\n📅 {formatted_date}"
