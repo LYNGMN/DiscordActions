@@ -62,7 +62,7 @@ jobs:
             echo "Initializing or creating new database"
             rm -f google_news_top.db
             touch google_news_top.db
-          else:
+          else
             echo "exists=true" >> $GITHUB_OUTPUT
           fi
 
