@@ -88,7 +88,7 @@ def parse_rss_date(pub_date):
     dt = parser.parse(pub_date)
     dt_kst = dt.astimezone(gettz('Asia/Seoul'))
     return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
-
+	
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
     with sqlite3.connect(DB_PATH) as conn:
@@ -151,70 +151,7 @@ def save_news_item(pub_date, guid, title, link, related_news):
         c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
         
         logging.info(f"새 뉴스 항목 저장: {guid}")
-
-        def init_db(reset=False):
-    """데이터베이스를 초기화합니다."""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        if reset:
-            c.execute("DROP TABLE IF EXISTS news_items")
-            logging.info("기존 news_items 테이블 삭제")
-        c.execute('''CREATE TABLE IF NOT EXISTS news_items
-                     (pub_date TEXT,
-                      guid TEXT PRIMARY KEY,
-                      title TEXT,
-                      link TEXT,
-                      related_news TEXT)''')
-        logging.info("데이터베이스 초기화 완료")
-
-def is_guid_posted(guid):
-    """주어진 GUID가 이미 게시되었는지 확인합니다."""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
-        return c.fetchone() is not None
-
-def save_news_item(pub_date, guid, title, link, related_news):
-    """뉴스 항목을 데이터베이스에 저장합니다."""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        
-        # 기존 테이블 구조 확인
-        c.execute("PRAGMA table_info(news_items)")
-        columns = [column[1] for column in c.fetchall()]
-        
-        # 관련 뉴스 항목 수 확인
-        related_news_count = len(json.loads(related_news))
-        
-        # 필요한 열 추가
-        for i in range(related_news_count):
-            title_col = f"related_title_{i+1}"
-            press_col = f"related_press_{i+1}"
-            link_col = f"related_link_{i+1}"
-            
-            if title_col not in columns:
-                c.execute(f"ALTER TABLE news_items ADD COLUMN {title_col} TEXT")
-            if press_col not in columns:
-                c.execute(f"ALTER TABLE news_items ADD COLUMN {press_col} TEXT")
-            if link_col not in columns:
-                c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
-        
-        # 데이터 삽입을 위한 SQL 쿼리 준비
-        columns = ["pub_date", "guid", "title", "link", "related_news"]
-        values = [pub_date, guid, title, link, related_news]
-        
-        related_news_items = json.loads(related_news)
-        for i, item in enumerate(related_news_items):
-            columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
-            values.extend([item['title'], item['press'], item['link']])
-        
-        placeholders = ", ".join(["?" for _ in values])
-        columns_str = ", ".join(columns)
-        
-        c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
-        
-        logging.info(f"새 뉴스 항목 저장: {guid}")
-        
+		
 def decode_base64_url_part(encoded_str):
     """Base64로 인코딩된 문자열을 디코딩"""
     base64_str = encoded_str.replace("-", "+").replace("_", "/")
@@ -305,96 +242,132 @@ def fetch_rss_feed(url):
     response = requests.get(url)
     return response.content
 
-def decode_base64_url_part(encoded_str):
-    """Base64로 인코딩된 문자열을 디코딩"""
-    base64_str = encoded_str.replace("-", "+").replace("_", "/")
-    base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
-    try:
-        decoded_bytes = base64.urlsafe_b64decode(base64_str)
-        decoded_str = decoded_bytes.decode('latin1')  # latin1을 사용하여 디코딩
-        return decoded_str
-    except Exception as e:
-        return f"디코딩 중 오류 발생: {e}"
-
-def extract_regular_url(decoded_str):
-    """디코딩된 문자열에서 첫 번째 URL만 정확히 추출"""
-    parts = re.split(r'[^\x20-\x7E]+', decoded_str)
-    url_pattern = r'(https?://[^\s]+)'
-    for part in parts:
-        match = re.search(url_pattern, part)
-        if match:
-            return match.group(0)
-    return None
-
-def extract_youtube_id(decoded_str):
-    """디코딩된 문자열에서 유튜브 영상 ID 추출"""
-    pattern = r'\x08 "\x0b([\w-]{11})\x98\x01\x01'
-    match = re.search(pattern, decoded_str)
-    if match:
-        return match.group(1)
-    return None
-
-def decode_google_news_url(source_url):
-    """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
-    url = urlparse(source_url)
-    path = url.path.split('/')
-    if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
-        base64_str = path[-1]
-        decoded_str = decode_base64_url_part(base64_str)
-        
-        regular_url = extract_regular_url(decoded_str)
-        if regular_url:
-            logging.info(f"일반 링크 추출 성공: {source_url} -> {regular_url}")
-            return regular_url
-        
-        youtube_id = extract_youtube_id(decoded_str)
-        if youtube_id:
-            youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
-            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
-            return youtube_url
+def send_discord_message(webhook_url, message, avatar_url=None, username=None):
+    """Discord 웹훅을 사용하여 메시지를 전송합니다."""
+    payload = {"content": message}
     
-    logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
-    return source_url
-
-def get_original_url(google_link, session, max_retries=5):
-    """
-    Google 뉴스 링크를 원본 URL로 변환합니다. 
-    ORIGIN_LINK_KEYWORD 설정에 따라 동작이 달라집니다:
-    - 설정하지 않았거나 True: 오리지널 링크를 가져옵니다.
-    - False: 원 링크(구글 링크)를 그대로 사용합니다.
-    """
-    logging.info(f"ORIGIN_LINK_KEYWORD 값 확인: {ORIGIN_LINK_KEYWORD}")
-
-    if ORIGIN_LINK_KEYWORD:
-        # 오리지널 링크를 가져오려고 시도
-        original_url = decode_google_news_url(google_link)
-        if original_url != google_link:
-            return original_url
-
-        # 디코딩 실패 시 requests 방식 시도
-        retries = 0
-        while retries < max_retries:
-            try:
-                response = session.get(google_link, allow_redirects=True)
-                if response.status_code == 200:
-                    return response.url
-            except requests.RequestException as e:
-                logging.error(f"Failed to get original URL: {e}")
-            retries += 1
-        
-        # 모든 시도가 실패한 경우 원 링크 반환
-        logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-        return google_link
+    if avatar_url and avatar_url.strip():
+        payload["avatar_url"] = avatar_url
+    
+    if username and username.strip():
+        payload["username"] = username
+    
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(webhook_url, json=payload, headers=headers)
+    if response.status_code != 204:
+        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
+        logging.error(response.text)
     else:
-        # ORIGIN_LINK_KEYWORD가 False인 경우 원 링크를 그대로 반환
-        logging.info(f"ORIGIN_LINK_KEYWORD가 False, 원 링크 사용: {google_link}")
-        return google_link
+        logging.info("Discord에 메시지 게시 완료")
+    time.sleep(3)
 
-def fetch_rss_feed(url):
-    """RSS 피드를 가져옵니다."""
-    response = requests.get(url)
-    return response.content
+def extract_news_items(description, session):
+    """HTML 설명에서 뉴스 항목을 추출합니다."""
+    soup = BeautifulSoup(description, 'html.parser')
+    news_items = []
+    for li in soup.find_all('li'):
+        a_tag = li.find('a')
+        if a_tag:
+            title = replace_brackets(a_tag.text)
+            google_link = a_tag['href']
+            link = get_original_url(google_link, session)
+            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            news_items.append({"title": title, "link": link, "press": press})
+    return news_items
 
+def parse_html_description(html_desc, session, main_title, main_link):
+    """HTML 설명을 파싱하여 관련 뉴스 문자열을 생성합니다."""
+    news_items = extract_news_items(html_desc, session)
+    
+    news_items = [item for item in news_items if item['title'] != main_title or item['link'] != main_link]
+    
+    if len(news_items) == 0:
+        return "", []  # 관련 뉴스가 없거나 메인 뉴스와 동일한 경우
+    elif len(news_items) == 1:
+        return "", news_items  # 관련 뉴스가 1개인 경우 (표시하지 않음)
+    else:
+        news_string = '\n'.join([f"> - [{item['title']}]({item['link']}) | {item['press']}" for item in news_items])
+        return news_string, news_items
+
+def extract_rss_feed_category(title):
+    """RSS 피드 제목에서 카테고리를 추출합니다."""
+    match = re.search(r'"([^"]+)', title)
+    if match:
+        category = match.group(1)
+        if 'when:' in category:
+            category = category.split('when:')[0].strip()
+        return category
+    return "디스코드"
+
+def apply_advanced_filter(title, description, advanced_filter):
+    """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
+    if not advanced_filter:
+        return True
+
+    text_to_check = (title + ' ' + description).lower()
+
+    terms = re.findall(r'([+-]?)(?:"([^"]*)"|\S+)', advanced_filter)
+
+    for prefix, term in terms:
+        term = term.lower() if term else prefix.lower()
+        if prefix == '+' or not prefix:  # 포함해야 하는 단어
+            if term not in text_to_check:
+                return False
+        elif prefix == '-':  # 제외해야 하는 단어 또는 구문
+            exclude_terms = term.split()
+            if len(exclude_terms) > 1:
+                if ' '.join(exclude_terms) in text_to_check:
+                    return False
+            else:
+                if term in text_to_check:
+                    return False
+
+    return True
+
+def parse_date_filter(filter_string):
+    """날짜 필터 문자열을 파싱하여 시작 날짜와 종료 날짜를 반환합니다."""
+    since_date = None
+    until_date = None
+    past_date = None
+
+    since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
+    until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
+    
+    if since_match:
+        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d')
+    if until_match:
+        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d')
+
+    past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
+    if past_match:
+        value = int(past_match.group(1))
+        unit = past_match.group(2)
+        now = datetime.now()
+        if unit == 'h':
+            past_date = now - timedelta(hours=value)
+        elif unit == 'd':
+            past_date = now - timedelta(days=value)
+        elif unit == 'm':
+            past_date = now - timedelta(days=value*30)  # 근사값 사용
+        elif unit == 'y':
+            past_date = now - timedelta(days=value*365)  # 근사값 사용
+
+    return since_date, until_date, past_date
+
+def is_within_date_range(pub_date, since_date, until_date, past_date):
+    """주어진 날짜가 필터 범위 내에 있는지 확인합니다."""
+    pub_datetime = parser.parse(pub_date)
+    
+    if past_date:
+        return pub_datetime >= past_date
+    
+    if since_date and pub_datetime < since_date:
+        return False
+    if until_date and pub_datetime > until_date:
+        return False
+    
+    return True
+	
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     rss_base_url = "https://news.google.com/rss/search"
@@ -494,4 +467,4 @@ if __name__ == "__main__":
         logging.error(f"오류 발생: {e}", exc_info=True)
         sys.exit(1)  # 오류 발생 시 비정상 종료
     else:
-        logging.info("프로그램 정상 종료")        
+        logging.info("프로그램 정상 종료")
