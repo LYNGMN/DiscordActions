@@ -76,7 +76,7 @@ jobs:
           DATE_FILTER_TOP: ${{ secrets.DATE_FILTER_GOOGLENEWS_TOP }}
           ORIGIN_LINK_TOP: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_TOP }}
         run: |
-          python .github/scripts/googlenews_top_to_discord.py
+          python .github/scripts/googlenews-top_to_discord.py
 
       - name: Upload updated database
         uses: actions/upload-artifact@v4
