@@ -131,46 +131,40 @@ def extract_youtube_id(decoded_str):
         return match.group(1)
     return None
 
-def get_original_link(source_url):
+def decode_google_news_url(source_url):
     """Google 뉴스 URL을 디코딩하여 원본 URL을 추출합니다."""
     url = urlparse(source_url)
     path = url.path.split('/')
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
         base64_str = path[-1]
         decoded_str = decode_base64_url_part(base64_str)
+        
+        # 일반 URL 형태인지 먼저 확인
         regular_url = extract_regular_url(decoded_str)
         if regular_url:
             logging.info(f"일반 링크 추출 성공: {source_url} -> {regular_url}")
             return regular_url
+        
+        # 일반 URL이 아닌 경우 유튜브 ID 형태인지 확인
         youtube_id = extract_youtube_id(decoded_str)
         if youtube_id:
-            logging.info(f"유튜브 링크 추출 성공: {source_url} -> https://www.youtube.com/watch?v={youtube_id}")
-            return f"https://www.youtube.com/watch?v={youtube_id}"
+            youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
+            logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
+            return youtube_url
+    
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
-    return None
+    return source_url
 
-def resolve_google_news_link_with_retry(google_link, session, max_retries=5):
-    """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    if not ORIGIN_LINK:
-        return google_link
-
-    original_url = get_original_link(google_link)
-    
-    if original_url:
-        return original_url
-
-    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
-    logging.info(f"디코딩 실패 또는 유효하지 않은 URL. request 방식으로 재시도: {google_link}")
-    
+def fetch_original_url_via_request(google_link, session, max_retries=5):
+    """원본 링크를 가져오기 위해 requests를 사용"""
     wait_times = [5, 10, 30, 45, 60]
     for attempt in range(max_retries):
         try:
             response = session.get(google_link, allow_redirects=True, timeout=10)
             final_url = response.url
-            if 'news.google.com' not in final_url:
-                logging.info(f"Request 방식 성공 - Google 링크: {google_link}")
-                logging.info(f"최종 URL: {final_url}")
-                return final_url
+            logging.info(f"Requests 방식 성공 - Google 링크: {google_link}")
+            logging.info(f"최종 URL: {final_url}")
+            return final_url
         except requests.RequestException as e:
             if attempt == max_retries - 1:
                 logging.error(f"최대 시도 횟수 초과. 원본 링크를 가져오는 데 실패했습니다: {str(e)}")
@@ -181,6 +175,20 @@ def resolve_google_news_link_with_retry(google_link, session, max_retries=5):
 
     logging.error(f"모든 방법 실패. 원래의 Google 링크를 사용합니다: {google_link}")
     return google_link
+
+def get_original_url(google_link, session, max_retries=5):
+    """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
+    if not ORIGIN_LINK:
+        return google_link
+
+    original_url = decode_google_news_url(google_link)
+    
+    if original_url:
+        return original_url
+
+    # 디코딩 실패 또는 유효하지 않은 URL일 경우 request 방식으로 재시도
+    logging.info(f"디코딩 실패 또는 유효하지 않은 URL. request 방식으로 재시도: {google_link}")
+    return fetch_original_url_via_request(google_link, session, max_retries)
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
@@ -231,7 +239,7 @@ def extract_news_items(description, session):
         if a_tag:
             title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
-            link = resolve_google_news_link_with_retry(google_link, session)
+            link = get_original_url(google_link, session)
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -259,6 +267,16 @@ def extract_keyword_from_url(url):
         encoded_keyword = query_params['q'][0]
         return unquote(encoded_keyword)
     return "주요 뉴스"  # 기본값
+
+def extract_rss_feed_category(title):
+    """RSS 피드 제목에서 카테고리를 추출합니다."""
+    match = re.search(r'"([^"]+)', title)
+    if match:
+        category = match.group(1)
+        if 'when:' in category:
+            category = category.split('when:')[0].strip()
+        return category
+    return "주요 뉴스"
 
 def apply_advanced_filter(title, description, advanced_filter):
     """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
@@ -359,7 +377,13 @@ def main():
         category = KEYWORD
     else:
         rss_url = RSS_URL
-        category = extract_keyword_from_url(rss_url)
+        rss_data = fetch_rss_feed(rss_url)
+        root = ET.fromstring(rss_data)
+        title_element = root.find('.//channel/title')
+        if title_element is not None:
+            category = extract_rss_feed_category(title_element.text)
+        else:
+            category = "주요 뉴스"
 
     logging.info(f"사용된 RSS URL: {rss_url}")
 
@@ -383,7 +407,7 @@ def main():
 
         title = replace_brackets(item.find('title').text)
         google_link = item.find('link').text
-        link = resolve_google_news_link_with_retry(google_link, session)
+        link = get_original_url(google_link, session)
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
