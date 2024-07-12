@@ -61,19 +61,21 @@ jobs:
           name: googlenews_keyword_database
           run-id: ${{ steps.get_latest_run.outputs.result }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
+        # continue-on-error: true  # 이 줄을 제거했습니다
 
-      - name: Check if database exists or initialize
+      - name: Check if database exists and is valid
         id: check_db
         run: |
-          if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news_keyword.db ]; then
+          if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news_keyword.db ] || [ ! -s google_news_keyword.db ]; then
             echo "exists=false" >> $GITHUB_OUTPUT
             echo "Initializing or creating new database"
             rm -f google_news_keyword.db
             touch google_news_keyword.db
           else
             echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Using existing database"
           fi
+          echo "Database file size: $(wc -c < google_news_keyword.db) bytes"
 
       - name: Read Google News RSS and Post to Discord
         env:
@@ -108,6 +110,9 @@ jobs:
         run: |
           echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
           echo "INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}"
+          echo "KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}"
+          echo "KEYWORD: ${{ secrets.KEYWORD }}"
+          echo "WHEN: ${{ secrets.WHEN }}"
           echo "Workspace contents:"
           ls -la
           echo "Database file size:"

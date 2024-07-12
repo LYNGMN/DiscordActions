@@ -109,7 +109,9 @@ def is_guid_posted(guid):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
-        return c.fetchone() is not None
+        result = c.fetchone()
+        logging.info(f"GUID {guid} 중복 확인 결과: {'중복' if result else '새로운 항목'}")
+        return result is not None
 
 def save_news_item(pub_date, guid, title, link, related_news):
     """뉴스 항목을 데이터베이스에 저장합니다."""
