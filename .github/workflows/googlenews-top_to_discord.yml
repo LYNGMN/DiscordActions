@@ -2,7 +2,7 @@ name: Google News (Top) RSS to Discord
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/30 * * * *'  # 30분마다 실행
   workflow_dispatch:
 
 env:
