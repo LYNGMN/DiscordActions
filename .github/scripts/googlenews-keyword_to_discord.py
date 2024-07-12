@@ -15,8 +15,8 @@ from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levellevelname)s - %(message)s')
+# 로깅 설정 (포맷 설정 수정)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 DISCORD_WEBHOOK_KEYWORD = os.environ.get('DISCORD_WEBHOOK_KEYWORD')
@@ -34,7 +34,10 @@ GL = os.environ.get('GL', '')
 CEID = os.environ.get('CEID', '')
 ADVANCED_FILTER_KEYWORD = os.environ.get('ADVANCED_FILTER_KEYWORD', '')
 DATE_FILTER_KEYWORD = os.environ.get('DATE_FILTER_KEYWORD', '')
-ORIGIN_LINK_KEYWORD = os.environ.get('ORIGIN_LINK_KEYWORD', 'true').lower() == 'true'
+ORIGIN_LINK_KEYWORD = os.environ.get('ORIGIN_LINK_KEYWORD', 'true').lower() == 'true'  # 기본값을 true로 설정
+
+# ORIGIN_LINK_KEYWORD 값을 로그에 출력
+logging.info(f"ORIGIN_LINK_KEYWORD 값: {ORIGIN_LINK_KEYWORD}")
 
 # DB 설정
 DB_PATH = 'google_news_keyword.db'
@@ -51,8 +54,6 @@ def check_env_variables():
         raise ValueError("AFTER_DATE 환경 변수가 올바른 형식(YYYY-MM-DD)이 아닙니다.")
     if BEFORE_DATE and not is_valid_date(BEFORE_DATE):
         raise ValueError("BEFORE_DATE 환경 변수가 올바른 형식(YYYY-MM-DD)이 아닙니다.")
-    if WHEN and not WHEN.endswith('d'):
-        raise ValueError("WHEN 환경 변수는 'd'로 끝나야 합니다. (예: '14d')")
     if WHEN and (AFTER_DATE or BEFORE_DATE):
         logging.error("WHEN과 AFTER_DATE/BEFORE_DATE는 함께 사용할 수 없습니다. WHEN을 사용하거나 AFTER_DATE/BEFORE_DATE를 사용하세요.")
         raise ValueError("잘못된 날짜 쿼리 조합입니다.")
@@ -211,7 +212,8 @@ def fetch_original_url_via_request(google_link, session, max_retries=5):
 
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    if ORIGIN_LINK_KEYWORD:
+    logging.info(f"ORIGIN_LINK_KEYWORD 값 확인: {ORIGIN_LINK_KEYWORD}")
+    if ORIGIN_LINK_KEYWORD:  # 기본값이 True로 설정됨
         original_url = decode_google_news_url(google_link)
         if original_url:
             return original_url
