@@ -10,7 +10,7 @@ import base64
 import sqlite3
 import sys
 from urllib.parse import urlparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
@@ -24,6 +24,7 @@ DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR', '').strip()
 DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME', '').strip()
 INITIALIZE = os.environ.get('INITIALIZE_MODE', 'false').lower() == 'true'
 ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
+DATE_FILTER = os.environ.get('DATE_FILTER', '')
 ORIGIN_LINK = os.environ.get('ORIGIN_LINK', 'true').lower() == 'true'
 
 # DB 설정
@@ -297,6 +298,52 @@ def apply_advanced_filter(title, description, advanced_filter):
 
     return True
 
+def parse_date_filter(filter_string):
+    """날짜 필터 문자열을 파싱하여 기준 날짜와 기간을 반환합니다."""
+    since_date = None
+    until_date = None
+    past_date = None
+
+    # since 또는 until 파싱
+    since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
+    until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
+    
+    if since_match:
+        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d')
+    elif until_match:
+        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d')
+
+    # past 파싱
+    past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
+    if past_match:
+        value = int(past_match.group(1))
+        unit = past_match.group(2)
+        now = datetime.now()
+        if unit == 'h':
+            past_date = now - timedelta(hours=value)
+        elif unit == 'd':
+            past_date = now - timedelta(days=value)
+        elif unit == 'm':
+            past_date = now - timedelta(days=value*30)  # 근사값 사용
+        elif unit == 'y':
+            past_date = now - timedelta(days=value*365)  # 근사값 사용
+
+    return since_date, until_date, past_date
+
+def is_within_date_range(pub_date, since_date, until_date, past_date):
+    """주어진 날짜가 필터 범위 내에 있는지 확인합니다."""
+    pub_datetime = parser.parse(pub_date)
+    
+    if past_date:
+        return pub_datetime >= past_date
+    
+    if since_date:
+        return pub_datetime >= since_date
+    if until_date:
+        return pub_datetime <= until_date
+    
+    return True
+
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
@@ -313,6 +360,8 @@ def main():
     else:
         news_items = reversed(news_items)
 
+    since_date, until_date, past_date = parse_date_filter(DATE_FILTER)
+
     for item in news_items:
         guid = item.find('guid').text
 
@@ -327,6 +376,11 @@ def main():
         
         formatted_date = parse_rss_date(pub_date)
 
+        # 날짜 필터 적용
+        if not is_within_date_range(pub_date, since_date, until_date, past_date):
+            logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
+            continue
+
         related_news = extract_news_items(description_html, session)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
@@ -339,9 +393,9 @@ def main():
 
         discord_message = f"`Google 뉴스 - 주요 뉴스 - 한국 🇰🇷`\n**{title}**\n{link}"
         if description:
-            discord_message += f"\n>>> {description}\n\n"  # 관련 뉴스가 있을 경우 두 줄 추가
+            discord_message += f"\n>>> {description}\n\n"
         else:
-            discord_message += "\n\n"  # 관련 뉴스가 없을 경우 한 줄만 추가
+            discord_message += "\n\n"
         discord_message += f"📅 {formatted_date}"
 
         send_discord_message(
