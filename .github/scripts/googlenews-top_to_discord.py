@@ -341,7 +341,7 @@ def main():
         if description:
             discord_message += f"\n>>> {description}\n\n"  # 관련 뉴스가 있을 경우 두 줄 추가
         else:
-            discord_message += "\n"  # 관련 뉴스가 없을 경우 한 줄만 추가
+            discord_message += "\n\n"  # 관련 뉴스가 없을 경우 한 줄만 추가
         discord_message += f"📅 {formatted_date}"
 
         send_discord_message(
