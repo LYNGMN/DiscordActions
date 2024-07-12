@@ -16,13 +16,13 @@ from dateutil.tz import gettz
 from bs4 import BeautifulSoup
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levellevelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
-DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR')
-DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME')
-INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
+DISCORD_WEBHOOK_KEYWORD = os.environ.get('DISCORD_WEBHOOK_KEYWORD')
+DISCORD_AVATAR_KEYWORD = os.environ.get('DISCORD_AVATAR_KEYWORD')
+DISCORD_USERNAME_KEYWORD = os.environ.get('DISCORD_USERNAME_KEYWORD')
+INITIALIZE_KEYWORD = os.environ.get('INITIALIZE_MODE_KEYWORD', 'false').lower() == 'true'
 KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
 KEYWORD = os.environ.get('KEYWORD', '')
 RSS_URL = os.environ.get('RSS_URL', '')
@@ -32,17 +32,17 @@ WHEN = os.environ.get('WHEN', '')
 HL = os.environ.get('HL', '')
 GL = os.environ.get('GL', '')
 CEID = os.environ.get('CEID', '')
-ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
-DATE_FILTER = os.environ.get('DATE_FILTER', '')
-ORIGIN_LINK = os.environ.get('ORIGIN_LINK', 'true').lower() == 'true'
+ADVANCED_FILTER_KEYWORD = os.environ.get('ADVANCED_FILTER_KEYWORD', '')
+DATE_FILTER_KEYWORD = os.environ.get('DATE_FILTER_KEYWORD', '')
+ORIGIN_LINK_KEYWORD = os.environ.get('ORIGIN_LINK_KEYWORD', 'true').lower() == 'true'
 
 # DB 설정
-DB_PATH = 'google_news.db'
+DB_PATH = 'google_news_keyword.db'
 
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
-    if not DISCORD_WEBHOOK:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK")
+    if not DISCORD_WEBHOOK_KEYWORD:
+        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_KEYWORD")
     if KEYWORD_MODE and not KEYWORD:
         raise ValueError("키워드 모드가 활성화되었지만 KEYWORD 환경 변수가 설정되지 않았습니다.")
     if not KEYWORD_MODE and not RSS_URL:
@@ -58,10 +58,10 @@ def check_env_variables():
         raise ValueError("잘못된 날짜 쿼리 조합입니다.")
     if (HL or GL or CEID) and not (HL and GL and CEID):
         raise ValueError("HL, GL, CEID 환경 변수는 모두 설정되거나 모두 설정되지 않아야 합니다.")
-    if ADVANCED_FILTER:
-        logging.info(f"고급 검색 필터가 설정되었습니다: {ADVANCED_FILTER}")
-    if DATE_FILTER:
-        logging.info(f"날짜 필터가 설정되었습니다: {DATE_FILTER}")
+    if ADVANCED_FILTER_KEYWORD:
+        logging.info(f"고급 검색 필터가 설정되었습니다: {ADVANCED_FILTER_KEYWORD}")
+    if DATE_FILTER_KEYWORD:
+        logging.info(f"날짜 필터가 설정되었습니다: {DATE_FILTER_KEYWORD}")
 
 def is_valid_date(date_string):
     """날짜 문자열이 올바른 형식(YYYY-MM-DD)인지 확인합니다."""
@@ -97,8 +97,41 @@ def save_news_item(pub_date, guid, title, link, related_news):
     """뉴스 항목을 데이터베이스에 저장합니다."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("INSERT OR REPLACE INTO news_items (pub_date, guid, title, link, related_news) VALUES (?, ?, ?, ?, ?)",
-                  (pub_date, guid, title, link, related_news))
+        
+        # 기존 테이블 구조 확인
+        c.execute("PRAGMA table_info(news_items)")
+        columns = [column[1] for column in c.fetchall()]
+        
+        # 관련 뉴스 항목 수 확인
+        related_news_count = len(json.loads(related_news))
+        
+        # 필요한 열 추가
+        for i in range(related_news_count):
+            title_col = f"related_title_{i+1}"
+            press_col = f"related_press_{i+1}"
+            link_col = f"related_link_{i+1}"
+            
+            if title_col not in columns:
+                c.execute(f"ALTER TABLE news_items ADD COLUMN {title_col} TEXT")
+            if press_col not in columns:
+                c.execute(f"ALTER TABLE news_items ADD COLUMN {press_col} TEXT")
+            if link_col not in columns:
+                c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
+        
+        # 데이터 삽입을 위한 SQL 쿼리 준비
+        columns = ["pub_date", "guid", "title", "link", "related_news"]
+        values = [pub_date, guid, title, link, related_news]
+        
+        related_news_items = json.loads(related_news)
+        for i, item in enumerate(related_news_items):
+            columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
+            values.extend([item['title'], item['press'], item['link']])
+        
+        placeholders = ", ".join(["?" for _ in values])
+        columns_str = ", ".join(columns)
+        
+        c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
+        
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
 def decode_base64_url_part(encoded_str):
@@ -178,7 +211,7 @@ def fetch_original_url_via_request(google_link, session, max_retries=5):
 
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    if os.environ.get('ORIGIN_LINK', 'true').lower() != 'true':
+    if not ORIGIN_LINK_KEYWORD:
         return google_link
 
     original_url = decode_google_news_url(google_link)
@@ -215,9 +248,11 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅을 사용하여 메시지를 전송합니다."""
     payload = {"content": message}
     
+    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
     
+    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
     if username and username.strip():
         payload["username"] = username
     
@@ -276,7 +311,7 @@ def extract_rss_feed_category(title):
         if 'when:' in category:
             category = category.split('when:')[0].strip()
         return category
-    return "주요 뉴스"
+    return "디스코드"
 
 def apply_advanced_filter(title, description, advanced_filter):
     """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
@@ -390,19 +425,19 @@ def main():
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
 
-    init_db(reset=INITIALIZE)
+    init_db(reset=INITIALIZE_KEYWORD)
 
     session = requests.Session()
     
     news_items = root.findall('.//item')
     news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
 
-    since_date, until_date, past_date = parse_date_filter(DATE_FILTER)
+    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
 
     for item in news_items:
         guid = item.find('guid').text
 
-        if not INITIALIZE and is_guid_posted(guid):
+        if not INITIALIZE_KEYWORD and is_guid_posted(guid):
             continue
 
         title = replace_brackets(item.find('title').text)
@@ -421,7 +456,7 @@ def main():
         description, related_news = parse_html_description(description_html, session, title, link)
 
         # 고급 검색 필터 적용
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER):
+        if not apply_advanced_filter(title, description, ADVANCED_FILTER_KEYWORD):
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
 
@@ -431,15 +466,15 @@ def main():
         discord_message += f"\n\n📅 {formatted_date}"
 
         send_discord_message(
-            DISCORD_WEBHOOK,
+            DISCORD_WEBHOOK_KEYWORD,
             discord_message,
-            avatar_url=DISCORD_AVATAR,
-            username=DISCORD_USERNAME
+            avatar_url=DISCORD_AVATAR_KEYWORD,
+            username=DISCORD_USERNAME_KEYWORD
         )
 
         save_news_item(pub_date, guid, title, link, json.dumps(related_news, ensure_ascii=False))
 
-        if not INITIALIZE:
+        if not INITIALIZE_KEYWORD:
             time.sleep(3)
 
 if __name__ == "__main__":

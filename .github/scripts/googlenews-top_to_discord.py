@@ -19,21 +19,21 @@ from bs4 import BeautifulSoup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK')
-DISCORD_AVATAR = os.environ.get('DISCORD_AVATAR', '').strip()
-DISCORD_USERNAME = os.environ.get('DISCORD_USERNAME', '').strip()
-INITIALIZE = os.environ.get('INITIALIZE_MODE', 'false').lower() == 'true'
-ADVANCED_FILTER = os.environ.get('ADVANCED_FILTER', '')
-DATE_FILTER = os.environ.get('DATE_FILTER', '')
-ORIGIN_LINK = os.environ.get('ORIGIN_LINK', 'true').lower() == 'true'
+DISCORD_WEBHOOK_TOP = os.environ.get('DISCORD_WEBHOOK_TOP')
+DISCORD_AVATAR_TOP = os.environ.get('DISCORD_AVATAR_TOP', '').strip()
+DISCORD_USERNAME_TOP = os.environ.get('DISCORD_USERNAME_TOP', '').strip()
+INITIALIZE_TOP = os.environ.get('INITIALIZE_MODE_TOP', 'false').lower() == 'true'
+ADVANCED_FILTER_TOP = os.environ.get('ADVANCED_FILTER_TOP', '')
+DATE_FILTER_TOP = os.environ.get('DATE_FILTER_TOP', '')
+ORIGIN_LINK_TOP = os.environ.get('ORIGIN_LINK_TOP', 'true').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'google_news_top.db'
 
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
-    if not DISCORD_WEBHOOK:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK")
+    if not DISCORD_WEBHOOK_TOP:
+        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOP")
 
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
@@ -173,7 +173,7 @@ def decode_google_news_url(source_url):
 
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    if os.environ.get('ORIGIN_LINK', 'true').lower() != 'true':
+    if not ORIGIN_LINK_TOP:
         return google_link
 
     original_url = decode_google_news_url(google_link)
@@ -350,22 +350,22 @@ def main():
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
 
-    init_db(reset=INITIALIZE)
+    init_db(reset=INITIALIZE_TOP)
 
     session = requests.Session()
     
     news_items = root.findall('.//item')
-    if INITIALIZE:
+    if INITIALIZE_TOP:
         news_items = list(news_items)
     else:
         news_items = reversed(news_items)
 
-    since_date, until_date, past_date = parse_date_filter(DATE_FILTER)
+    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
 
     for item in news_items:
         guid = item.find('guid').text
 
-        if not INITIALIZE and is_guid_posted(guid):
+        if not INITIALIZE_TOP and is_guid_posted(guid):
             continue
 
         title = replace_brackets(item.find('title').text)
@@ -387,7 +387,7 @@ def main():
         description = parse_html_description(description_html, session)
 
         # 고급 검색 필터 적용
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER):
+        if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOP):
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
 
@@ -399,15 +399,15 @@ def main():
         discord_message += f"📅 {formatted_date}"
 
         send_discord_message(
-            DISCORD_WEBHOOK,
+            DISCORD_WEBHOOK_TOP,
             discord_message,
-            avatar_url=DISCORD_AVATAR,
-            username=DISCORD_USERNAME
+            avatar_url=DISCORD_AVATAR_TOP,
+            username=DISCORD_USERNAME_TOP
         )
 
         save_news_item(pub_date, guid, title, link, related_news_json)
 
-        if not INITIALIZE:
+        if not INITIALIZE_TOP:
             time.sleep(3)
 
 if __name__ == "__main__":

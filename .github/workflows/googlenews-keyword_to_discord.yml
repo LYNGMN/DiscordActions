@@ -3,13 +3,13 @@ name: Google News (Keyword) RSS to Discord
 on:
   schedule:
     - cron: '*/30 * * * *'  # 30분마다 실행
-  workflow_dispatch:  # 수동 실행 옵션
+  workflow_dispatch:
 
 env:
-  INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
-  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-  DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-  DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
+  INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
+  DISCORD_WEBHOOK_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
+  DISCORD_AVATAR_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
+  DISCORD_USERNAME_KEYWORD: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
   KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
   KEYWORD: ${{ secrets.KEYWORD }}
   RSS_URL: ${{ secrets.RSS_URL }}
@@ -19,9 +19,9 @@ env:
   HL: ${{ secrets.HL }}
   GL: ${{ secrets.GL }}
   CEID: ${{ secrets.CEID }}
-  ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER }}
-  DATE_FILTER: ${{ secrets.DATE_FILTER }}
-  ORIGIN_LINK: ${{ secrets.ORIGIN_LINK }}
+  ADVANCED_FILTER_KEYWORD: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_KEYWORD }}
+  DATE_FILTER_KEYWORD: ${{ secrets.DATE_FILTER_GOOGLENEWS_KEYWORD }}
+  ORIGIN_LINK_KEYWORD: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_KEYWORD }}
 
 jobs:
   fetch-and-post:
@@ -55,7 +55,7 @@ jobs:
             return workflow.data.workflow_runs[0]?.id.toString() || '';
 
       - name: Download previous database
-        if: env.INITIALIZE_MODE != 'true' && steps.get_latest_run.outputs.result != ''
+        if: env.INITIALIZE_MODE_KEYWORD != 'true' && steps.get_latest_run.outputs.result != ''
         uses: actions/download-artifact@v4
         with:
           name: googlenews_keyword_database
@@ -66,51 +66,51 @@ jobs:
       - name: Check if database exists or initialize
         id: check_db
         run: |
-          if [ "${{ env.INITIALIZE_MODE }}" == "true" ] || [ ! -f google_news.db ]; then
+          if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news_keyword.db ]; then
             echo "exists=false" >> $GITHUB_OUTPUT
             echo "Initializing or creating new database"
-            rm -f google_news.db
-            touch google_news.db
-          else
+            rm -f google_news_keyword.db
+            touch google_news_keyword.db
+          else:
             echo "exists=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Read Google News RSS and Post to Discord
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-          DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-          DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
+          INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
+          DISCORD_WEBHOOK_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
+          DISCORD_AVATAR_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
+          DISCORD_USERNAME_KEYWORD: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
           KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
           KEYWORD: ${{ secrets.KEYWORD }}
           RSS_URL: ${{ secrets.RSS_URL }}
-          INITIALIZE: ${{ env.INITIALIZE_MODE }}
           AFTER_DATE: ${{ secrets.AFTER_DATE }}
           BEFORE_DATE: ${{ secrets.BEFORE_DATE }}
           WHEN: ${{ secrets.WHEN }}
           HL: ${{ secrets.HL }}
           GL: ${{ secrets.GL }}
           CEID: ${{ secrets.CEID }}
-          ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER }}
-          DATE_FILTER: ${{ secrets.DATE_FILTER }}
-          ORIGIN_LINK: ${{ secrets.ORIGIN_LINK }}
+          ADVANCED_FILTER_KEYWORD: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_KEYWORD }}
+          DATE_FILTER_KEYWORD: ${{ secrets.DATE_FILTER_GOOGLENEWS_KEYWORD }}
+          ORIGIN_LINK_KEYWORD: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_KEYWORD }}
         run: |
-          python .github/scripts/googlenews_to_discord.py
+          python .github/scripts/googlenews-keyword_to_discord.py
 
       - name: Upload updated database
         uses: actions/upload-artifact@v4
         with:
           name: googlenews_keyword_database
-          path: google_news.db
+          path: google_news_keyword.db
           retention-days: 90
 
       - name: Debug Information
         if: always()
         run: |
           echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-          echo "INITIALIZE_MODE: ${{ env.INITIALIZE_MODE }}"
+          echo "INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}"
           echo "Workspace contents:"
           ls -la
           echo "Database file size:"
-          ls -lh google_news.db || echo "Database file not found"
+          ls -lh google_news_keyword.db || echo "Database file not found"
           echo "Database contents (if exists):"
-          sqlite3 google_news.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
+          sqlite3 google_news_keyword.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
