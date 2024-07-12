@@ -11,6 +11,8 @@ env:
   DISCORD_AVATAR: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOP }}
   DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOP }}
   ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_TOP }}
+  DATE_FILTER: ${{ secrets.DATE_FILTER_GOOGLENEWS_TOP }}
+  ORIGIN_LINK: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_TOP }}
 
 jobs:
   fetch-and-post:
@@ -71,6 +73,8 @@ jobs:
         DISCORD_USERNAME: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOP }}
         INITIALIZE_MODE: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOP }}
         ADVANCED_FILTER: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_TOP }}
+        DATE_FILTER: ${{ secrets.DATE_FILTER_GOOGLENEWS_TOP }}
+        ORIGIN_LINK: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_TOP }}
       run: |
         python .github/scripts/googlenews-top_to_discord.py
 
