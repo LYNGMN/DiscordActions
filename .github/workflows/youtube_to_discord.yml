@@ -28,7 +28,7 @@ jobs:
       id: get_latest_run
       uses: actions/github-script@v7
       with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         result-encoding: string
         script: |
           const workflow = await github.rest.actions.listWorkflowRuns({
@@ -63,13 +63,17 @@ jobs:
     - name: Notify Discord of New YouTube Videos
       env:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        DISCORD_YOUTUBE_WEBHOOK: ${{ secrets.DISCORD_YOUTUBE_WEBHOOK }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        LANGUAGE: ${{ secrets.LANGUAGE }}
-        INIT_MAX_RESULTS: ${{ secrets.INIT_MAX_RESULTS }}
-        MAX_RESULTS: ${{ secrets.MAX_RESULTS }}
+        INIT_MAX_RESULTS: ${{ secrets.YOUTUBE_INIT_MAX_RESULTS }}
+        MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
         IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}
-        INITIALIZE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
+        INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
+        ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
+        DATE_FILTER_YOUTUBE: ${{ secrets.DATE_FILTER_YOUTUBE }}
+        LANGUAGE_YOUTUBE: ${{ secrets.LANGUAGE_YOUTUBE }}
+        DISCORD_WEBHOOK_YOUTUBE: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE }}
+        DISCORD_AVATAR_YOUTUBE: ${{ secrets.DISCORD_AVATAR_YOUTUBE }}
+        DISCORD_USERNAME_YOUTUBE: ${{ secrets.DISCORD_USERNAME_YOUTUBE }}
       run: |
         python .github/scripts/youtube_to_discord.py
 

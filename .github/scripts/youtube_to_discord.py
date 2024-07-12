@@ -7,26 +7,33 @@ from googleapiclient.discovery import build
 import isodate
 from datetime import datetime, timezone, timedelta
 import logging
+import re
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
-YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
-DISCORD_YOUTUBE_WEBHOOK = os.getenv('DISCORD_YOUTUBE_WEBHOOK')
-LANGUAGE = os.getenv('LANGUAGE', 'English')
-INIT_MAX_RESULTS = int(os.getenv('INIT_MAX_RESULTS', '30'))
-MAX_RESULTS = int(os.getenv('MAX_RESULTS') or '10')
+YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
+INIT_MAX_RESULTS = int(os.getenv('YOUTUBE_INIT_MAX_RESULTS', '30'))
+MAX_RESULTS = int(os.getenv('YOUTUBE_MAX_RESULTS') or '10')
 IS_FIRST_RUN = os.getenv('IS_FIRST_RUN', 'false').lower() == 'true'
-INITIALIZE = os.environ.get('INITIALIZE', 'false').lower() == 'true'
+INITIALIZE_MODE_YOUTUBE = os.getenv('INITIALIZE_MODE_YOUTUBE', 'false').lower() == 'true'
+
+ADVANCED_FILTER_YOUTUBE = os.getenv('ADVANCED_FILTER_YOUTUBE', '')
+DATE_FILTER_YOUTUBE = os.getenv('DATE_FILTER_YOUTUBE', '')
+
+DISCORD_WEBHOOK_YOUTUBE = os.getenv('DISCORD_WEBHOOK_YOUTUBE')
+DISCORD_AVATAR_YOUTUBE = os.getenv('DISCORD_AVATAR_YOUTUBE', '').strip()
+DISCORD_USERNAME_YOUTUBE = os.getenv('DISCORD_USERNAME_YOUTUBE', '').strip()
+LANGUAGE_YOUTUBE = os.getenv('LANGUAGE_YOUTUBE', 'English')
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
 
 # 환경 변수가 설정되었는지 확인하는 함수
 def check_env_variables():
-    required_vars = ['YOUTUBE_CHANNEL_ID', 'YOUTUBE_API_KEY', 'DISCORD_YOUTUBE_WEBHOOK']
+    required_vars = ['YOUTUBE_API_KEY', 'YOUTUBE_CHANNEL_ID', 'DISCORD_WEBHOOK_YOUTUBE']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
         raise ValueError(f"환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
@@ -100,8 +107,17 @@ def load_videos():
 # Discord에 메시지를 게시하는 함수
 def post_to_discord(message):
     payload = {"content": message}
+    
+    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
+    if DISCORD_AVATAR_YOUTUBE:
+        payload["avatar_url"] = DISCORD_AVATAR_YOUTUBE
+    
+    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
+    if DISCORD_USERNAME_YOUTUBE:
+        payload["username"] = DISCORD_USERNAME_YOUTUBE
+    
     headers = {'Content-Type': 'application/json'}
-    response = requests.post(DISCORD_YOUTUBE_WEBHOOK, json=payload, headers=headers)
+    response = requests.post(DISCORD_WEBHOOK_YOUTUBE, json=payload, headers=headers)
     if response.status_code != 204:
         logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
         logging.error(response.text)
@@ -115,7 +131,7 @@ def parse_duration(duration):
     total_seconds = int(parsed_duration.total_seconds())
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    if LANGUAGE == 'Korean':
+    if LANGUAGE_YOUTUBE == 'Korean':
         if hours > 0:
             return f"{hours}시간 {minutes}분 {seconds}초"
         elif minutes > 0:
@@ -150,6 +166,79 @@ def convert_to_kst_and_format(published_at):
     kst_time = utc_time.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
     return kst_time.strftime("%Y-%m-%d %H:%M:%S")
 
+# 고급 검색 필터를 적용하여 게시물을 전송할지 결정하는 함수
+def apply_advanced_filter(title, advanced_filter):
+    if not advanced_filter:
+        return True
+
+    text_to_check = title.lower()
+
+    # 정규 표현식을 사용하여 고급 검색 쿼리 파싱
+    terms = re.findall(r'([+-]?)(?:"([^"]*)"|\S+)', advanced_filter)
+
+    for prefix, term in terms:
+        term = term.lower() if term else prefix.lower()
+        if prefix == '+' or not prefix:  # 포함해야 하는 단어
+            if term not in text_to_check:
+                return False
+        elif prefix == '-':  # 제외해야 하는 단어 또는 구문
+            # 여러 단어로 구성된 제외 구문 처리
+            exclude_terms = term.split()
+            if len(exclude_terms) > 1:
+                if ' '.join(exclude_terms) in text_to_check:
+                    return False
+            else:
+                if term in text_to_check:
+                    return False
+
+    return True
+
+# 날짜 필터 문자열을 파싱하여 기준 날짜와 기간을 반환하는 함수
+def parse_date_filter(filter_string):
+    since_date = None
+    until_date = None
+    past_date = None
+
+    # since 또는 until 파싱
+    since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
+    until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
+    
+    if since_match:
+        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d')
+    elif until_match:
+        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d')
+
+    # past 파싱
+    past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
+    if past_match:
+        value = int(past_match.group(1))
+        unit = past_match.group(2)
+        now = datetime.now()
+        if unit == 'h':
+            past_date = now - timedelta(hours=value)
+        elif unit == 'd':
+            past_date = now - timedelta(days=value)
+        elif unit == 'm':
+            past_date = now - timedelta(days=value*30)  # 근사값 사용
+        elif unit == 'y':
+            past_date = now - timedelta(days=value*365)  # 근사값 사용
+
+    return since_date, until_date, past_date
+
+# 주어진 날짜가 필터 범위 내에 있는지 확인하는 함수
+def is_within_date_range(published_at, since_date, until_date, past_date):
+    pub_datetime = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
+    
+    if past_date:
+        return pub_datetime >= past_date
+    
+    if since_date:
+        return pub_datetime >= since_date
+    if until_date:
+        return pub_datetime <= until_date
+    
+    return True
+
 # YouTube 동영상 가져오고 Discord에 게시하는 함수
 def fetch_and_post_videos():
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
@@ -164,13 +253,16 @@ def fetch_and_post_videos():
     # 가장 최근에 저장된 비디오의 게시 시간을 가져옵니다.
     latest_saved_time = saved_videos[0][0] if saved_videos else None
 
+    # 날짜 필터 파싱
+    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_YOUTUBE)
+
     # YouTube API로 최신 비디오 목록을 가져옵니다.
     response = youtube.search().list(
         channelId=YOUTUBE_CHANNEL_ID,
         order='date',
         type='video',
         part='snippet,id',
-        maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN or INITIALIZE else MAX_RESULTS
+        maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN or INITIALIZE_MODE_YOUTUBE else MAX_RESULTS
     ).execute()
 
     if 'items' not in response:
@@ -200,6 +292,11 @@ def fetch_and_post_videos():
 
         # 이미 저장된 비디오보다 새로운 비디오만 처리합니다.
         if latest_saved_time and published_at <= latest_saved_time:
+            continue
+        
+        # 날짜 필터 적용
+        if not is_within_date_range(published_at, since_date, until_date, past_date):
+            logging.info(f"날짜 필터에 의해 건너뛰어진 비디오: {snippet['title']}")
             continue
 
         video_title = html.unescape(snippet['title'])
@@ -235,6 +332,11 @@ def fetch_and_post_videos():
             'caption': caption
         }
 
+        # 고급 필터 적용
+        if not apply_advanced_filter(video_title, ADVANCED_FILTER_YOUTUBE):
+            logging.info(f"고급 필터에 의해 건너뛰어진 비디오: {video_title}")
+            continue
+
         new_videos.append(video_data)
 
     # 새로운 동영상을 오래된 순서로 정렬합니다.
@@ -244,7 +346,7 @@ def fetch_and_post_videos():
     # 새로운 동영상 정보를 Discord에 전송하고 DB에 저장 (오래된 순서대로)
     for video in new_videos:
         formatted_published_at = convert_to_kst_and_format(video['published_at'])
-        if LANGUAGE == 'Korean':
+        if LANGUAGE_YOUTUBE == 'Korean':
             message = (
                 f"`{video['channel_title']} - YouTube`\n"
                 f"**{video['title']}**\n"
@@ -278,13 +380,13 @@ def fetch_and_post_videos():
 if __name__ == "__main__":
     try:
         check_env_variables()
-        if INITIALIZE:
+        if INITIALIZE_MODE_YOUTUBE:
             init_db(reset=True)  # DB 초기화
             logging.info("초기화 모드로 실행 중: 데이터베이스를 재설정하고 모든 비디오를 다시 가져옵니다.")
         fetch_and_post_videos()
         
         # 디버그 정보 출력
-        logging.info(f"INITIALIZE: {INITIALIZE}")
+        logging.info(f"INITIALIZE_MODE_YOUTUBE: {INITIALIZE_MODE_YOUTUBE}")
         logging.info(f"IS_FIRST_RUN: {IS_FIRST_RUN}")
         logging.info(f"Database file size: {os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 'File not found'}")
         
