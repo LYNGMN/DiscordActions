@@ -9,7 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
@@ -38,88 +38,288 @@ DB_PATH = 'google_news_topic.db'
 # 토픽 ID 매핑
 TOPIC_MAP = {
     # 헤드라인 뉴스
-    "headlines": ("헤드라인", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtdHZHZ0pMVWlnQVAB"),
-    "korea": ("대한민국", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp4WkRNU0FtdHZLQUFQAQ"),
-    "world": ("세계", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtdHZHZ0pMVWlnQVAB"),
-    "politics": ("정치", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtdHZLQUFQAQ"),
-
+    "headlines": {
+        "ko-KR": ("헤드라인", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("Headlines", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtdHZHZ0pMVWlnQVAB")
+    },
+    "korea": {
+        "ko-KR": ("대한민국", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp4WkRNU0FtdHZLQUFQAQ")
+    },
+    "us": {
+        "en-US": ("U.S.", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRGxqTjNjd0VnSmxiaWdBUAE")
+    },
+    "world": {
+        "ko-KR": ("세계", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("World", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB")
+    },
+    "politics": {
+        "ko-KR": ("정치", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtdHZLQUFQAQ"),
+        "en-US": ("Politics", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtVnVLQUFQAQ")
+    },
+    
     # 연예 뉴스
-    "entertainment": ("엔터테인먼트", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtdHZHZ0pMVWlnQVAB"),
-    "celebrity": ("연예", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtdHZLQUFQAQ"),
-    "tv": ("TV", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtdHZLQUFQAQ"),
-    "music": ("음악", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtdHZLQUFQAQ"),
-    "movies": ("영화", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtdHZLQUFQAQ"),
-    "theater": ("연극", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNhMjhvQUFQAQ"),
-
+    "entertainment": {
+        "ko-KR": ("엔터테인먼트", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("Entertainment", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtVnVHZ0pWVXlnQVAB")
+    },
+    "celebrity": {
+        "ko-KR": ("연예", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtdHZLQUFQAQ"),
+        "en-US": ("Celebrities", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtVnVLQUFQAQ")
+    },
+    "tv": {
+        "ko-KR": ("TV", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtdHZLQUFQAQ"),
+        "en-US": ("TV", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtVnVLQUFQAQ")
+    },
+    "music": {
+        "ko-KR": ("음악", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtdHZLQUFQAQ"),
+        "en-US": ("Music", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtVnVLQUFQAQ")
+    },
+    "movies": {
+        "ko-KR": ("영화", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtdHZLQUFQAQ"),
+        "en-US": ("Movies", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtVnVLQUFQAQ")
+    },
+    "theater": {
+        "ko-KR": ("연극", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNhMjhvQUFQAQ"),
+        "en-US": ("Theater", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNaVzRvQUFQAQ")
+    },
+    
     # 스포츠 뉴스
-    "sports": ("스포츠", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtdHZHZ0pMVWlnQVAB"),
-    "soccer": ("축구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtdHZLQUFQAQ"),
-    "cycling": ("자전거", "PLACEHOLDER_ID_CYCLING"),
-    "motorsports": ("모터스포츠", "PLACEHOLDER_ID_MOTORSPORTS"),
-    "tennis": ("테니스", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtdHZLQUFQAQ"),
-    "martial_arts": ("격투기", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSnJieWdBUAE"),
-    "basketball": ("농구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtdHZLQUFQAQ"),
-    "baseball": ("야구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtdHZLQUFQAQ"),
-    "american_football": ("미식축구", "PLACEHOLDER_ID_AMERICAN_FOOTBALL"),
-    "sports_betting": ("스포츠 베팅", "PLACEHOLDER_ID_SPORTS_BETTING"),
-    "water_sports": ("수상 스포츠", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSnJieWdBUAE"),
-    "hockey": ("하키", "PLACEHOLDER_ID_HOCKEY"),
-    "golf": ("골프", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtdHZLQUFQAQ"),
-    "cricket": ("크리켓", "PLACEHOLDER_ID_CRICKET"),
-    "rugby": ("럭비", "PLACEHOLDER_ID_RUGBY"),
-
+    "sports": {
+        "ko-KR": ("스포츠", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("Sports", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtVnVHZ0pWVXlnQVAB")
+    },
+    "soccer": {
+        "ko-KR": ("축구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtdHZLQUFQAQ"),
+        "en-US": ("Soccer", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtVnVLQUFQAQ")
+    },
+    "cycling": {
+        "ko-KR": ("자전거", "PLACEHOLDER_ID_CYCLING"),
+        "en-US": ("Cycling", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ6WjJ3U0FtVnVLQUFQAQ")
+    },
+    "motorsports": {
+        "ko-KR": ("모터스포츠", "PLACEHOLDER_ID_MOTORSPORTS"),
+        "en-US": ("Motor sports", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TUhSMGFCSUNaVzRvQUFQAQ")
+    },
+    "tennis": {
+        "ko-KR": ("테니스", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtdHZLQUFQAQ"),
+        "en-US": ("Tennis", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtVnVLQUFQAQ")
+    },
+    "martial_arts": {
+        "ko-KR": ("격투기", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSnJieWdBUAE"),
+        "en-US": ("Combat sports", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSmxiaWdBUAE")
+    },
+    "basketball": {
+        "ko-KR": ("농구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtdHZLQUFQAQ"),
+        "en-US": ("Basketball", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtVnVLQUFQAQ")
+    },
+    "baseball": {
+        "ko-KR": ("야구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtdHZLQUFQAQ"),
+        "en-US": ("Baseball", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtVnVLQUFQAQ")
+    },
+    "american_football": {
+        "ko-KR": ("미식축구", "PLACEHOLDER_ID_AMERICAN_FOOTBALL"),
+        "en-US": ("Football", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3B0WHhJQ1pXNG9BQVAB")
+    },
+    "sports_betting": {
+        "ko-KR": ("스포츠 베팅", "PLACEHOLDER_ID_SPORTS_BETTING"),
+        "en-US": ("Sports betting", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFIwTXpsa0VnSmxiaWdBUAE")
+    },
+    "water_sports": {
+        "ko-KR": ("수상 스포츠", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSnJieWdBUAE"),
+        "en-US": ("Water sports", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSmxiaWdBUAE")
+    },
+    "hockey": {
+        "ko-KR": ("하키", "PLACEHOLDER_ID_HOCKEY"),
+        "en-US": ("Hockey", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE4wYlhJU0FtVnVLQUFQAQ")
+    },
+    "golf": {
+        "ko-KR": ("골프", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtdHZLQUFQAQ"),
+        "en-US": ("Golf", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtVnVLQUFQAQ")
+    },
+    "cricket": {
+        "ko-KR": ("크리켓", "PLACEHOLDER_ID_CRICKET"),
+        "en-US": ("Cricket", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGw0Y0Y4U0FtVnVLQUFQAQ")
+    },
+    "rugby": {
+        "ko-KR": ("럭비", "PLACEHOLDER_ID_RUGBY"),
+        "en-US": ("Rugby", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFppY2pnU0FtVnVLQUFQAQ")
+    },
+    
     # 비즈니스 뉴스
-    "business": ("비즈니스", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtdHZHZ0pMVWlnQVAB"),
-    "economy": ("경제", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSnJieWdBUAE"),
-    "personal_finance": ("개인 금융", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSnJieWdBUAE"),
-    "finance": ("금융", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtdHZLQUFQAQ"),
-    "digital_currency": ("디지털 통화", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNSEk0YkhsM054SUNhMjhvQUFQAQ"),
-
+    "business": {
+        "ko-KR": ("비즈니스", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("Business", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB")
+    },
+    "economy": {
+        "ko-KR": ("경제", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSnJieWdBUAE"),
+        "en-US": ("Economy", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSmxiaWdBUAE")
+    },
+    "personal_finance": {
+        "ko-KR": ("개인 금융", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSnJieWdBUAE"),
+        "en-US": ("Personal Finance", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSmxiaWdBUAE")
+    },
+    "finance": {
+        "ko-KR": ("금융", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtdHZLQUFQAQ"),
+        "en-US": ("Finance", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtVnVLQUFQAQ")
+    },
+    "digital_currency": {
+        "ko-KR": ("디지털 통화", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNSEk0YkhsM054SUNhMjhvQUFQAQ"),
+        "en-US": ("Digital currencies", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNSEk0YkhsM054SUNaVzRvQUFQAQ")
+    },
+    
     # 기술 뉴스
-    "technology": ("과학/기술", "CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSnJieG9DUzFJb0FBUAE"),
-    "mobile": ("모바일", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtdHZLQUFQAQ"),
-    "energy": ("에너지", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtdHZLQUFQAQ"),
-    "games": ("게임", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtdHZLQUFQAQ"),
-    "internet_security": ("인터넷 보안", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSnJieWdBUAE"),
-    "electronics": ("전자기기", "PLACEHOLDER_ID_ELECTRONICS"),
-    "virtual_reality": ("가상 현실", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtdHZLQUFQAQ"),
-    "robotics": ("로봇", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNhMjhvQUFQAQ"),
-
+    "technology": {
+        "ko-KR": ("과학/기술", "CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSnJieG9DUzFJb0FBUAE"),
+        "en-US": ("Technology", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB")
+    },
+    "mobile": {
+        "ko-KR": ("모바일", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtdHZLQUFQAQ"),
+        "en-US": ("Mobile", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtVnVLQUFQAQ")
+    },
+    "energy": {
+        "ko-KR": ("에너지", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtdHZLQUFQAQ"),
+        "en-US": ("Energy", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtVnVLQUFQAQ")
+    },
+    "games": {
+        "ko-KR": ("게임", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtdHZLQUFQAQ"),
+        "en-US": ("Games", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtVnVLQUFQAQ")
+    },
+    "internet_security": {
+        "ko-KR": ("인터넷 보안", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSnJieWdBUAE"),
+        "en-US": ("Internet security", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSmxiaWdBUAE")
+    },
+    "electronics": {
+        "ko-KR": ("전자기기", "PLACEHOLDER_ID_ELECTRONICS"),
+        "en-US": ("Electronics", "PLACEHOLDER_ID_ELECTRONICS")
+    },
+    "virtual_reality": {
+        "ko-KR": ("가상 현실", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtdHZLQUFQAQ"),
+        "en-US": ("Virtual Reality", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtVnVLQUFQAQ")
+    },
+    "robotics": {
+        "ko-KR": ("로봇", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNhMjhvQUFQAQ"),
+        "en-US": ("Robotics", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNaVzRvQUFQAQ")
+    },
+    
     # 건강 뉴스
-    "health": ("건강", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtdHZLQUFQAQ"),
-    "nutrition": ("영양", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtdHZLQUFQAQ"),
-    "public_health": ("공공보건학", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSnJieWdBUAE"),
-    "mental_health": ("정신 건강", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSnJieWdBUAE"),
-    "medicine": ("의약품", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtdHZLQUFQAQ"),
-
+    "health": {
+        "ko-KR": ("건강", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtdHZLQUFQAQ"),
+        "en-US": ("Health", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ")
+    },
+    "nutrition": {
+        "ko-KR": ("영양", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtdHZLQUFQAQ"),
+        "en-US": ("Nutrition", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtVnVLQUFQAQ")
+    },
+    "public_health": {
+        "ko-KR": ("공공보건학", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSnJieWdBUAE"),
+        "en-US": ("Public health", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSmxiaWdBUAE")
+    },
+    "mental_health": {
+        "ko-KR": ("정신 건강", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSnJieWdBUAE"),
+        "en-US": ("Mental health", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSmxiaWdBUAE")
+    },
+    "medicine": {
+        "ko-KR": ("의약품", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtdHZLQUFQAQ"),
+        "en-US": ("Medicine", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtVnVLQUFQAQ")
+    },
+    
     # 과학 뉴스
-    "science": ("과학", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtdHZHZ0pMVWlnQVAB"),
-    "space": ("우주", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSnJieWdBUAE"),
-    "wildlife": ("야생동물", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNhMjhvQUFQAQ"),
-    "environment": ("환경", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSnJieWdBUAE"),
-    "neuroscience": ("신경과학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtdHZLQUFQAQ"),
-    "physics": ("물리학", "PLACEHOLDER_ID_PHYSICS"),
-    "geography": ("지리학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtdHZLQUFQAQ"),
-    "paleontology": ("고생물학", "PLACEHOLDER_ID_PALEONTOLOGY"),
-    "social_science": ("사회 과학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtdHZLQUFQAQ"),
-
+    "science": {
+        "ko-KR": ("과학", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("Science", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB")
+    },
+    "space": {
+        "ko-KR": ("우주", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSnJieWdBUAE"),
+        "en-US": ("Space", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSmxiaWdBUAE")
+    },
+    "wildlife": {
+        "ko-KR": ("야생동물", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNhMjhvQUFQAQ"),
+        "en-US": ("Wildlife", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNaVzRvQUFQAQ")
+    },
+    "environment": {
+        "ko-KR": ("환경", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSnJieWdBUAE"),
+        "en-US": ("Environment", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSmxiaWdBUAE")
+    },
+    "neuroscience": {
+        "ko-KR": ("신경과학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtdHZLQUFQAQ"),
+        "en-US": ("Neuroscience", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtVnVLQUFQAQ")
+    },
+    "physics": {
+        "ko-KR": ("물리학", "PLACEHOLDER_ID_PHYSICS"),
+        "en-US": ("Physics", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4YW5RU0FtVnVLQUFQAQ")
+    },
+    "geography": {
+        "ko-KR": ("지리학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtdHZLQUFQAQ"),
+        "en-US": ("Geology", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtVnVLQUFQAQ")
+    },
+    "paleontology": {
+        "ko-KR": ("고생물학", "PLACEHOLDER_ID_PALEONTOLOGY"),
+        "en-US": ("Paleontology", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ5YW13U0FtVnVLQUFQAQ")
+    },
+    "social_science": {
+        "ko-KR": ("사회 과학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtdHZLQUFQAQ"),
+        "en-US": ("Social sciences", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtVnVLQUFQAQ")
+    },
+    
     # 교육 뉴스
-    "education": ("교육", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbXR2S0FBUAE"),
-    "job_market": ("채용정보", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNhMjhvQUFQAQ"),
-    "online_education": ("온라인 교육", "PLACEHOLDER_ID_ONLINE_EDUCATION"),
-    "higher_education": ("고등교육", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtdHZLQUFQAQ"),
-
+    "education": {
+        "ko-KR": ("교육", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbXR2S0FBUAE"),
+        "en-US": ("Education", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbVZ1S0FBUAE")
+    },
+    "job_market": {
+        "ko-KR": ("채용정보", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNhMjhvQUFQAQ"),
+        "en-US": ("Jobs", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNaVzRvQUFQAQ")
+    },
+    "online_education": {
+        "ko-KR": ("온라인 교육", "PLACEHOLDER_ID_ONLINE_EDUCATION"),
+        "en-US": ("Higher education", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtVnVLQUFQAQ")
+    },
+    "higher_education": {
+        "ko-KR": ("고등교육", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtdHZLQUFQAQ"),
+        "en-US": ("Higher education", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtVnVLQUFQAQ")
+    },
+    
     # 라이프스타일 뉴스
-    "lifestyle": ("라이프스타일", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtdHZHZ0pMVWlnQVAB"),
-    "automotive": ("차량", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ2EyOG9BQVAB"),
-    "art_design": ("예술/디자인", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ2EyOG9BQVAB"),
-    "beauty": ("미용", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtdHZLQUFQAQ"),
-    "food": ("음식", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtdHZLQUFQAQ"),
-    "travel": ("여행", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSnJieWdBUAE"),
-    "shopping": ("쇼핑", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtdHZLQUFQAQ"),
-    "home": ("홈", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSnJieWdBUAE"),
-    "outdoor": ("야외 활동", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNhMjhvQUFQAQ"),
-    "fashion": ("패션", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtdHZLQUFQAQ")
+    "lifestyle": {
+        "ko-KR": ("라이프스타일", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtdHZHZ0pMVWlnQVAB"),
+        "en-US": ("Lifestyle", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtVnVHZ0pMVWlnQVAB")
+    },
+    "automotive": {
+        "ko-KR": ("차량", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ2EyOG9BQVAB"),
+        "en-US": ("Vehicles", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ1pXNG9BQVAB")
+    },
+    "art_design": {
+        "ko-KR": ("예술/디자인", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ2EyOG9BQVAB"),
+        "en-US": ("Arts & design", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ1pXNG9BQVAB")
+    },
+    "beauty": {
+        "ko-KR": ("미용", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtdHZLQUFQAQ"),
+        "en-US": ("Beauty", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtVnVLQUFQAQ")
+    },
+    "food": {
+        "ko-KR": ("음식", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtdHZLQUFQAQ"),
+        "en-US": ("Food", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtVnVLQUFQAQ")
+    },
+    "travel": {
+        "ko-KR": ("여행", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSnJieWdBUAE"),
+        "en-US": ("Travel", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSmxiaWdBUAE")
+    },
+    "shopping": {
+        "ko-KR": ("쇼핑", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtdHZLQUFQAQ"),
+        "en-US": ("Shopping", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtVnVLQUFQAQ")
+    },
+    "home": {
+        "ko-KR": ("홈", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSnJieWdBUAE"),
+        "en-US": ("Home", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSmxiaWdBUAE")
+    },
+    "outdoor": {
+        "ko-KR": ("야외 활동", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNhMjhvQUFQAQ"),
+        "en-US": ("Outdoors", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNaVzRvQUFQAQ")
+    },
+    "fashion": {
+        "ko-KR": ("패션", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtdHZLQUFQAQ"),
+        "en-US": ("Fashion", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtVnVLQUFQAQ")
+    }
 }
 
 def get_news_prefix(lang):
@@ -164,11 +364,15 @@ def check_env_variables():
     if TOPIC_MODE:
         if TOPIC_KEYWORD not in TOPIC_MAP:
             raise ValueError(f"유효하지 않은 토픽 키워드입니다: {TOPIC_KEYWORD}")
+        hl, gl, ceid = parse_topic_params(TOPIC_PARAMS)
         logging.info(f"토픽 모드 활성화: {TOPIC_KEYWORD}, 파라미터: {TOPIC_PARAMS}")
     else:
         if not RSS_URL_TOPIC:
             raise ValueError("토픽 모드가 비활성화되었을 때는 RSS_URL_TOPIC을 설정해야 합니다.")
+        hl, gl, ceid = parse_topic_params(RSS_URL_TOPIC)
         logging.info(f"일반 모드 활성화, RSS 피드 URL: {RSS_URL_TOPIC}")
+    
+    return hl, gl, ceid
 
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
@@ -654,15 +858,17 @@ def get_topic_category(keyword, lang='en'):
         }
     }
     
+    lang_key = 'ko' if lang.startswith('ko') else 'en'
     for category, data in categories.items():
         if keyword in data["keywords"]:
-            return data[lang]
+            return data[lang_key]
     
-    return "기타 뉴스" if lang == 'ko' else "Other News"
+    return "기타 뉴스" if lang_key == 'ko' else "Other News"
 
-def get_topic_display_name(keyword):
+def get_topic_display_name(keyword, lang):
     """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
-    return TOPIC_MAP.get(keyword, (keyword, ''))[0]
+    lang_key = 'ko-KR' if lang.startswith('ko') else 'en-US'
+    return TOPIC_MAP.get(keyword, {}).get(lang_key, [keyword])[0]
 
 def get_country_emoji(country_code):
     """국가 코드를 유니코드 플래그 이모지로 변환합니다."""
@@ -670,12 +876,20 @@ def get_country_emoji(country_code):
         return ''
     return chr(ord(country_code[0].upper()) + 127397) + chr(ord(country_code[1].upper()) + 127397)
 
+def parse_topic_params(url):
+    """URL에서 언어, 국가 코드, ceid 값을 추출합니다."""
+    params = urlparse(url).query
+    parsed_params = parse_qs(params)
+    hl = parsed_params.get('hl', ['ko'])[0]
+    gl = parsed_params.get('gl', ['KR'])[0]
+    ceid = parsed_params.get('ceid', [f'{gl}:{hl}'])[0]
+    return hl, gl, ceid
+
 def is_korean_params(params):
     """파라미터가 한국어 설정인지 확인합니다."""
     return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
 
 def main():
-    """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     init_db(reset=INITIALIZE_TOPIC)
 
     session = requests.Session()
@@ -689,6 +903,8 @@ def main():
             rss_url += TOPIC_PARAMS
     else:
         rss_url = RSS_URL_TOPIC
+
+    hl, gl, ceid = parse_topic_params(rss_url)
 
     rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
@@ -733,27 +949,10 @@ def main():
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
 
-        is_korean = is_korean_params(TOPIC_PARAMS)
-        lang = 'ko' if is_korean else 'en'
-        
-        if TOPIC_MODE:
-            category = get_topic_category(TOPIC_KEYWORD, lang)
-            topic_name = get_topic_display_name(TOPIC_KEYWORD)
-        else:
-            category = "일반 뉴스" if lang == 'ko' else "General news"
-            topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
-        
-        # gl 파라미터에서 국가 코드 추출
-        gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
-        country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
-        
-        news_prefix = get_news_prefix(lang)
-
-        # 로깅을 통해 각 값 확인
-        logging.info(f"news_prefix: {news_prefix}")
-        logging.info(f"category: {category}")
-        logging.info(f"topic_name: {topic_name}")
-        logging.info(f"country_emoji: {country_emoji}")
+        news_prefix = get_news_prefix(hl)
+        category = get_topic_category(TOPIC_KEYWORD, hl) if TOPIC_MODE else ("일반 뉴스" if hl.startswith('ko') else "General news")
+        topic_name = get_topic_display_name(TOPIC_KEYWORD, hl) if TOPIC_MODE else ("RSS 피드" if hl.startswith('ko') else "RSS Feed")
+        country_emoji = get_country_emoji(gl)
 
         discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
         if description:
