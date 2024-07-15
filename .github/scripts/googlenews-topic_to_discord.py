@@ -911,7 +911,11 @@ def main():
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
 
     if TOPIC_MODE:
-        topic_id = TOPIC_MAP[TOPIC_KEYWORD][1]
+        try:
+            topic_id = TOPIC_MAP[TOPIC_KEYWORD]['ko-KR'][1]  # 'ko-KR' 또는 'en-US' 선택
+        except KeyError:
+            logging.error(f"Invalid TOPIC_KEYWORD: {TOPIC_KEYWORD}")
+            return
         rss_url = f"https://news.google.com/rss/topics/{topic_id}"
         if TOPIC_PARAMS:
             rss_url += TOPIC_PARAMS
