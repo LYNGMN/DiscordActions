@@ -25,7 +25,8 @@ DISCORD_USERNAME_TOPIC = os.environ.get('DISCORD_USERNAME_TOPIC', '').strip()
 INITIALIZE_TOPIC = os.environ.get('INITIALIZE_MODE_TOPIC', 'false').lower() == 'true'
 ADVANCED_FILTER_TOPIC = os.environ.get('ADVANCED_FILTER_TOPIC', '')
 DATE_FILTER_TOPIC = os.environ.get('DATE_FILTER_TOPIC', '')
-ORIGIN_LINK_TOPIC = os.environ.get('ORIGIN_LINK_TOPIC', 'true').lower() == 'true'
+ORIGIN_LINK_TOPIC = os.getenv('ORIGIN_LINK_TOPIC', '').lower()
+ORIGIN_LINK_TOPIC = ORIGIN_LINK_TOPIC not in ['false', 'f', '0', 'no', 'n']
 TOPIC_MODE = os.environ.get('TOPIC_MODE', 'false').lower() == 'true'
 TOPIC_KEYWORD = os.environ.get('TOPIC_KEYWORD', '')
 TOPIC_PARAMS = os.environ.get('TOPIC_PARAMS', '?hl=ko&gl=KR&ceid=KR%3Ako')
@@ -307,26 +308,38 @@ def decode_google_news_url(source_url):
     return source_url
 
 def get_original_url(google_link, session, max_retries=5):
-    """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
+    """
+    Google 뉴스 링크를 원본 URL로 변환합니다. 
+    ORIGIN_LINK_TOPIC 설정에 따라 동작이 달라집니다:
+    - 설정하지 않았거나 True: 오리지널 링크를 가져옵니다.
+    - False: 원 링크(구글 링크)를 그대로 사용합니다.
+    """
     logging.info(f"ORIGIN_LINK_TOPIC 값 확인: {ORIGIN_LINK_TOPIC}")
 
-    # ORIGIN_LINK_TOPIC 설정과 상관없이 항상 원본 링크를 시도
-    original_url = decode_google_news_url(google_link)
-    if original_url:
-        return original_url
+    if ORIGIN_LINK_TOPIC:
+        # 오리지널 링크를 가져오려고 시도
+        original_url = decode_google_news_url(google_link)
+        if original_url != google_link:
+            return original_url
 
-    # 디코딩 실패 시 requests 방식 시도
-    retries = 0
-    while retries < max_retries:
-        try:
-            response = session.get(google_link, allow_redirects=True)
-            if response.status_code == 200:
-                return response.url
-        except requests.RequestException as e:
-            logging.error(f"Failed to get original URL: {e}")
-        retries += 1
-
-    return google_link
+        # 디코딩 실패 시 requests 방식 시도
+        retries = 0
+        while retries < max_retries:
+            try:
+                response = session.get(google_link, allow_redirects=True)
+                if response.status_code == 200:
+                    return response.url
+            except requests.RequestException as e:
+                logging.error(f"원본 URL 가져오기 실패: {e}")
+            retries += 1
+        
+        # 모든 시도가 실패한 경우 원 링크 반환
+        logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
+        return google_link
+    else:
+        # ORIGIN_LINK_TOPIC가 False인 경우 원 링크를 그대로 반환
+        logging.info(f"ORIGIN_LINK_TOPIC가 False, 원 링크 사용: {google_link}")
+        return google_link
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
