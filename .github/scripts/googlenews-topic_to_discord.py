@@ -869,21 +869,21 @@ def get_topic_category(keyword, lang='en'):
     lang_key = 'ko' if lang.startswith('ko') else 'en'
     topic_map_lang_key = 'ko-KR' if lang.startswith('ko') else 'en-US'
     
-    logging.info(f"get_topic_category called with keyword_or_id: {keyword_or_id}, lang: {lang}")
+    logging.info(f"get_topic_category called with keyword: {keyword}, lang: {lang}")
     
     for category, data in categories.items():
-        if keyword_or_id in data["keywords"]:
+        if keyword in data["keywords"]:
             return data[lang_key]
     
     # TOPIC_MAP에서 ID로 검색
     for topic, topic_data in TOPIC_MAP.items():
-        if keyword_or_id == topic or keyword_or_id == topic_data[topic_map_lang_key][1]:
+        if keyword == topic or keyword == topic_data[topic_map_lang_key][1]:
             # topic에 해당하는 카테고리 찾기
             for category, data in categories.items():
                 if topic in data["keywords"]:
                     return data[lang_key]
     
-    logging.warning(f"No matching category found for keyword_or_id: {keyword_or_id}")
+    logging.warning(f"No matching category found for keyword: {keyword}")
     
     return "기타 뉴스" if lang_key == 'ko' else "Other News"
 
