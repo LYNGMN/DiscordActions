@@ -27,8 +27,9 @@ ADVANCED_FILTER_TOPIC = os.environ.get('ADVANCED_FILTER_TOPIC', '')
 DATE_FILTER_TOPIC = os.environ.get('DATE_FILTER_TOPIC', '')
 ORIGIN_LINK_TOPIC = os.environ.get('ORIGIN_LINK_TOPIC', 'true').lower() == 'true'
 TOPIC_MODE = os.environ.get('TOPIC_MODE', 'false').lower() == 'true'
-TOPIC_KEYWORD = os.environ.get('TOPIC_KEYWORD', '').lower()
-TOPIC_PARAMS = os.environ.get('TOPIC_PARAMS', 'hl=ko&gl=KR&ceid=KR%3Ako')
+TOPIC_KEYWORD = os.environ.get('TOPIC_KEYWORD', '')
+TOPIC_PARAMS = os.environ.get('TOPIC_PARAMS', '?hl=ko&gl=KR&ceid=KR%3Ako')
+RSS_URL_TOPIC = os.environ.get('RSS_URL_TOPIC', '')
 
 # DB 설정
 DB_PATH = 'google_news_topic.db'
@@ -61,7 +62,7 @@ TOPIC_MAP = {
     "american_football": ("미식축구", "PLACEHOLDER_ID_AMERICAN_FOOTBALL"),
     "sports_betting": ("스포츠 베팅", "PLACEHOLDER_ID_SPORTS_BETTING"),
     "water_sports": ("수상 스포츠", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSnJieWdBUAE"),
-    "hockey": ("하키", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE4wYlhJU0FtVnVLQUFQAQ"),
+    "hockey": ("하키", "PLACEHOLDER_ID_HOCKEY"),
     "golf": ("골프", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtdHZLQUFQAQ"),
     "cricket": ("크리켓", "PLACEHOLDER_ID_CRICKET"),
     "rugby": ("럭비", "PLACEHOLDER_ID_RUGBY"),
@@ -129,9 +130,9 @@ def check_env_variables():
             raise ValueError(f"유효하지 않은 토픽 키워드입니다: {TOPIC_KEYWORD}")
         logging.info(f"토픽 모드 활성화: {TOPIC_KEYWORD}, 파라미터: {TOPIC_PARAMS}")
     else:
-        if not RSS_FEED_URL:
-            raise ValueError("토픽 모드가 비활성화되었을 때는 RSS_FEED_URL을 설정해야 합니다.")
-        logging.info(f"일반 모드 활성화, RSS 피드 URL: {RSS_FEED_URL}")
+        if not RSS_URL_TOPIC:
+            raise ValueError("토픽 모드가 비활성화되었을 때는 RSS_URL_TOPIC을 설정해야 합니다.")
+        logging.info(f"일반 모드 활성화, RSS 피드 URL: {RSS_URL_TOPIC}")
 
 def init_db(reset=False):
     """데이터베이스를 초기화합니다."""
@@ -272,7 +273,7 @@ def decode_google_news_url(source_url):
 
 def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
-    logging.info(f"ORIGIN_LINK_TOP 값 확인: {ORIGIN_LINK_TOPIC}")
+    logging.info(f"ORIGIN_LINK_TOPIC 값 확인: {ORIGIN_LINK_TOPIC}")
 
     # ORIGIN_LINK_TOP 설정과 상관없이 항상 원본 링크를 시도
     original_url = decode_google_news_url(google_link)
@@ -451,34 +452,86 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     
     return True
 
-def get_topic_category(keyword):
+def get_topic_category(keyword, lang='en'):
     """토픽 키워드에 해당하는 카테고리를 반환합니다."""
     categories = {
-        "headlines": ["headlines", "korea", "world", "politics"],
-        "entertainment": ["entertainment", "celebrity", "tv", "music", "movies", "theater"],
-        "sports": ["sports", "soccer", "cycling", "motorsports", "tennis", "martial_arts", 
-                   "basketball", "baseball", "american_football", "sports_betting", 
-                   "water_sports", "hockey", "golf", "cricket", "rugby"],
-        "business": ["business", "economy", "personal_finance", "finance", "digital_currency"],
-        "technology": ["technology", "mobile", "energy", "games", "internet_security", 
-                       "electronics", "virtual_reality", "robotics"],
-        "health": ["health", "nutrition", "public_health", "mental_health", "medicine"],
-        "science": ["science", "space", "wildlife", "environment", "neuroscience", 
-                    "physics", "geography", "paleontology", "social_science"],
-        "education": ["education", "job_market", "online_education", "higher_education"],
-        "lifestyle": ["lifestyle", "automotive", "art_design", "beauty", "food", "travel", 
-                      "shopping", "home", "outdoor", "fashion"]
+        "headlines": {
+            "en": "Headlines",
+            "ko": "헤드라인",
+            "keywords": ["headlines", "korea", "world", "politics"]
+        },
+        "entertainment": {
+            "en": "Entertainment",
+            "ko": "연예",
+            "keywords": ["entertainment", "celebrity", "tv", "music", "movies", "theater"]
+        },
+        "sports": {
+            "en": "Sports",
+            "ko": "스포츠",
+            "keywords": ["sports", "soccer", "cycling", "motorsports", "tennis", "martial_arts", 
+                         "basketball", "baseball", "american_football", "sports_betting", 
+                         "water_sports", "hockey", "golf", "cricket", "rugby"]
+        },
+        "business": {
+            "en": "Business",
+            "ko": "비즈니스",
+            "keywords": ["business", "economy", "personal_finance", "finance", "digital_currency"]
+        },
+        "technology": {
+            "en": "Technology",
+            "ko": "기술",
+            "keywords": ["technology", "mobile", "energy", "games", "internet_security", 
+                         "electronics", "virtual_reality", "robotics"]
+        },
+        "health": {
+            "en": "Health",
+            "ko": "건강",
+            "keywords": ["health", "nutrition", "public_health", "mental_health", "medicine"]
+        },
+        "science": {
+            "en": "Science",
+            "ko": "과학",
+            "keywords": ["science", "space", "wildlife", "environment", "neuroscience", 
+                         "physics", "geography", "paleontology", "social_science"]
+        },
+        "education": {
+            "en": "Education",
+            "ko": "교육",
+            "keywords": ["education", "job_market", "online_education", "higher_education"]
+        },
+        "lifestyle": {
+            "en": "Lifestyle",
+            "ko": "라이프스타일",
+            "keywords": ["lifestyle", "automotive", "art_design", "beauty", "food", "travel", 
+                         "shopping", "home", "outdoor", "fashion"]
+        }
     }
     
-    for category, keywords in categories.items():
-        if keyword in keywords:
-            return f"{category.capitalize()} 뉴스"
+    for category, data in categories.items():
+        if keyword in data["keywords"]:
+            return f"{data[lang]} 뉴스"
     
-    return "기타 뉴스"
+    return "기타 뉴스" if lang == 'ko' else "Other News"
 
 def get_topic_display_name(keyword):
     """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
     return TOPIC_MAP.get(keyword, (keyword, ''))[0]
+
+def get_country_emoji(gl_param):
+    """gl 파라미터에 따른 국가 이모지를 반환합니다."""
+    country_emojis = {
+        'KR': '🇰🇷',
+        'US': '🇺🇸',
+        'JP': '🇯🇵',
+        'GB': '🇬🇧',
+        # 필요한 다른 국가들을 여기에 추가할 수 있습니다.
+    }
+    country_code = gl_param.upper()
+    return country_emojis.get(country_code, '')  # 해당 국가 코드가 없으면 빈 문자열 반환
+
+def is_korean_params(params):
+    """파라미터가 한국어 설정인지 확인합니다."""
+    return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
@@ -490,11 +543,11 @@ def main():
 
     if TOPIC_MODE:
         topic_id = TOPIC_MAP[TOPIC_KEYWORD][1]
-        rss_url = f"https://news.google.com/rss/topics/{topic_id}{TOPIC_PARAMS}"
+        rss_url = f"https://news.google.com/rss/topics/{topic_id}"
+        if TOPIC_PARAMS:
+            rss_url += TOPIC_PARAMS
     else:
-        if not RSS_FEED_URL:
-            raise ValueError("토픽 모드가 꺼져 있을 때는 RSS_FEED_URL을 설정해야 합니다.")
-        rss_url = RSS_FEED_URL
+        rss_url = RSS_URL_TOPIC
 
     rss_data = fetch_rss_feed(rss_url)
     root = ET.fromstring(rss_data)
@@ -534,9 +587,28 @@ def main():
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
 
-        category = get_topic_category(TOPIC_KEYWORD) if TOPIC_MODE else "일반 뉴스"
-        topic_name = get_topic_display_name(TOPIC_KEYWORD) if TOPIC_MODE else "RSS 피드"
-        discord_message = f"`Google 뉴스 - {category} - {topic_name} 🇰🇷`\n**{title}**\n{link}"
+        is_korean = is_korean_params(TOPIC_PARAMS)
+        lang = 'ko' if is_korean else 'en'
+        
+        if TOPIC_MODE:
+            category = get_topic_category(TOPIC_KEYWORD, lang)
+            topic_name = get_topic_display_name(TOPIC_KEYWORD)
+        else:
+            category = "일반" if lang == 'ko' else "General"
+            topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
+        
+        # gl 파라미터에서 국가 코드 추출
+        gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
+        country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
+        
+        if lang == 'ko':
+            news_prefix = "Google 뉴스"
+            category_suffix = "뉴스"
+        else:
+            news_prefix = "Google News"
+            category_suffix = "news"
+        
+        discord_message = f"`{news_prefix} - {category} {category_suffix} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n>>> {description}\n\n"
         else:
