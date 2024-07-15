@@ -712,7 +712,7 @@ def extract_topic_id(url):
         return path_parts[path_parts.index('topics') + 1]
     return None
 
-def get_topic_category(keyword, lang='en'):
+def get_topic_category(keyword_or_id, lang='en'):
     """토픽 키워드에 해당하는 카테고리를 반환합니다."""
     categories = {
         "headlines": {
@@ -991,11 +991,12 @@ def main():
         
         if TOPIC_MODE or topic_id:
             category_input = TOPIC_KEYWORD if TOPIC_MODE else topic_id
+            logging.info(f"Calling get_topic_category with: {category_input}, {hl}")
             category = get_topic_category(category_input, hl)
             topic_name = get_topic_display_name(category_input, hl)
         else:
-            category = "일반 뉴스" if hl == 'ko' else "General news"
-            topic_name = "RSS 피드" if hl == 'ko' else "RSS Feed"
+            category = "일반 뉴스" if hl.startswith('ko') else "General news"
+            topic_name = "RSS 피드" if hl.startswith('ko') else "RSS Feed"
 
         country_emoji = get_country_emoji(gl)
 
