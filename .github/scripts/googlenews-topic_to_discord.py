@@ -374,6 +374,16 @@ def get_topic_info(keyword, lang):
         # 해당 언어가 없을 경우 en을 기본값으로 사용
         return TOPIC_MAP.get(keyword, {}).get("en", (keyword, ''))
 
+def get_topic_by_id(rss_url_topic):
+    """RSS URL에서 토픽 ID를 추출하여 해당하는 토픽 이름과 카테고리를 반환합니다."""
+    parsed_url = urlparse(rss_url_topic)
+    topic_id = parsed_url.path.split('/')[-1]
+    for keyword, lang_data in TOPIC_MAP.items():
+        for lang, (name, id) in lang_data.items():
+            if id == topic_id:
+                return name, keyword
+    return None, None
+
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
     if not DISCORD_WEBHOOK_TOPIC:
@@ -913,6 +923,13 @@ def main():
             rss_url += TOPIC_PARAMS
     else:
         rss_url = RSS_URL_TOPIC
+        topic_name, topic_keyword = get_topic_by_id(rss_url)
+        if topic_name is None:
+            topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
+        if topic_keyword is None:
+            category = "일반 뉴스" if lang == 'ko' else "General news"
+        else:
+            category = get_topic_category(topic_keyword, lang)
 
     rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
@@ -956,12 +973,9 @@ def main():
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
         
-        if TOPIC_MODE:
-            category = get_topic_category(TOPIC_KEYWORD, lang)
-            topic_name = get_topic_display_name(TOPIC_KEYWORD, lang)
-        else:
-            category = "일반 뉴스" if lang == 'ko' else "General news"
-            topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
+        if not TOPIC_MODE:
+            topic_name = topic_name if topic_name else ("RSS 피드" if lang == 'ko' else "RSS Feed")
+            category = category if category else ("일반 뉴스" if lang == 'ko' else "General news")
         
         # gl 파라미터에서 국가 코드 추출
         gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
@@ -989,7 +1003,7 @@ def main():
             username=DISCORD_USERNAME_TOPIC
         )
 
-        save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
+        save_news_item(pub_date, guid, title, link, topic_keyword if TOPIC_MODE else "general", related_news_json)
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
