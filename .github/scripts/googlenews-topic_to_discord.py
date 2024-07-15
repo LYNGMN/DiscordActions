@@ -867,7 +867,6 @@ def get_topic_category(keyword_or_id, lang='en'):
     }
     
     lang_key = 'ko' if lang.startswith('ko') else 'en'
-    topic_map_lang_key = 'ko-KR' if lang.startswith('ko') else 'en-US'
     
     logging.info(f"get_topic_category called with keyword_or_id: {keyword_or_id}, lang: {lang}")
     
@@ -877,7 +876,7 @@ def get_topic_category(keyword_or_id, lang='en'):
     
     # TOPIC_MAP에서 ID로 검색
     for topic, topic_data in TOPIC_MAP.items():
-        if keyword_or_id == topic or keyword_or_id == topic_data[topic_map_lang_key][1]:
+        if keyword_or_id == topic or keyword_or_id == topic_data[1]:
             # topic에 해당하는 카테고리 찾기
             for category, data in categories.items():
                 if topic in data["keywords"]:
@@ -927,7 +926,7 @@ def main():
 
     if TOPIC_MODE:
         try:
-            topic_id = TOPIC_MAP[TOPIC_KEYWORD]['ko-KR'][1]  # 'ko-KR' 또는 'en-US' 선택
+            topic_id = TOPIC_MAP[TOPIC_KEYWORD][1]
         except KeyError:
             logging.error(f"Invalid TOPIC_KEYWORD: {TOPIC_KEYWORD}")
             return
@@ -993,7 +992,7 @@ def main():
             category_input = TOPIC_KEYWORD if TOPIC_MODE else topic_id
             logging.info(f"Calling get_topic_category with: {category_input}, {hl}")
             category = get_topic_category(category_input, hl)
-            topic_name = get_topic_display_name(category_input, hl)
+            topic_name = get_topic_display_name(category_input)
         else:
             category = "일반 뉴스" if hl.startswith('ko') else "General news"
             topic_name = "RSS 피드" if hl.startswith('ko') else "RSS Feed"
