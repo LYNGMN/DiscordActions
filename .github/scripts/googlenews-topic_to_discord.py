@@ -456,52 +456,52 @@ def get_topic_category(keyword, lang='en'):
     """토픽 키워드에 해당하는 카테고리를 반환합니다."""
     categories = {
         "headlines": {
-            "en": "Headlines",
-            "ko": "헤드라인",
+            "en": "Headlines news",
+            "ko": "헤드라인 뉴스",
             "keywords": ["headlines", "korea", "world", "politics"]
         },
         "entertainment": {
-            "en": "Entertainment",
-            "ko": "연예",
+            "en": "Entertainment news",
+            "ko": "연예 뉴스",
             "keywords": ["entertainment", "celebrity", "tv", "music", "movies", "theater"]
         },
         "sports": {
-            "en": "Sports",
-            "ko": "스포츠",
+            "en": "Sports news",
+            "ko": "스포츠 뉴스",
             "keywords": ["sports", "soccer", "cycling", "motorsports", "tennis", "martial_arts", 
                          "basketball", "baseball", "american_football", "sports_betting", 
                          "water_sports", "hockey", "golf", "cricket", "rugby"]
         },
         "business": {
-            "en": "Business",
-            "ko": "비즈니스",
+            "en": "Business news",
+            "ko": "비즈니스 뉴스",
             "keywords": ["business", "economy", "personal_finance", "finance", "digital_currency"]
         },
         "technology": {
-            "en": "Technology",
-            "ko": "기술",
+            "en": "Technology news",
+            "ko": "기술 뉴스",
             "keywords": ["technology", "mobile", "energy", "games", "internet_security", 
                          "electronics", "virtual_reality", "robotics"]
         },
         "health": {
-            "en": "Health",
-            "ko": "건강",
+            "en": "Health news",
+            "ko": "건강 뉴스",
             "keywords": ["health", "nutrition", "public_health", "mental_health", "medicine"]
         },
         "science": {
-            "en": "Science",
-            "ko": "과학",
+            "en": "Science news",
+            "ko": "과학 뉴스",
             "keywords": ["science", "space", "wildlife", "environment", "neuroscience", 
                          "physics", "geography", "paleontology", "social_science"]
         },
         "education": {
-            "en": "Education",
-            "ko": "교육",
+            "en": "Education news",
+            "ko": "교육 뉴스",
             "keywords": ["education", "job_market", "online_education", "higher_education"]
         },
         "lifestyle": {
-            "en": "Lifestyle",
-            "ko": "라이프스타일",
+            "en": "Lifestyle news",
+            "ko": "라이프스타일 뉴스",
             "keywords": ["lifestyle", "automotive", "art_design", "beauty", "food", "travel", 
                          "shopping", "home", "outdoor", "fashion"]
         }
@@ -509,7 +509,7 @@ def get_topic_category(keyword, lang='en'):
     
     for category, data in categories.items():
         if keyword in data["keywords"]:
-            return f"{data[lang]} 뉴스"
+            return data[lang]
     
     return "기타 뉴스" if lang == 'ko' else "Other News"
 
@@ -517,17 +517,11 @@ def get_topic_display_name(keyword):
     """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
     return TOPIC_MAP.get(keyword, (keyword, ''))[0]
 
-def get_country_emoji(gl_param):
-    """gl 파라미터에 따른 국가 이모지를 반환합니다."""
-    country_emojis = {
-        'KR': '🇰🇷',
-        'US': '🇺🇸',
-        'JP': '🇯🇵',
-        'GB': '🇬🇧',
-        # 필요한 다른 국가들을 여기에 추가할 수 있습니다.
-    }
-    country_code = gl_param.upper()
-    return country_emojis.get(country_code, '')  # 해당 국가 코드가 없으면 빈 문자열 반환
+def get_country_emoji(country_code):
+    """국가 코드를 유니코드 플래그 이모지로 변환합니다."""
+    if len(country_code) != 2:
+        return ''
+    return chr(ord(country_code[0].upper()) + 127397) + chr(ord(country_code[1].upper()) + 127397)
 
 def is_korean_params(params):
     """파라미터가 한국어 설정인지 확인합니다."""
@@ -550,6 +544,10 @@ def main():
         rss_url = RSS_URL_TOPIC
 
     rss_data = fetch_rss_feed(rss_url)
+    if rss_data is None:
+        logging.error("RSS 데이터를 가져오는 데 실패했습니다.")
+        return
+
     root = ET.fromstring(rss_data)
 
     news_items = root.findall('.//item')
@@ -580,7 +578,7 @@ def main():
         related_news = extract_news_items(description_html, session)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-        description = parse_html_description(description_html, session)
+        description = extract_news_items(description_html, session)
 
         # 고급 검색 필터 적용
         if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
@@ -594,7 +592,7 @@ def main():
             category = get_topic_category(TOPIC_KEYWORD, lang)
             topic_name = get_topic_display_name(TOPIC_KEYWORD)
         else:
-            category = "일반" if lang == 'ko' else "General"
+            category = "일반 뉴스" if lang == 'ko' else "General news"
             topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
         
         # gl 파라미터에서 국가 코드 추출
@@ -603,26 +601,23 @@ def main():
         
         if lang == 'ko':
             news_prefix = "Google 뉴스"
-            category_suffix = "뉴스"
         else:
             news_prefix = "Google News"
-            category_suffix = "news"
         
-        discord_message = f"`{news_prefix} - {category} {category_suffix} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
+        discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n>>> {description}\n\n"
         else:
             discord_message += "\n\n"
         discord_message += f"📅 {formatted_date}"
 
-        send_discord_message(
+        if send_discord_message(
             DISCORD_WEBHOOK_TOPIC,
             discord_message,
             avatar_url=DISCORD_AVATAR_TOPIC,
             username=DISCORD_USERNAME_TOPIC
-        )
-
-        save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
+        ):
+            save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
