@@ -741,7 +741,7 @@ def main():
         logging.info(f"topic_name: {topic_name}")
         logging.info(f"country_emoji: {country_emoji}")
 
-        discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
+        discord_message = f"`{news_prefix}`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n>>> {description}\n\n"
         else:
