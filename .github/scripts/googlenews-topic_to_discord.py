@@ -733,7 +733,7 @@ def main():
         gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
         country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
         
-        news_prefix = get_news_prefix(lang, category, topic_name, country_emoji)
+        news_prefix = get_news_prefix(lang)
 
         # 로깅을 통해 각 값 확인
         logging.info(f"news_prefix: {news_prefix}")
@@ -741,7 +741,7 @@ def main():
         logging.info(f"topic_name: {topic_name}")
         logging.info(f"country_emoji: {country_emoji}")
 
-        discord_message = f"`{news_prefix}`\n**{title}**\n{link}"
+        discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n>>> {description}\n\n"
         else:
