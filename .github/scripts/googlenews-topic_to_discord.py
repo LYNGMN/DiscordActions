@@ -706,6 +706,7 @@ def main():
     for item in news_items:
         guid = item.find('guid').text
 
+        # 초기화 모드가 아닌 경우에만 중복 검사
         if not INITIALIZE_TOPIC and is_guid_posted(guid):
             continue
 
