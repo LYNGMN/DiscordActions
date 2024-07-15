@@ -877,9 +877,14 @@ def get_topic_category(keyword, lang='en'):
     
     return "기타 뉴스" if lang == 'ko' else "Other News"
 
-def get_topic_display_name(keyword):
+def get_topic_display_name(keyword, lang):
     """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
-    return TOPIC_MAP.get(keyword, (keyword, ''))[0]
+    topic_info = TOPIC_MAP.get(keyword, {}).get(lang)
+    if topic_info:
+        return topic_info[0]
+    else:
+        # 해당 언어가 없을 경우 en을 기본값으로 사용
+        return TOPIC_MAP.get(keyword, {}).get("en", (keyword, ''))[0]
 
 def get_country_emoji(country_code):
     """국가 코드를 유니코드 플래그 이모지로 변환합니다."""
@@ -953,7 +958,7 @@ def main():
         
         if TOPIC_MODE:
             category = get_topic_category(TOPIC_KEYWORD, lang)
-            topic_name = get_topic_display_name(TOPIC_KEYWORD)
+            topic_name = get_topic_display_name(TOPIC_KEYWORD, lang)
         else:
             category = "일반 뉴스" if lang == 'ko' else "General news"
             topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
