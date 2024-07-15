@@ -906,8 +906,17 @@ def is_korean_params(params):
     """파라미터가 한국어 설정인지 확인합니다."""
     return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
 
+def get_topic_by_id(rss_url_topic):
+    """RSS URL에서 토픽 ID를 추출하여 해당하는 토픽 이름과 카테고리를 반환합니다."""
+    parsed_url = urlparse(rss_url_topic)
+    topic_id = parsed_url.path.split('/')[-1]
+    for keyword, lang_data in TOPIC_MAP.items():
+        for lang, (name, id) in lang_data.items():
+            if id == topic_id:
+                return name, keyword
+    return None, None
+
 def main():
-    """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     init_db(reset=INITIALIZE_TOPIC)
 
     session = requests.Session()
@@ -921,6 +930,7 @@ def main():
         rss_url = f"https://news.google.com/rss/topics/{topic_id}"
         if TOPIC_PARAMS:
             rss_url += TOPIC_PARAMS
+        category = get_topic_category(TOPIC_KEYWORD, lang)
     else:
         rss_url = RSS_URL_TOPIC
         topic_name, topic_keyword = get_topic_by_id(rss_url)
@@ -973,10 +983,6 @@ def main():
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
         
-        if not TOPIC_MODE:
-            topic_name = topic_name if topic_name else ("RSS 피드" if lang == 'ko' else "RSS Feed")
-            category = category if category else ("일반 뉴스" if lang == 'ko' else "General news")
-        
         # gl 파라미터에서 국가 코드 추출
         gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
         country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
@@ -1003,7 +1009,7 @@ def main():
             username=DISCORD_USERNAME_TOPIC
         )
 
-        save_news_item(pub_date, guid, title, link, topic_keyword if TOPIC_MODE else "general", related_news_json)
+        save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
