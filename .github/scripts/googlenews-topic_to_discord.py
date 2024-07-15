@@ -869,21 +869,21 @@ def get_topic_category(keyword, lang='en'):
     lang_key = 'ko' if lang.startswith('ko') else 'en'
     topic_map_lang_key = 'ko-KR' if lang.startswith('ko') else 'en-US'
     
-    logging.info(f"get_topic_category called with keyword: {keyword}, lang: {lang}")
+    logging.info(f"get_topic_category called with keyword_or_id: {keyword_or_id}, lang: {lang}")
     
     for category, data in categories.items():
-        if keyword in data["keywords"]:
+        if keyword_or_id in data["keywords"]:
             return data[lang_key]
     
     # TOPIC_MAP에서 ID로 검색
     for topic, topic_data in TOPIC_MAP.items():
-        if keyword == topic or keyword == topic_data[topic_map_lang_key][1]:
+        if keyword_or_id == topic or keyword_or_id == topic_data[topic_map_lang_key][1]:
             # topic에 해당하는 카테고리 찾기
             for category, data in categories.items():
                 if topic in data["keywords"]:
                     return data[lang_key]
     
-    logging.warning(f"No matching category found for keyword: {keyword}")
+    logging.warning(f"No matching category found for keyword_or_id: {keyword_or_id}")
     
     return "기타 뉴스" if lang_key == 'ko' else "Other News"
 
@@ -991,12 +991,11 @@ def main():
         
         if TOPIC_MODE or topic_id:
             category_input = TOPIC_KEYWORD if TOPIC_MODE else topic_id
-            logging.info(f"Calling get_topic_category with: {category_input}, {hl}")
             category = get_topic_category(category_input, hl)
             topic_name = get_topic_display_name(category_input, hl)
         else:
-            category = "일반 뉴스" if hl.startswith('ko') else "General news"
-            topic_name = "RSS 피드" if hl.startswith('ko') else "RSS Feed"
+            category = "일반 뉴스" if hl == 'ko' else "General news"
+            topic_name = "RSS 피드" if hl == 'ko' else "RSS Feed"
 
         country_emoji = get_country_emoji(gl)
 
