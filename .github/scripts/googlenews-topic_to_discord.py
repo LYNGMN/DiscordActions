@@ -275,7 +275,7 @@ def get_original_url(google_link, session, max_retries=5):
     """Google 뉴스 링크를 원본 URL로 변환합니다. 디코딩 실패 시 requests 방식을 시도합니다."""
     logging.info(f"ORIGIN_LINK_TOPIC 값 확인: {ORIGIN_LINK_TOPIC}")
 
-    # ORIGIN_LINK_TOP 설정과 상관없이 항상 원본 링크를 시도
+    # ORIGIN_LINK_TOPIC 설정과 상관없이 항상 원본 링크를 시도
     original_url = decode_google_news_url(google_link)
     if original_url:
         return original_url
@@ -316,7 +316,7 @@ def parse_html_description(html_desc, session):
     news_items = []
     full_content_link = ""
     for item in items:
-        if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text:
+        if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text or 'View full coverage on Google News' in item.text:
             full_content_link_match = item.find('a')
             if full_content_link_match:
                 full_content_link = full_content_link_match['href']
@@ -334,9 +334,23 @@ def parse_html_description(html_desc, session):
 
     news_string = '\n'.join(news_items)
     if full_content_link:
-        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
+        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기]({full_content_link})"
 
     return news_string
+
+def extract_news_items(description, session):
+    """HTML 설명에서 뉴스 항목을 추출합니다."""
+    soup = BeautifulSoup(description, 'html.parser')
+    news_items = []
+    for li in soup.find_all('li'):
+        a_tag = li.find('a')
+        if a_tag:
+            title = replace_brackets(a_tag.text)
+            google_link = a_tag['href']
+            link = get_original_url(google_link, session)
+            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            news_items.append({"title": title, "link": link, "press": press})
+    return news_items
 
 def parse_rss_date(pub_date):
     """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
@@ -364,20 +378,6 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     else:
         logging.info("Discord에 메시지 게시 완료")
     time.sleep(3)
-
-def extract_news_items(description, session):
-    """HTML 설명에서 뉴스 항목을 추출합니다."""
-    soup = BeautifulSoup(description, 'html.parser')
-    news_items = []
-    for li in soup.find_all('li'):
-        a_tag = li.find('a')
-        if a_tag:
-            title = replace_brackets(a_tag.text)
-            google_link = a_tag['href']
-            link = get_original_url(google_link, session)
-            press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
-            news_items.append({"title": title, "link": link, "press": press})
-    return news_items
 
 def apply_advanced_filter(title, description, advanced_filter):
     """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
@@ -578,7 +578,7 @@ def main():
         related_news = extract_news_items(description_html, session)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-        description = extract_news_items(description_html, session)
+        description = parse_html_description(description_html, session)
 
         # 고급 검색 필터 적용
         if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
@@ -611,13 +611,14 @@ def main():
             discord_message += "\n\n"
         discord_message += f"📅 {formatted_date}"
 
-        if send_discord_message(
+        send_discord_message(
             DISCORD_WEBHOOK_TOPIC,
             discord_message,
             avatar_url=DISCORD_AVATAR_TOPIC,
             username=DISCORD_USERNAME_TOPIC
-        ):
-            save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
+        )
+
+        save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
