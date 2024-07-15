@@ -867,12 +867,24 @@ def get_topic_category(keyword, lang='en'):
     }
     
     lang_key = 'ko' if lang.startswith('ko') else 'en'
+    
+    # 로깅 추가
+    logging.info(f"get_topic_category called with keyword_or_id: {keyword_or_id}, lang: {lang}")
+    
     for category, data in categories.items():
         if keyword_or_id in data["keywords"]:
             return data[lang_key]
-        for topic, topic_data in TOPIC_MAP.items():
-            if keyword_or_id == topic_data[lang_key][1]:
-                return data[lang_key]
+    
+    # TOPIC_MAP에서 ID로 검색
+    for topic, topic_data in TOPIC_MAP.items():
+        if keyword_or_id == topic or keyword_or_id in [value[1] for value in topic_data.values()]:
+            # topic에 해당하는 카테고리 찾기
+            for category, data in categories.items():
+                if topic in data["keywords"]:
+                    return data[lang_key]
+    
+    # 로깅 추가
+    logging.warning(f"No matching category found for keyword_or_id: {keyword_or_id}")
     
     return "기타 뉴스" if lang_key == 'ko' else "Other News"
 
@@ -910,6 +922,10 @@ def main():
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
 
+    # 로깅 추가
+    logging.info(f"TOPIC_MODE: {TOPIC_MODE}")
+    logging.info(f"TOPIC_KEYWORD: {TOPIC_KEYWORD}")
+
     if TOPIC_MODE:
         try:
             topic_id = TOPIC_MAP[TOPIC_KEYWORD]['ko-KR'][1]  # 'ko-KR' 또는 'en-US' 선택
@@ -923,7 +939,11 @@ def main():
         rss_url = RSS_URL_TOPIC
         topic_id = extract_topic_id(rss_url)
 
+    logging.info(f"RSS URL: {rss_url}")
+    logging.info(f"Topic ID: {topic_id}")
+
     hl, gl, ceid = parse_topic_params(rss_url)
+    logging.info(f"Parsed parameters - hl: {hl}, gl: {gl}, ceid: {ceid}")
 
     rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
@@ -971,8 +991,10 @@ def main():
         news_prefix = get_news_prefix(hl)
         
         if TOPIC_MODE or topic_id:
-            category = get_topic_category(TOPIC_KEYWORD if TOPIC_MODE else topic_id, hl)
-            topic_name = get_topic_display_name(TOPIC_KEYWORD if TOPIC_MODE else topic_id, hl)
+            category_input = TOPIC_KEYWORD if TOPIC_MODE else topic_id
+            logging.info(f"Calling get_topic_category with: {category_input}, {hl}")
+            category = get_topic_category(category_input, hl)
+            topic_name = get_topic_display_name(category_input, hl)
         else:
             category = "일반 뉴스" if hl.startswith('ko') else "General news"
             topic_name = "RSS 피드" if hl.startswith('ko') else "RSS Feed"
@@ -985,6 +1007,8 @@ def main():
         else:
             discord_message += "\n\n"
         discord_message += f"📅 {formatted_date}"
+
+        logging.info(f"Sending message to Discord: {discord_message[:100]}...")  # 로그 메시지 길이 제한
 
         send_discord_message(
             DISCORD_WEBHOOK_TOPIC,
