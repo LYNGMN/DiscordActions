@@ -25,7 +25,7 @@ DISCORD_USERNAME_KEYWORD = os.environ.get('DISCORD_USERNAME_KEYWORD')
 INITIALIZE_KEYWORD = os.environ.get('INITIALIZE_MODE_KEYWORD', 'false').lower() == 'true'
 KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
 KEYWORD = os.environ.get('KEYWORD', '')
-RSS_URL = os.environ.get('RSS_URL', '')
+RSS_URL_KEYWORD = os.environ.get('RSS_URL_KEYWORD', '')
 AFTER_DATE = os.environ.get('AFTER_DATE', '')
 BEFORE_DATE = os.environ.get('BEFORE_DATE', '')
 WHEN = os.environ.get('WHEN', '')
@@ -49,8 +49,8 @@ def check_env_variables():
         raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_KEYWORD")
     if KEYWORD_MODE and not KEYWORD:
         raise ValueError("키워드 모드가 활성화되었지만 KEYWORD 환경 변수가 설정되지 않았습니다.")
-    if not KEYWORD_MODE and not RSS_URL:
-        raise ValueError("키워드 모드가 비활성화되었지만 RSS_URL 환경 변수가 설정되지 않았습니다.")
+    if not KEYWORD_MODE and not RSS_URL_KEYWORD:
+        raise ValueError("키워드 모드가 비활성화되었지만 RSS_URL_KEYWORD 환경 변수가 설정되지 않았습니다.")
     if AFTER_DATE and not is_valid_date(AFTER_DATE):
         raise ValueError("AFTER_DATE 환경 변수가 올바른 형식(YYYY-MM-DD)이 아닙니다.")
     if BEFORE_DATE and not is_valid_date(BEFORE_DATE):
@@ -395,7 +395,7 @@ def main():
         
         category = KEYWORD
     else:
-        rss_url = RSS_URL
+        rss_url = RSS_URL_KEYWORD
         rss_data = fetch_rss_feed(rss_url)
         root = ET.fromstring(rss_data)
         title_element = root.find('.//channel/title')

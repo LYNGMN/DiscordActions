@@ -15,7 +15,7 @@ env:
   ORIGIN_LINK_KEYWORD: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_KEYWORD }}
   KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
   KEYWORD: ${{ secrets.KEYWORD }}
-  RSS_URL: ${{ secrets.RSS_URL }}
+  RSS_URL: ${{ secrets.RSS_URL_GOOGLENEWS_KEYWORD }}
   AFTER_DATE: ${{ secrets.AFTER_DATE }}
   BEFORE_DATE: ${{ secrets.BEFORE_DATE }}
   WHEN: ${{ secrets.WHEN }}
