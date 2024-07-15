@@ -316,7 +316,7 @@ def parse_html_description(html_desc, session):
     news_items = []
     full_content_link = ""
     for item in items:
-        if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text or 'View full coverage on Google News' in item.text:
+        if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text or 'View Full Coverage on Google News' in item.text:
             full_content_link_match = item.find('a')
             if full_content_link_match:
                 full_content_link = full_content_link_match['href']
@@ -334,7 +334,7 @@ def parse_html_description(html_desc, session):
 
     news_string = '\n'.join(news_items)
     if full_content_link:
-        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기]({full_content_link})"
+        news_string += f"▶️ [Google 뉴스에서 전체 콘텐츠 보기]({full_content_link})"
 
     return news_string
 
