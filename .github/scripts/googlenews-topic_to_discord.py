@@ -704,6 +704,14 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     
     return True
 
+def extract_topic_id(url):
+    """RSS URL에서 토픽 ID를 추출합니다."""
+    parsed_url = urlparse(url)
+    path_parts = parsed_url.path.split('/')
+    if 'topics' in path_parts:
+        return path_parts[path_parts.index('topics') + 1]
+    return None
+
 def get_topic_category(keyword, lang='en'):
     """토픽 키워드에 해당하는 카테고리를 반환합니다."""
     categories = {
@@ -860,15 +868,21 @@ def get_topic_category(keyword, lang='en'):
     
     lang_key = 'ko' if lang.startswith('ko') else 'en'
     for category, data in categories.items():
-        if keyword in data["keywords"]:
+        if keyword_or_id in data["keywords"]:
             return data[lang_key]
+        for topic, topic_data in TOPIC_MAP.items():
+            if keyword_or_id == topic_data[lang_key][1]:
+                return data[lang_key]
     
     return "기타 뉴스" if lang_key == 'ko' else "Other News"
 
-def get_topic_display_name(keyword, lang):
-    """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
+def get_topic_display_name(keyword_or_id, lang):
+    """토픽 키워드 또는 ID에 해당하는 표시 이름을 반환합니다."""
     lang_key = 'ko-KR' if lang.startswith('ko') else 'en-US'
-    return TOPIC_MAP.get(keyword, {}).get(lang_key, [keyword])[0]
+    for topic, data in TOPIC_MAP.items():
+        if keyword_or_id == topic or keyword_or_id == data[lang_key][1]:
+            return data[lang_key][0]
+    return keyword_or_id  # 일치하는 항목이 없으면 원래 값을 반환
 
 def get_country_emoji(country_code):
     """국가 코드를 유니코드 플래그 이모지로 변환합니다."""
@@ -903,6 +917,7 @@ def main():
             rss_url += TOPIC_PARAMS
     else:
         rss_url = RSS_URL_TOPIC
+        topic_id = extract_topic_id(rss_url)
 
     hl, gl, ceid = parse_topic_params(rss_url)
 
@@ -950,8 +965,14 @@ def main():
             continue
 
         news_prefix = get_news_prefix(hl)
-        category = get_topic_category(TOPIC_KEYWORD, hl) if TOPIC_MODE else ("일반 뉴스" if hl.startswith('ko') else "General news")
-        topic_name = get_topic_display_name(TOPIC_KEYWORD, hl) if TOPIC_MODE else ("RSS 피드" if hl.startswith('ko') else "RSS Feed")
+        
+        if TOPIC_MODE or topic_id:
+            category = get_topic_category(TOPIC_KEYWORD if TOPIC_MODE else topic_id, hl)
+            topic_name = get_topic_display_name(TOPIC_KEYWORD if TOPIC_MODE else topic_id, hl)
+        else:
+            category = "일반 뉴스" if hl.startswith('ko') else "General news"
+            topic_name = "RSS 피드" if hl.startswith('ko') else "RSS Feed"
+
         country_emoji = get_country_emoji(gl)
 
         discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
