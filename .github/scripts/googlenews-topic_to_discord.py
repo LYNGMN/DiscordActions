@@ -121,6 +121,41 @@ TOPIC_MAP = {
     "fashion": ("패션", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtdHZLQUFQAQ")
 }
 
+def get_news_prefix(lang):
+    """언어에 따라 뉴스 접두어를 반환합니다."""
+    news_prefix_map = {
+        'bn': "Google সংবাদ",
+        'zh': "Google 新闻",
+        'en': "Google News",
+        'id': "Google Berita",
+        'iw': "Google חדשות",
+        'ja': "Google ニュース",
+        'ar': "Google أخبار",
+        'ms': "Google Berita",
+        'ko': "Google 뉴스",
+        'th': "Google ข่าว",
+        'tr': "Google Haberler",
+        'vi': "Google Tin tức",
+        'ru': "Google Новости",
+        'de': "Google Nachrichten",
+        'fr': "Google Actualités",
+        'es': "Google Noticias",
+        'it': "Google Notizie",
+        'nl': "Google Nieuws",
+        'no': "Google Nyheter",
+        'pl': "Google Wiadomości",
+        'ro': "Google Știri",
+        'hu': "Google Hírek",
+        'cs': "Google Zprávy",
+        'fi': "Google Uutiset",
+        'da': "Google Nyheder",
+        'el': "Google Ειδήσεις",
+        'sv': "Google Nyheter",
+        'pt': "Google Notícias",
+        # 추가 언어...
+    }
+    return news_prefix_map.get(lang, "Google News")
+
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
     if not DISCORD_WEBHOOK_TOPIC:
@@ -458,16 +493,49 @@ def get_topic_category(keyword, lang='en'):
         "headlines": {
             "en": "Headlines news",
             "ko": "헤드라인 뉴스",
+            "zh": "头条新闻",
+            "ja": "ヘッドライン ニュース",
+            "de": "Schlagzeilen",
+            "fr": "Actualités à la une",
+            "es": "Titulares",
+            "pt": "Notícias principais",
+            "it": "Notizie in primo piano",
+            "nl": "Hoofdnieuws",
+            "sv": "Nyheter i fokus",
+            "ar": "عناوين الأخبار",
+            "ru": "Главные новости",
             "keywords": ["headlines", "korea", "world", "politics"]
         },
         "entertainment": {
             "en": "Entertainment news",
             "ko": "연예 뉴스",
+            "zh": "娱乐新闻",
+            "ja": "芸能関連のニュース",
+            "de": "Nachrichten aus dem Bereich Unterhaltung",
+            "fr": "Actus divertissements",
+            "es": "Noticias sobre espectáculos",
+            "pt": "Notícias de entretenimento",
+            "it": "Notizie di intrattenimento",
+            "nl": "Entertainmentnieuws",
+            "sv": "Underhållningsnyheter",
+            "ar": "أخبار ترفيهية",
+            "ru": "Развлекательные новости",
             "keywords": ["entertainment", "celebrity", "tv", "music", "movies", "theater"]
         },
         "sports": {
             "en": "Sports news",
             "ko": "스포츠 뉴스",
+            "zh": "体育新闻",
+            "ja": "スポーツ関連のニュース",
+            "de": "Nachrichten aus dem Bereich Sport",
+            "fr": "Actus sportives",
+            "es": "Noticias sobre deportes",
+            "pt": "Notícias de esportes",
+            "it": "Notizie sportive",
+            "nl": "Sportnieuws",
+            "sv": "Sportnyheter",
+            "ar": "الأخبار الرياضية",
+            "ru": "Спортивные новости",
             "keywords": ["sports", "soccer", "cycling", "motorsports", "tennis", "martial_arts", 
                          "basketball", "baseball", "american_football", "sports_betting", 
                          "water_sports", "hockey", "golf", "cricket", "rugby"]
@@ -475,33 +543,99 @@ def get_topic_category(keyword, lang='en'):
         "business": {
             "en": "Business news",
             "ko": "비즈니스 뉴스",
+            "zh": "财经新闻",
+            "ja": "ビジネス関連のニュース",
+            "de": "Wirtschaftsmeldungen",
+            "fr": "Actus économiques",
+            "es": "Noticias de negocios",
+            "pt": "Notícias de negócios",
+            "it": "Notizie economiche",
+            "nl": "Zakennieuws",
+            "sv": "Ekonominyheter",
+            "ar": "أخبار الأعمال",
+            "ru": "Бизнес новости",
             "keywords": ["business", "economy", "personal_finance", "finance", "digital_currency"]
         },
         "technology": {
             "en": "Technology news",
             "ko": "기술 뉴스",
+            "zh": "科技新闻",
+            "ja": "テクノロジー関連のニュース",
+            "de": "Nachrichten aus dem Bereich Technologie",
+            "fr": "Actus technologie",
+            "es": "Noticias de tecnología",
+            "pt": "Notícias de tecnologia",
+            "it": "Notizie di tecnologia",
+            "nl": "Technologienieuws",
+            "sv": "Teknologinyheter",
+            "ar": "أخبار التكنولوجيا",
+            "ru": "Технологические новости",
             "keywords": ["technology", "mobile", "energy", "games", "internet_security", 
                          "electronics", "virtual_reality", "robotics"]
         },
         "health": {
             "en": "Health news",
             "ko": "건강 뉴스",
+            "zh": "健康新闻",
+            "ja": "健康関連のニュース",
+            "de": "Nachrichten aus dem Bereich Gesundheit",
+            "fr": "Actus santé",
+            "es": "Noticias sobre salud",
+            "pt": "Notícias de saúde",
+            "it": "Notizie di salute",
+            "nl": "Gezondheidsnieuws",
+            "sv": "Hälsonews",
+            "ar": "أخبار الصحة",
+            "ru": "Новости здоровья",
             "keywords": ["health", "nutrition", "public_health", "mental_health", "medicine"]
         },
         "science": {
             "en": "Science news",
             "ko": "과학 뉴스",
+            "zh": "科学新闻",
+            "ja": "科学関連のニュース",
+            "de": "Nachrichten aus dem Bereich Wissenschaft",
+            "fr": "Actus sciences",
+            "es": "Noticias de ciencia",
+            "pt": "Notícias de ciência",
+            "it": "Notizie di scienza",
+            "nl": "Wetenschapsnieuws",
+            "sv": "Vetenskapsnyheter",
+            "ar": "أخبار علمية",
+            "ru": "Научные новости",
             "keywords": ["science", "space", "wildlife", "environment", "neuroscience", 
                          "physics", "geography", "paleontology", "social_science"]
         },
         "education": {
             "en": "Education news",
             "ko": "교육 뉴스",
+            "zh": "教育新闻",
+            "ja": "教育関連のニュース",
+            "de": "Nachrichten aus dem Bereich Bildung",
+            "fr": "Actus enseignement",
+            "es": "Noticias sobre educación",
+            "pt": "Notícias de educação",
+            "it": "Notizie di istruzione",
+            "nl": "Onderwijsnieuws",
+            "sv": "Utbildningsnyheter",
+            "ar": "أخبار التعليم",
+            "ru": "Образовательные новости",
             "keywords": ["education", "job_market", "online_education", "higher_education"]
         },
         "lifestyle": {
             "en": "Lifestyle news",
             "ko": "라이프스타일 뉴스",
+            "zh": "生活时尚新闻",
+            "ja": "ライフスタイル関連のニュース",
+            "de": "Nachrichten aus dem Bereich Lifestyle",
+            "fr": "Actus mode de vie",
+            "es": "Noticias de estilo de vida",
+            "pt": "Notícias de estilo de vida",
+            "it": "Notizie di lifestyle",
+            "nl": "Lifestyle nieuws",
+            "sv": "Livsstilsnyheter",
+            "ar": "أخبار أسلوب الحياة",
+            "ru": "Новости образа жизни",
             "keywords": ["lifestyle", "automotive", "art_design", "beauty", "food", "travel", 
                          "shopping", "home", "outdoor", "fashion"]
         }
@@ -599,11 +733,14 @@ def main():
         gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
         country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
         
-        if lang == 'ko':
-            news_prefix = "Google 뉴스"
-        else:
-            news_prefix = "Google News"
-        
+        news_prefix = get_news_prefix(lang, category, topic_name, country_emoji)
+
+        # 로깅을 통해 각 값 확인
+        logging.info(f"news_prefix: {news_prefix}")
+        logging.info(f"category: {category}")
+        logging.info(f"topic_name: {topic_name}")
+        logging.info(f"country_emoji: {country_emoji}")
+
         discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
         if description:
             discord_message += f"\n>>> {description}\n\n"
