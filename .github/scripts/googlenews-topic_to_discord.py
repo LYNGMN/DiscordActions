@@ -28,6 +28,7 @@ DATE_FILTER_TOPIC = os.environ.get('DATE_FILTER_TOPIC', '')
 ORIGIN_LINK_TOPIC = os.environ.get('ORIGIN_LINK_TOPIC', 'true').lower() == 'true'
 TOPIC_MODE = os.environ.get('TOPIC_MODE', 'false').lower() == 'true'
 TOPIC_KEYWORD = os.environ.get('TOPIC_KEYWORD', '').lower()
+TOPIC_PARAMS = os.environ.get('TOPIC_PARAMS', 'hl=ko&gl=KR&ceid=KR%3Ako')
 
 # DB 설정
 DB_PATH = 'google_news_topic.db'
