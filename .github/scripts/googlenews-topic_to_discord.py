@@ -699,9 +699,9 @@ def main():
 
     news_items = root.findall('.//item')
     if INITIALIZE_TOPIC:
-        news_items = list(news_items)
+        news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
     else:
-        news_items = reversed(news_items)
+        news_items = list(reversed(news_items))
 
     for item in news_items:
         guid = item.find('guid').text
