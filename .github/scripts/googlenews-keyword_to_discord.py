@@ -37,9 +37,6 @@ DATE_FILTER_KEYWORD = os.environ.get('DATE_FILTER_KEYWORD', '')
 ORIGIN_LINK_KEYWORD = os.getenv('ORIGIN_LINK_KEYWORD', '').lower()
 ORIGIN_LINK_KEYWORD = ORIGIN_LINK_KEYWORD not in ['false', 'f', '0', 'no', 'n']
 
-# ORIGIN_LINK_KEYWORD 값을 로그에 출력
-logging.info(f"ORIGIN_LINK_KEYWORD 값: {ORIGIN_LINK_KEYWORD}")
-
 # DB 설정
 DB_PATH = 'google_news_keyword.db'
 
