@@ -48,119 +48,149 @@ TOPIC_MAP = {
     "us": {
         "en": ("U.S.", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRGxqTjNjd0VnSmxiaWdBUAE")
     },
+    "japan": {
+        "ja": ("日本", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE5mTTJRU0FtcGhLQUFQAQ")
+    },
     "world": {
         "ko": ("세계", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtdHZHZ0pMVWlnQVAB"),
-        "en": ("World", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB")
+        "en": ("World", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB"),
+        "ja": ("世界", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtcGhHZ0pLVUNnQVAB")
     },
     "politics": {
         "ko": ("정치", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtdHZLQUFQAQ"),
-        "en": ("Politics", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtVnVLQUFQAQ")
+        "en": ("Politics", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtVnVLQUFQAQ"),
+        "ja": ("政治", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERBU0FtcGhLQUFQAQ")
     },
     
     # 연예 뉴스
     "entertainment": {
         "ko": ("엔터테인먼트", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtdHZHZ0pMVWlnQVAB"),
-        "en": ("Entertainment", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtVnVHZ0pWVXlnQVAB")
+        "en": ("Entertainment", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtVnVHZ0pWVXlnQVAB"),
+        "ja": ("エンタメ", "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtcGhHZ0pLVUNnQVAB")
     },
     "celebrity": {
         "ko": ("연예", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtdHZLQUFQAQ"),
-        "en": ("Celebrities", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtVnVLQUFQAQ")
+        "en": ("Celebrities", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtVnVLQUFQAQ"),
+        "ja": ("有名人", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ5Wm5vU0FtcGhLQUFQAQ")
     },
     "tv": {
         "ko": ("TV", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtdHZLQUFQAQ"),
-        "en": ("TV", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtVnVLQUFQAQ")
+        "en": ("TV", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtVnVLQUFQAQ"),
+        "ja": ("テレビ", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRqTlRJU0FtcGhLQUFQAQ")
     },
     "music": {
         "ko": ("음악", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtdHZLQUFQAQ"),
-        "en": ("Music", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtVnVLQUFQAQ")
+        "en": ("Music", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtVnVLQUFQAQ"),
+        "ja": ("音楽", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ5YkdZU0FtcGhLQUFQAQ")
     },
     "movies": {
         "ko": ("영화", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtdHZLQUFQAQ"),
-        "en": ("Movies", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtVnVLQUFQAQ")
+        "en": ("Movies", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtVnVLQUFQAQ"),
+        "ja": ("映画", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZUc0U0FtcGhLQUFQAQ")
     },
     "theater": {
         "ko": ("연극", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNhMjhvQUFQAQ"),
-        "en": ("Theater", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNaVzRvQUFQAQ")
+        "en": ("Theater", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNaVzRvQUFQAQ"),
+        "ja": ("劇場", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRE54YzJSd2F4SUNhbUVvQUFQAQ")
     },
     
     # 스포츠 뉴스
     "sports": {
         "ko": ("스포츠", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtdHZHZ0pMVWlnQVAB"),
-        "en": ("Sports", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtVnVHZ0pWVXlnQVAB")
+        "en": ("Sports", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtVnVHZ0pWVXlnQVAB"),
+        "ja": ("スポーツ", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtcGhHZ0pLVUNnQVAB")
     },
     "soccer": {
         "ko": ("축구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtdHZLQUFQAQ"),
-        "en": ("Soccer", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtVnVLQUFQAQ")
+        "en": ("Soccer", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtVnVLQUFQAQ"),
+        "ja": ("サッカー", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREoyZURRU0FtcGhLQUFQAQ")
     },
     "cycling": {
         "ko": ("자전거", "PLACEHOLDER_ID_CYCLING"),
-        "en": ("Cycling", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ6WjJ3U0FtVnVLQUFQAQ")
+        "en": ("Cycling", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ6WjJ3U0FtVnVLQUFQAQ"),
+        "ja": ("自転車", "PLACEHOLDER_ID_CYCLING")
     },
     "motorsports": {
         "ko": ("모터스포츠", "PLACEHOLDER_ID_MOTORSPORTS"),
-        "en": ("Motor sports", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TUhSMGFCSUNaVzRvQUFQAQ")
+        "en": ("Motor sports", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TUhSMGFCSUNaVzRvQUFQAQ"),
+        "ja": ("モーター スポーツ", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TUhSMGFCSUNhbUVvQUFQAQ")
     },
     "tennis": {
         "ko": ("테니스", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtdHZLQUFQAQ"),
-        "en": ("Tennis", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtVnVLQUFQAQ")
+        "en": ("Tennis", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtVnVLQUFQAQ"),
+        "ja": ("テニス", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRpY3pBU0FtcGhLQUFQAQ")
     },
     "martial_arts": {
         "ko": ("격투기", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSnJieWdBUAE"),
-        "en": ("Combat sports", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSmxiaWdBUAE")
+        "en": ("Combat sports", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSmxiaWdBUAE"),
+        "ja": ("格闘技", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFZyWXpJNUVnSnFZU2dBUAE")
     },
     "basketball": {
         "ko": ("농구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtdHZLQUFQAQ"),
-        "en": ("Basketball", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtVnVLQUFQAQ")
+        "en": ("Basketball", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtVnVLQUFQAQ"),
+        "ja": ("バスケットボール", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0ZHpnU0FtcGhLQUFQAQ")
     },
     "baseball": {
         "ko": ("야구", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtdHZLQUFQAQ"),
-        "en": ("Baseball", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtVnVLQUFQAQ")
+        "en": ("Baseball", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtVnVLQUFQAQ"),
+        "ja": ("野球", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREU0YW5vU0FtcGhLQUFQAQ")
     },
     "american_football": {
         "ko": ("미식축구", "PLACEHOLDER_ID_AMERICAN_FOOTBALL"),
-        "en": ("Football", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3B0WHhJQ1pXNG9BQVAB")
+        "en": ("Football", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3B0WHhJQ1pXNG9BQVAB"),
+        "ja": ("アメフト", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3B0WHhJQ2FtRW9BQVAB")
     },
     "sports_betting": {
         "ko": ("스포츠 베팅", "PLACEHOLDER_ID_SPORTS_BETTING"),
-        "en": ("Sports betting", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFIwTXpsa0VnSmxiaWdBUAE")
+        "en": ("Sports betting", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFIwTXpsa0VnSmxiaWdBUAE"),
+        "ja": ("スポーツ賭博", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRFIwTXpsa0VnSnFZU2dBUAE")
     },
     "water_sports": {
         "ko": ("수상 스포츠", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSnJieWdBUAE"),
-        "en": ("Water sports", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSmxiaWdBUAE")
+        "en": ("Water sports", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSmxiaWdBUAE"),
+        "ja": ("ウォーター スポーツ", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREptYUdSbUVnSnFZU2dBUAE")
     },
     "hockey": {
         "ko": ("하키", "PLACEHOLDER_ID_HOCKEY"),
-        "en": ("Hockey", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE4wYlhJU0FtVnVLQUFQAQ")
+        "en": ("Hockey", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE4wYlhJU0FtVnVLQUFQAQ"),
+        "ja": ("ホッケー", "PLACEHOLDER_ID_HOCKEY")
     },
     "golf": {
         "ko": ("골프", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtdHZLQUFQAQ"),
-        "en": ("Golf", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtVnVLQUFQAQ")
+        "en": ("Golf", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtVnVLQUFQAQ"),
+        "ja": ("ゴルフ", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0zYUhvU0FtcGhLQUFQAQ")
     },
     "cricket": {
         "ko": ("크리켓", "PLACEHOLDER_ID_CRICKET"),
-        "en": ("Cricket", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGw0Y0Y4U0FtVnVLQUFQAQ")
+        "en": ("Cricket", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGw0Y0Y4U0FtVnVLQUFQAQ"),
+        "ja": ("クリケット", "PLACEHOLDER_ID_CRICKET")
     },
     "rugby": {
         "ko": ("럭비", "PLACEHOLDER_ID_RUGBY"),
-        "en": ("Rugby", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFppY2pnU0FtVnVLQUFQAQ")
+        "en": ("Rugby", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFppY2pnU0FtVnVLQUFQAQ"),
+        "ja": ("ラグビー", "PLACEHOLDER_ID_RUGBY")
     },
     
     # 비즈니스 뉴스
     "business": {
         "ko": ("비즈니스", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtdHZHZ0pMVWlnQVAB"),
-        "en": ("Business", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB")
+        "en": ("Business", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB"),
+        "ja": ("ビジネス", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtcGhHZ0pLVUNnQVAB")
     },
     "economy": {
         "ko": ("경제", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSnJieWdBUAE"),
-        "en": ("Economy", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSmxiaWdBUAE")
+        "en": ("Economy", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSmxiaWdBUAE"),
+        "ja": ("経済", "CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSnFZU2dBUAE")
     },
     "personal_finance": {
         "ko": ("개인 금융", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSnJieWdBUAE"),
-        "en": ("Personal Finance", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSmxiaWdBUAE")
+        "en": ("Personal Finance", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSmxiaWdBUAE"),
+        "ja": ("個人経済", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREY1Tm1OeEVnSnFZU2dBUAE")
     },
     "finance": {
         "ko": ("금융", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtdHZLQUFQAQ"),
-        "en": ("Finance", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtVnVLQUFQAQ")
+        "en": ("Finance", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtVnVLQUFQAQ"),
+        "ja": ("ファイナンス", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREpmTjNRU0FtcGhLQUFQAQ")
     },
     "digital_currency": {
         "ko": ("디지털 통화", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNSEk0YkhsM054SUNhMjhvQUFQAQ"),
@@ -170,105 +200,129 @@ TOPIC_MAP = {
     # 기술 뉴스
     "technology": {
         "ko": ("과학/기술", "CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSnJieG9DUzFJb0FBUAE"),
-        "en": ("Technology", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB")
+        "en": ("Technology", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB"),
+        "ja": ("科学＆テクノロジー", "CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSnFZUm9DU2xBb0FBUAE")
     },
     "mobile": {
         "ko": ("모바일", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtdHZLQUFQAQ"),
-        "en": ("Mobile", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtVnVLQUFQAQ")
+        "en": ("Mobile", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtVnVLQUFQAQ"),
+        "ja": ("モバイル", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFV3YXpnU0FtcGhLQUFQAQ")
     },
     "energy": {
         "ko": ("에너지", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtdHZLQUFQAQ"),
-        "en": ("Energy", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtVnVLQUFQAQ")
+        "en": ("Energy", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtVnVLQUFQAQ"),
+        "ja": ("エネルギー", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREp0YlY4U0FtcGhLQUFQAQ")
     },
     "games": {
         "ko": ("게임", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtdHZLQUFQAQ"),
-        "en": ("Games", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtVnVLQUFQAQ")
+        "en": ("Games", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtVnVLQUFQAQ"),
+        "ja": ("ゲーム", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZ0ZHpFU0FtcGhLQUFQAQ")
     },
     "internet_security": {
         "ko": ("인터넷 보안", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSnJieWdBUAE"),
-        "en": ("Internet security", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSmxiaWdBUAE")
+        "en": ("Internet security", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSmxiaWdBUAE"),
+        "ja": ("インターネット セキュリティ", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE5xWm01NEVnSnFZU2dBUAE")
     },
     "electronics": {
         "ko": ("전자기기", "PLACEHOLDER_ID_ELECTRONICS"),
-        "en": ("Electronics", "PLACEHOLDER_ID_ELECTRONICS")
+        "en": ("Electronics", "PLACEHOLDER_ID_ELECTRONICS"),
+        "ja": ("ガジェット", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp0WmpGdUVnSnFZU2dBUAE")
     },
     "virtual_reality": {
         "ko": ("가상 현실", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtdHZLQUFQAQ"),
-        "en": ("Virtual Reality", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtVnVLQUFQAQ")
+        "en": ("Virtual Reality", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtVnVLQUFQAQ"),
+        "ja": ("バーチャル リアリティ", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRGRmYm5rU0FtcGhLQUFQAQ")
     },
     "robotics": {
         "ko": ("로봇", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNhMjhvQUFQAQ"),
-        "en": ("Robotics", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNaVzRvQUFQAQ")
+        "en": ("Robotics", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNaVzRvQUFQAQ"),
+        "ja": ("ロボット工学", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNhbUVvQUFQAQ")
     },
     
     # 건강 뉴스
     "health": {
         "ko": ("건강", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtdHZLQUFQAQ"),
-        "en": ("Health", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ")
+        "en": ("Health", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ"),
+        "ja": ("健康", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtcGhLQUFQAQ")
     },
     "nutrition": {
         "ko": ("영양", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtdHZLQUFQAQ"),
-        "en": ("Nutrition", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtVnVLQUFQAQ")
+        "en": ("Nutrition", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtVnVLQUFQAQ"),
+        "ja": ("栄養", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZrYW1NU0FtcGhLQUFQAQ")
     },
     "public_health": {
         "ko": ("공공보건학", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSnJieWdBUAE"),
-        "en": ("Public health", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSmxiaWdBUAE")
+        "en": ("Public health", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSmxiaWdBUAE"),
+        "ja": ("公衆衛生", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREpqYlRZeEVnSnFZU2dBUAE")
     },
     "mental_health": {
         "ko": ("정신 건강", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSnJieWdBUAE"),
-        "en": ("Mental health", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSmxiaWdBUAE")
+        "en": ("Mental health", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSmxiaWdBUAE"),
+        "ja": ("メンタルヘルス", "CAAqIggKIhxDQkFTRHdvSkwyMHZNRE40TmpsbkVnSnFZU2dBUAE")
     },
     "medicine": {
         "ko": ("의약품", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtdHZLQUFQAQ"),
-        "en": ("Medicine", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtVnVLQUFQAQ")
+        "en": ("Medicine", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtVnVLQUFQAQ"),
+        "ja": ("医薬品", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFJ6YURNU0FtcGhLQUFQAQ")
     },
     
     # 과학 뉴스
     "science": {
         "ko": ("과학", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtdHZHZ0pMVWlnQVAB"),
-        "en": ("Science", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB")
+        "en": ("Science", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB"),
+        "ja": ("科学", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtcGhLQUFQAQ")
     },
     "space": {
         "ko": ("우주", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSnJieWdBUAE"),
-        "en": ("Space", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSmxiaWdBUAE")
+        "en": ("Space", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSmxiaWdBUAE"),
+        "ja": ("宇宙", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSnFZU2dBUAE")
     },
     "wildlife": {
         "ko": ("야생동물", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNhMjhvQUFQAQ"),
-        "en": ("Wildlife", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNaVzRvQUFQAQ")
+        "en": ("Wildlife", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNaVzRvQUFQAQ"),
+        "ja": ("野生動物", "CAAqJAgKIh5DQkFTRUFvS0wyY3ZNVE5pWWw5MGN4SUNhbUVvQUFQAQ")
     },
     "environment": {
         "ko": ("환경", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSnJieWdBUAE"),
-        "en": ("Environment", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSmxiaWdBUAE")
+        "en": ("Environment", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSmxiaWdBUAE"),
+        "ja": ("環境", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREp3ZVRBNUVnSnFZU2dBUAE")
     },
     "neuroscience": {
         "ko": ("신경과학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtdHZLQUFQAQ"),
-        "en": ("Neuroscience", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtVnVLQUFQAQ")
+        "en": ("Neuroscience", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtVnVLQUFQAQ"),
+        "ja": ("神経科学", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZpTm1NU0FtcGhLQUFQAQ")
     },
     "physics": {
         "ko": ("물리학", "PLACEHOLDER_ID_PHYSICS"),
-        "en": ("Physics", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4YW5RU0FtVnVLQUFQAQ")
+        "en": ("Physics", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4YW5RU0FtVnVLQUFQAQ"),
+        "ja": ("物理学", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4YW5RU0FtcGhLQUFQAQ")
     },
     "geography": {
         "ko": ("지리학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtdHZLQUFQAQ"),
-        "en": ("Geology", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtVnVLQUFQAQ")
+        "en": ("Geology", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtVnVLQUFQAQ"),
+        "ja": ("地質学", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE0yYUhZU0FtcGhLQUFQAQ")
     },
     "paleontology": {
         "ko": ("고생물학", "PLACEHOLDER_ID_PALEONTOLOGY"),
-        "en": ("Paleontology", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ5YW13U0FtVnVLQUFQAQ")
+        "en": ("Paleontology", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ5YW13U0FtVnVLQUFQAQ"),
+        "ja": ("古生物学", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ5YW13U0FtcGhLQUFQAQ")
     },
     "social_science": {
         "ko": ("사회 과학", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtdHZLQUFQAQ"),
-        "en": ("Social sciences", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtVnVLQUFQAQ")
+        "en": ("Social sciences", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtVnVLQUFQAQ"),
+        "ja": ("社会科学", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFp1Tm5BU0FtcGhLQUFQAQ")
     },
     
     # 교육 뉴스
     "education": {
         "ko": ("교육", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbXR2S0FBUAE"),
-        "en": ("Education", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbVZ1S0FBUAE")
+        "en": ("Education", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbVZ1S0FBUAE"),
+        "ja": ("教育", "CAAqJQgKIh9DQkFTRVFvTEwyY3ZNVEl4Y0Raa09UQVNBbXBoS0FBUAE")
     },
     "job_market": {
         "ko": ("채용정보", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNhMjhvQUFQAQ"),
-        "en": ("Jobs", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNaVzRvQUFQAQ")
+        "en": ("Jobs", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNaVzRvQUFQAQ"),
+        "ja": ("就職", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFF4TVRWME1oSUNhbUVvQUFQAQ")
     },
     "online_education": {
         "ko": ("온라인 교육", "PLACEHOLDER_ID_ONLINE_EDUCATION"),
@@ -276,49 +330,60 @@ TOPIC_MAP = {
     },
     "higher_education": {
         "ko": ("고등교육", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtdHZLQUFQAQ"),
-        "en": ("Higher education", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtVnVLQUFQAQ")
+        "en": ("Higher education", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtVnVLQUFQAQ"),
+        "ja": ("高等教育", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE55TlRVU0FtcGhLQUFQAQ")
     },
     
     # 라이프스타일 뉴스
     "lifestyle": {
         "ko": ("라이프스타일", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtdHZHZ0pMVWlnQVAB"),
-        "en": ("Lifestyle", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtVnVHZ0pMVWlnQVAB")
+        "en": ("Lifestyle", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtVnVHZ0pMVWlnQVAB"),
+        "ja": ("ライフスタイル", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRE55YXpBU0FtcGhLQUFQAQ")
     },
     "automotive": {
         "ko": ("차량", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ2EyOG9BQVAB"),
-        "en": ("Vehicles", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ1pXNG9BQVAB")
+        "en": ("Vehicles", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ1pXNG9BQVAB"),
+        "ja": ("乗り物", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3MwYWhJQ2FtRW9BQVAB")
     },
     "art_design": {
         "ko": ("예술/디자인", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ2EyOG9BQVAB"),
-        "en": ("Arts & design", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ1pXNG9BQVAB")
+        "en": ("Arts & design", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ1pXNG9BQVAB"),
+        "ja": ("アート、デザイン", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNR3BxZHhJQ2FtRW9BQVAB")
     },
     "beauty": {
         "ko": ("미용", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtdHZLQUFQAQ"),
-        "en": ("Beauty", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtVnVLQUFQAQ")
+        "en": ("Beauty", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtVnVLQUFQAQ"),
+        "ja": ("美容", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREZtTkRNU0FtcGhLQUFQAQ")
     },
     "food": {
         "ko": ("음식", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtdHZLQUFQAQ"),
-        "en": ("Food", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtVnVLQUFQAQ")
+        "en": ("Food", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtVnVLQUFQAQ"),
+        "ja": ("フード", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNREozWW0wU0FtcGhLQUFQAQ")
     },
     "travel": {
         "ko": ("여행", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSnJieWdBUAE"),
-        "en": ("Travel", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSmxiaWdBUAE")
+        "en": ("Travel", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSmxiaWdBUAE"),
+        "ja": ("トラベル", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUwWkhONEVnSnFZU2dBUAE")
     },
     "shopping": {
         "ko": ("쇼핑", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtdHZLQUFQAQ"),
-        "en": ("Shopping", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtVnVLQUFQAQ")
+        "en": ("Shopping", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtVnVLQUFQAQ"),
+        "ja": ("ショッピング", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2hvWkdJU0FtcGhLQUFQAQ")
     },
     "home": {
         "ko": ("홈", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSnJieWdBUAE"),
-        "en": ("Home", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSmxiaWdBUAE")
+        "en": ("Home", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSmxiaWdBUAE"),
+        "ja": ("住居", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREZzTUcxM0VnSnFZU2dBUAE")
     },
     "outdoor": {
         "ko": ("야외 활동", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNhMjhvQUFQAQ"),
-        "en": ("Outdoors", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNaVzRvQUFQAQ")
+        "en": ("Outdoors", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNaVzRvQUFQAQ"),
+        "ja": ("アウトドア・アクティビティ", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNRFZpTUc0M2F4SUNhbUVvQUFQAQ")
     },
     "fashion": {
         "ko": ("패션", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtdHZLQUFQAQ"),
-        "en": ("Fashion", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtVnVLQUFQAQ")
+        "en": ("Fashion", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtVnVLQUFQAQ"),
+        "ja": ("ファッション", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtcGhLQUFQAQ")
     }
 }
 
