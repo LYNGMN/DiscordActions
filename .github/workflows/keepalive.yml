@@ -1,19 +1,19 @@
-name: Keep Alive
+name: Keepalive Workflow
+
 on:
- schedule:
+  schedule:
     - cron: '0 0 * * *'
+
 permissions:
   contents: write
+
 jobs:
-  keep-alive:
-    name: Keep Alive
+  cronjob-based-github-action:
+    name: Keepalive Workflow
     runs-on: ubuntu-latest
     steps:
-      - name: Clone project files
-        uses: actions/checkout@v4
-      # keepalive-workflow adds a dummy commit if there's no other action here, keeps
-      # GitHub from turning off tests after 60 days
-      - uses: gautamkrishnar/keepalive-workflow@v1
+      - uses: actions/checkout@v4
+      - name: Keep Repository Active with Commit
+        uses: gautamkrishnar/keepalive-workflow@v2
         with:
-          commit_message: "chore(*): Automated commit to keep the repository active"
-          time_elapsed: 55
+          time_elapsed: "0"
