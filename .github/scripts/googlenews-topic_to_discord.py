@@ -455,89 +455,6 @@ TOPIC_MAP = {
     }
 }
 
-def assign_mid_to_topics(topic_map):
-    topic_mid_map = {}
-    for topic_keyword, languages in topic_map.items():
-        mids = [lang_data[2] for lang_data in languages.values() if lang_data[2] is not None]
-        unique_mids = set(mids)
-        if len(unique_mids) == 1 and len(mids) >= 2:
-            topic_mid_map[topic_keyword] = list(unique_mids)[0]
-        elif len(unique_mids) > 1:
-            print(f"Warning: Multiple MIDs found for {topic_keyword}: {unique_mids}")
-        else:
-            print(f"No valid MID found for {topic_keyword}")
-    return topic_mid_map
-
-# TOPIC_MAP이 정의된 후에 이 함수를 호출하여 MID 맵을 생성합니다.
-TOPIC_MID_MAP = assign_mid_to_topics(TOPIC_MAP)
-
-# 결과 출력 (디버깅 용도)
-for topic, mid in TOPIC_MID_MAP.items():
-    print(f"{topic}: {mid}")
-
-def force_decode_base64(data):
-    try:
-        if len(data) % 4 == 1:
-            data = data[:-1]
-        elif len(data) % 4 == 2:
-            data += '=='
-        elif len(data) % 4 == 3:
-            data += '='
-        logger.info(f"디코딩 문자열: {data}")
-        decoded_data = base64.b64decode(data)
-        return decoded_data, None
-    except Exception as e:
-        return None, str(e)
-
-def extract_mid_from_topic_id(topic_id):
-    logger.info(f"토픽 ID 처리 중: {topic_id}")
-
-    first_decoded_data, first_error = force_decode_base64(topic_id)
-    if first_error:
-        logger.error(f"첫 번째 디코딩 실패: {first_error}")
-        return None
-
-    entity_match = re.search(b'CBA[A-Za-z0-9_-]+', first_decoded_data)
-    if not entity_match:
-        logger.error("entity_base64 추출 실패")
-        return None
-    
-    entity_base64 = entity_match.group(0).decode('utf-8')
-    logger.info(f"Entity base64: {entity_base64}")
-    
-    second_decoded_data, second_error = force_decode_base64(entity_base64)
-    if second_error:
-        logger.error(f"두 번째 디코딩 실패: {second_error}")
-        return None
-
-    mid_match = re.search(b'/(m|g)/[0-9a-zA-Z_-]+', second_decoded_data)
-    if mid_match:
-        mid = mid_match.group(0).decode('utf-8')
-        logger.info(f"추출된 MID: {mid}")
-        return mid
-    else:
-        logger.error("MID를 찾을 수 없음")
-        return None
-
-def find_topic_info(topic_id, topic_map, topic_mid_map, lang):
-    # 직접 매칭 시도
-    for topic_keyword, languages in topic_map.items():
-        for lang_code, lang_data in languages.items():
-            if lang_data[1] == topic_id:
-                return topic_keyword, lang_data[0], get_topic_category(topic_keyword, lang)
-
-    # MID 추출 및 매칭 시도
-    mid = extract_mid_from_topic_id(topic_id)
-    if mid:
-        for topic_keyword, topic_mid in topic_mid_map.items():
-            if topic_mid == mid:
-                topic_name = topic_map[topic_keyword].get(lang, topic_map[topic_keyword]['en'])[0]
-                category = get_topic_category(topic_keyword, lang)
-                return topic_keyword, topic_name, category
-
-    logger.warning(f"토픽 ID {topic_id}에 대한 정보를 찾을 수 없음")
-    return None, "Unknown Topic", "General News"
-
 def get_news_prefix(lang):
     """언어에 따라 뉴스 접두어를 반환합니다."""
     news_prefix_map = {
@@ -1129,16 +1046,23 @@ def main():
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
 
-    rss_url = RSS_URL_TOPIC
-    topic_id = rss_url.split('topics/')[1].split('?')[0]
-    
-    lang = get_language_from_params(RSS_URL_TOPIC)
-    country_code = re.search(r'gl=(\w+)', RSS_URL_TOPIC).group(1)
-    country_emoji = get_country_emoji(country_code)
-    
-    topic_keyword, topic_name, category = find_topic_info(topic_id, TOPIC_MAP, TOPIC_MID_MAP, lang)
-    
-    news_prefix = get_news_prefix(lang)
+    lang = get_language_from_params(TOPIC_PARAMS)
+
+    if TOPIC_MODE:
+        topic_name, topic_id = get_topic_info(TOPIC_KEYWORD, lang)
+        rss_url = f"https://news.google.com/rss/topics/{topic_id}"
+        if TOPIC_PARAMS:
+            rss_url += TOPIC_PARAMS
+        category = get_topic_category(TOPIC_KEYWORD, lang)
+    else:
+        rss_url = RSS_URL_TOPIC
+        topic_name, topic_keyword = get_topic_by_id(rss_url)
+        if topic_name is None:
+            topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
+        if topic_keyword is None:
+            category = "일반 뉴스" if lang == 'ko' else "General news"
+        else:
+            category = get_topic_category(topic_keyword, lang)
 
     rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
@@ -1166,6 +1090,7 @@ def main():
         description_html = item.find('description').text
         
         formatted_date = parse_rss_date(pub_date)
+
         # 날짜 필터 적용
         if not is_within_date_range(pub_date, since_date, until_date, past_date):
             logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
@@ -1175,11 +1100,12 @@ def main():
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
         description = parse_html_description(description_html, session)
+
         # 고급 검색 필터 적용
         if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
-                
+        
         # gl 파라미터에서 국가 코드 추출
         gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
         country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
@@ -1206,7 +1132,7 @@ def main():
             username=DISCORD_USERNAME_TOPIC
         )
 
-        save_news_item(pub_date, guid, title, link, topic_keyword, related_news_json)
+        save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
@@ -1217,6 +1143,6 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logging.error(f"오류 발생: {e}", exc_info=True)
-        sys.exit(1)
+        sys.exit(1)  # 오류 발생 시 비정상 종료
     else:
         logging.info("프로그램 정상 종료")
