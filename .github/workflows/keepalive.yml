@@ -5,7 +5,7 @@ on:
     - cron: "0 0 * * *"
 
 permissions:
-  actions: write
+  contents: write
   
 jobs:
   cronjob-based-github-action:
@@ -16,3 +16,4 @@ jobs:
       - uses: gautamkrishnar/keepalive-workflow@v2
         with:
           time_elapsed: "0"
+          use_api: false
