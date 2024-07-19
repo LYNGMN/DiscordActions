@@ -2,20 +2,16 @@ name: Keepalive Workflow
 
 on:
   schedule:
-    - cron: "0 0 * * *"
-  workflow_dispatch:
+    - cron: "0 0 1 * *"  # 매월 1일 00:00 UTC에 실행
+  workflow_dispatch:  # 수동 실행 옵션
 
-permissions:
-  actions: write  # 권한 설정
-  
 jobs:
-  cronjob-based-github-action:
-    name: Keepalive Workflow
+  keepalive:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - uses: gautamkrishnar/keepalive-workflow@v2
         with:
-          time_elapsed: 45
-          gh_token: ${{ secrets.GH_PAT }}  # GitHub 토큰
-          use_api: false  # 더미 커밋 사용 설정
+          gh_token: ${{ secrets.GH_PAT }}
