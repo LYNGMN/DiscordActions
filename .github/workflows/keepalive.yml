@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # 권한 설정
+  actions: write  # 권한 설정
   
 jobs:
   cronjob-based-github-action:
