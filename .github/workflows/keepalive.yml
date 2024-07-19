@@ -2,19 +2,17 @@ name: Keepalive Workflow
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    - cron: "0 0 * * *"
 
 permissions:
   actions: write
-
+  
 jobs:
   cronjob-based-github-action:
     name: Keepalive Workflow
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Keep Repository Active with Commit
-        uses: gautamkrishnar/keepalive-workflow@v2
+      - uses: gautamkrishnar/keepalive-workflow@v2
         with:
           time_elapsed: "0"
