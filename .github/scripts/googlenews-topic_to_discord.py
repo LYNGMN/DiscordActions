@@ -1163,18 +1163,19 @@ def main():
         category = get_topic_category(TOPIC_KEYWORD, lang)
     else:
         rss_url = RSS_URL_TOPIC
-        rss_data = fetch_rss_feed(rss_url)
         topic_name, topic_keyword = get_topic_by_id(rss_url)
-        if topic_name is None:
-            topic_name = parse_rss_title(rss_data)
         if topic_keyword is None:
             category = TOPIC_CATEGORY.get(lang, "Topics")
         else:
             category = get_topic_category(topic_keyword, lang)
 
+    rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
         logging.error("RSS 데이터를 가져오는 데 실패했습니다.")
         return
+
+    if not TOPIC_MODE and topic_name is None:
+        topic_name = parse_rss_title(rss_data)
 
     root = ET.fromstring(rss_data)
 
@@ -1243,7 +1244,7 @@ def main():
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
-            
+                        
 if __name__ == "__main__":
     try:
         check_env_variables()
