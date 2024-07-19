@@ -5,7 +5,7 @@ on:
     - cron: "0 0 * * *"
 
 permissions:
-  contents: write
+  actions: write
   
 jobs:
   cronjob-based-github-action:
@@ -16,4 +16,4 @@ jobs:
       - uses: gautamkrishnar/keepalive-workflow@v2
         with:
           time_elapsed: "0"
-          use_api: false
+          gh_token: ${{ secrets.GH_TOKEN }}  # GitHub 토큰
