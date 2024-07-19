@@ -37,9 +37,9 @@ DB_PATH = 'google_news_topic.db'
 
 # 토픽 ID 매핑
 # - "headlines": 토픽키워드
-# - "ko": 언어 코드 (ko: 한국어, en: 영어, ja: 일본어, zh: 중국어)
+# - "ko": 언어 코드 (ko: 한국어, en: 영어, ja: 일본어, zh: 중국어) / "mid": 식별자
 # - 각 언어 코드에 대한 튜플의 구조:
-#   ("토픽이름", "토픽ID", "MID")
+#   ("토픽이름", "토픽ID")
 TOPIC_MAP = {
     # 헤드라인 뉴스
     "headlines": {
@@ -337,6 +337,20 @@ TOPIC_MAP = {
         "ja": ("ロボット工学", "CAAqJAgKIh5DQkFTRUFvS0wyMHZNREp3TUhRMVpoSUNhbUVvQUFQAQ"),
         "zh": ("机器人", "CAAqKAgKIiJDQkFTRXdvS0wyMHZNREp3TUhRMVpoSUZlbWd0UTA0b0FBUAE")
     },
+    "ai": {
+        "mid": "/m/0mkz",
+        "ko": ("인공지능", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNRzFyZWhJQ2EyOG9BQVAB"),
+        "en": ("Artificial Intelligence", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNRzFyZWhJQ1pXNG9BQVAB"),
+        "ja": ("人工知能", "CAAqIAgKIhpDQkFTRFFvSEwyMHZNRzFyZWhJQ2FtRW9BQVAB"),
+        "zh": ("人工智能", "CAAqJAgKIh5DQkFTRUFvSEwyMHZNRzFyZWhJRmVtZ3RRMDRvQUFQAQ")
+    },
+    "automation": {
+        "mid": "/m/017cmr",
+        "ko": ("자동화", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUzWTIxeUVnSnJieWdBUAE"),
+        "en": ("Automation", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUzWTIxeUVnSmxiaWdBUAE"),
+        "ja": ("自動", "CAAqIggKIhxDQkFTRHdvSkwyMHZNREUzWTIxeUVnSnFZU2dBUAE"),
+        "zh": ("自动化", "CAAqJggKIiBDQkFTRWdvSkwyMHZNREUzWTIxeUVnVjZhQzFEVGlnQVAB")
+    },    
 
     # 건강 뉴스
     "health": {
@@ -533,6 +547,13 @@ TOPIC_MAP = {
         "ja": ("ファッション", "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRE15ZEd3U0FtcGhLQUFQAQ"),
         "zh": ("时尚", "CAAqJQgKIh9DQkFTRVFvSUwyMHZNRE15ZEd3U0JYcG9MVU5PS0FBUAE")
     }
+}
+
+TOPIC_CATEGORY = {
+    'ko': "주제",
+    'en': "Topics",
+    'ja': "トピック",
+    'zh': "主题"
 }
 
 def get_news_prefix(lang):
@@ -785,6 +806,12 @@ def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
     response = requests.get(url)
     return response.content
+
+def parse_rss_title(rss_data):
+    root = ET.fromstring(rss_data)
+    title = root.find('.//channel/title').text
+    topic_name = title.split(' - ')[0]
+    return topic_name
 
 def replace_brackets(text):
     """대괄호와 꺾쇠괄호를 유니코드 문자로 대체합니다."""
@@ -1136,15 +1163,15 @@ def main():
         category = get_topic_category(TOPIC_KEYWORD, lang)
     else:
         rss_url = RSS_URL_TOPIC
+        rss_data = fetch_rss_feed(rss_url)
         topic_name, topic_keyword = get_topic_by_id(rss_url)
         if topic_name is None:
-            topic_name = "RSS 피드" if lang == 'ko' else "RSS Feed"
+            topic_name = parse_rss_title(rss_data)
         if topic_keyword is None:
-            category = "일반 뉴스" if lang == 'ko' else "General news"
+            category = TOPIC_CATEGORY.get(lang, "Topics")
         else:
             category = get_topic_category(topic_keyword, lang)
 
-    rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
         logging.error("RSS 데이터를 가져오는 데 실패했습니다.")
         return
@@ -1216,7 +1243,7 @@ def main():
 
         if not INITIALIZE_TOPIC:
             time.sleep(3)
-
+            
 if __name__ == "__main__":
     try:
         check_env_variables()
