@@ -16,6 +16,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: gautamkrishnar/keepalive-workflow@v2
         with:
-          time_elapsed: "0"
+          time_elapsed: 45
           gh_token: ${{ secrets.GH_PAT }}  # GitHub 토큰
           use_api: false  # 더미 커밋 사용 설정
