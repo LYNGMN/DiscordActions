@@ -17,5 +17,5 @@ jobs:
       - uses: gautamkrishnar/keepalive-workflow@v2
         with:
           time_elapsed: "0"
-          gh_token: ${{ secrets.GH_TOKEN }}  # GitHub 토큰
+          gh_token: ${{ secrets.GH_PAT }}  # GitHub 토큰
           use_api: false  # 더미 커밋 사용 설정
