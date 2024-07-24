@@ -375,6 +375,9 @@ def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
         raise ValueError("잘못된 모드입니다.")
 
 def fetch_and_post_videos(youtube):
+    logging.info(f"fetch_and_post_videos 함수 시작")
+    logging.info(f"YOUTUBE_DETAILVIEW 설정: {YOUTUBE_DETAILVIEW}")
+
     if not os.path.exists(DB_PATH):
         init_db()
 
@@ -514,10 +517,22 @@ def fetch_and_post_videos(youtube):
         post_to_discord(message)
         
         if YOUTUBE_DETAILVIEW:
-            embed_message = create_embed_message(video, youtube)
-            post_to_discord(embed_message, is_embed=True)
+            logging.info(f"YOUTUBE_DETAILVIEW가 True입니다. 임베드 메시지 생성 및 전송 시도")
+            try:
+                embed_message = create_embed_message(video, youtube)
+                logging.info(f"임베드 메시지 생성 완료: {video['title']}")
+                time.sleep(1)  # Discord 웹훅 속도 제한 방지를 위한 대기
+                post_to_discord(embed_message, is_embed=True)
+                logging.info(f"임베드 메시지 전송 완료: {video['title']}")
+            except Exception as e:
+                logging.error(f"임베드 메시지 생성 또는 전송 중 오류 발생: {e}")
+        else:
+            logging.info("YOUTUBE_DETAILVIEW가 False이므로 임베드 메시지를 전송하지 않습니다.")
         
         save_video(video)
+        logging.info(f"비디오 정보 저장 완료: {video['title']}")
+
+    logging.info("fetch_and_post_videos 함수 종료")
 
 if __name__ == "__main__":
     try:
