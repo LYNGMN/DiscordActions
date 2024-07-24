@@ -226,6 +226,33 @@ def is_within_date_range(published_at, since_date, until_date, past_date):
     
     return True
 
+# 카테고리 ID를 이름으로 변환하는 캐시를 이용한 함수
+category_cache = {}
+def get_category_name(youtube, category_id):
+    if category_id in category_cache:
+        return category_cache[category_id]
+    
+    categories = youtube.videoCategories().list(part="snippet", regionCode="US").execute()
+    for category in categories['items']:
+        category_cache[category['id']] = category['snippet']['title']
+        if category['id'] == category_id:
+            return category['snippet']['title']
+    return "Unknown"
+
+def fetch_playlist_info(youtube, playlist_id):
+    playlist_response = youtube.playlists().list(
+        part="snippet",
+        id=playlist_id
+    ).execute()
+    
+    if 'items' in playlist_response and playlist_response['items']:
+        playlist_info = playlist_response['items'][0]['snippet']
+        return {
+            'title': playlist_info['title'],
+            'channel_title': playlist_info['channelTitle']
+        }
+    return None
+
 def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
     if mode == 'channels':
         response = youtube.search().list(
@@ -275,7 +302,7 @@ def fetch_and_post_videos(youtube):
         init_db()
 
     saved_videos = load_videos()
-    latest_saved_time = saved_videos[0][3] if saved_videos else None
+    latest_saved_time = saved_videos[0][0] if saved_videos else None
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_YOUTUBE)
 
@@ -289,6 +316,10 @@ def fetch_and_post_videos(youtube):
 
     new_videos = []
 
+    playlist_info = None
+    if YOUTUBE_MODE == 'playlists':
+        playlist_info = fetch_playlist_info(youtube, YOUTUBE_PLAYLIST_ID)
+
     for video_detail in video_details_response['items']:
         snippet = video_detail['snippet']
         content_details = video_detail['contentDetails']
@@ -297,7 +328,7 @@ def fetch_and_post_videos(youtube):
         video_id = video_detail['id']
         published_at = snippet['publishedAt']
         
-        if any(saved_video[0] == video_id for saved_video in saved_videos):
+        if any(saved_video[4] == video_id for saved_video in saved_videos):
             continue
 
         if latest_saved_time and published_at <= latest_saved_time:
@@ -351,12 +382,16 @@ def fetch_and_post_videos(youtube):
     for video in new_videos:
         formatted_published_at = convert_to_local_time(video['published_at'])
         video_url = f"https://youtu.be/{video['video_id']}"
+        category_name = get_category_name(youtube, video['category'])
         
         if LANGUAGE_YOUTUBE == 'Korean':
             if YOUTUBE_MODE == 'channels':
                 source_text = f"`{video['channel_title']} - YouTube`\n"
-            elif YOUTUBE_MODE == 'playlists':
-                source_text = f"`{video['channel_title']} - YouTube 재생목록`\n"
+            elif YOUTUBE_MODE == 'playlists' and playlist_info:
+                source_text = (
+                    f"`{playlist_info['title']} - YouTube 재생목록 by. {playlist_info['channel_title']}`\n"
+                    f"`{video['channel_title']} - YouTube`\n"
+                )
             elif YOUTUBE_MODE == 'search':
                 source_text = f"`{YOUTUBE_SEARCH_KEYWORD} - YouTube 검색 결과`\n`{video['channel_title']} - YouTube`\n"
             else:
@@ -366,7 +401,7 @@ def fetch_and_post_videos(youtube):
                 f"{source_text}"
                 f"**{video['title']}**\n"
                 f"{video_url}\n\n"
-                f"📁 카테고리: `{video['category']}`\n"
+                f"📁 카테고리: `{category_name}`\n"
                 f"⌛️ 영상 길이: `{video['duration']}`\n"
                 f"📅 게시일: `{formatted_published_at}`\n"
                 f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
@@ -377,8 +412,11 @@ def fetch_and_post_videos(youtube):
         else:
             if YOUTUBE_MODE == 'channels':
                 source_text = f"`{video['channel_title']} - YouTube`\n"
-            elif YOUTUBE_MODE == 'playlists':
-                source_text = f"`{video['channel_title']} - YouTube Playlist`\n"
+            elif YOUTUBE_MODE == 'playlists' and playlist_info:
+                source_text = (
+                    f"`{playlist_info['title']} - YouTube Playlist by {playlist_info['channel_title']}`\n"
+                    f"`{video['channel_title']} - YouTube`\n"
+                )
             elif YOUTUBE_MODE == 'search':
                 source_text = f"`{YOUTUBE_SEARCH_KEYWORD} - YouTube Search Result`\n`{video['channel_title']} - YouTube`\n"
             else:
@@ -388,7 +426,7 @@ def fetch_and_post_videos(youtube):
                 f"{source_text}"
                 f"**{video['title']}**\n"
                 f"{video_url}\n\n"
-                f"📁 Category: `{video['category']}`\n"
+                f"📁 Category: `{category_name}`\n"
                 f"⌛️ Duration: `{video['duration']}`\n"
                 f"📅 Published: `{formatted_published_at}`\n"
                 f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
@@ -426,4 +464,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"오류 발생: {e}", exc_info=True)
     finally:
-        logging.info("스크립트 실행 완료")    
+        logging.info("스크립트 실행 완료")
