@@ -77,6 +77,7 @@ jobs:
         DISCORD_WEBHOOK_YOUTUBE: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE }}
         DISCORD_AVATAR_YOUTUBE: ${{ secrets.DISCORD_AVATAR_YOUTUBE }}
         DISCORD_USERNAME_YOUTUBE: ${{ secrets.DISCORD_USERNAME_YOUTUBE }}
+        YOUTUBE_DETAILVIEW: ${{ secrets.YOUTUBE_DETAILVIEW }}
       run: |
         python .github/scripts/youtube_to_discord.py
 
