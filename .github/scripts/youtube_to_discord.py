@@ -72,7 +72,6 @@ def init_db(reset=False):
                   tags TEXT,
                   live_broadcast_content TEXT,
                   scheduled_start_time TEXT,
-                  default_language TEXT,
                   caption TEXT,
                   source TEXT)''')
     conn.commit()
@@ -92,7 +91,7 @@ def save_video(video_data):
                video_data['description'], video_data['category_id'], video_data['category_name'], 
                video_data['duration'], video_data['thumbnail_url'], video_data['tags'], 
                video_data['live_broadcast_content'], video_data['scheduled_start_time'], 
-               video_data['default_language'], video_data['caption'], video_data['source']))
+               video_data['caption'], video_data['source']))
     conn.commit()
     conn.close()
     logging.info(f"새 비디오 저장됨: {video_data['video_id']}")
@@ -352,11 +351,11 @@ def fetch_and_post_videos(youtube):
         description = html.unescape(snippet.get('description', ''))
         thumbnail_url = snippet['thumbnails']['high']['url']
         duration = parse_duration(content_details['duration'])
-        category = snippet.get('categoryId', 'Unknown')
+        category_id = snippet.get('categoryId', 'Unknown')
+        category_name = get_category_name(youtube, category_id)
         tags = ','.join(snippet.get('tags', []))
         live_broadcast_content = snippet.get('liveBroadcastContent', '')
         scheduled_start_time = live_streaming_details.get('scheduledStartTime', '')
-        default_language = snippet.get('defaultLanguage', '')
         caption = content_details.get('caption', '')
 
         video_data = {
@@ -374,7 +373,6 @@ def fetch_and_post_videos(youtube):
             'tags': tags,
             'live_broadcast_content': live_broadcast_content,
             'scheduled_start_time': scheduled_start_time,
-            'default_language': default_language,
             'caption': caption,
             'source': YOUTUBE_MODE
         }
@@ -387,7 +385,6 @@ def fetch_and_post_videos(youtube):
     for video in new_videos:
         formatted_published_at = convert_to_local_time(video['published_at'])
         video_url = f"https://youtu.be/{video['video_id']}"
-        category_name = get_category_name(youtube, video['category'])
         
         if LANGUAGE_YOUTUBE == 'Korean':
             if YOUTUBE_MODE == 'channels':
@@ -406,7 +403,7 @@ def fetch_and_post_videos(youtube):
                 f"{source_text}"
                 f"**{video['title']}**\n"
                 f"{video_url}\n\n"
-                f"📁 카테고리: `{category_name}`\n"
+                f"📁 카테고리: `{video['category_name']}`\n"
                 f"⌛️ 영상 길이: `{video['duration']}`\n"
                 f"📅 게시일: `{formatted_published_at}`\n"
                 f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
@@ -431,7 +428,7 @@ def fetch_and_post_videos(youtube):
                 f"{source_text}"
                 f"**{video['title']}**\n"
                 f"{video_url}\n\n"
-                f"📁 Category: `{category_name}`\n"
+                f"📁 Category: `{video['category_name']}`\n"
                 f"⌛️ Duration: `{video['duration']}`\n"
                 f"📅 Published: `{formatted_published_at}`\n"
                 f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
