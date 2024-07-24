@@ -8,6 +8,7 @@ import isodate
 from datetime import datetime, timezone, timedelta
 import logging
 import re
+import json
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,6 +29,7 @@ DISCORD_WEBHOOK_YOUTUBE = os.getenv('DISCORD_WEBHOOK_YOUTUBE')
 DISCORD_AVATAR_YOUTUBE = os.getenv('DISCORD_AVATAR_YOUTUBE', '').strip()
 DISCORD_USERNAME_YOUTUBE = os.getenv('DISCORD_USERNAME_YOUTUBE', '').strip()
 LANGUAGE_YOUTUBE = os.getenv('LANGUAGE_YOUTUBE', 'English')
+YOUTUBE_DETAILVIEW = os.getenv('YOUTUBE_DETAILVIEW', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
@@ -118,16 +120,84 @@ def load_videos():
     logging.info(f"저장된 비디오 수: {len(rows)}")
     return rows
 
-def post_to_discord(message):
-    payload = {"content": message}
+def get_channel_thumbnail(youtube, channel_id):
+    try:
+        response = youtube.channels().list(
+            part="snippet",
+            id=channel_id
+        ).execute()
+        return response['items'][0]['snippet']['thumbnails']['default']['url']
+    except Exception as e:
+        logging.error(f"채널 썸네일을 가져오는 데 실패했습니다: {e}")
+        return ""
+
+def create_embed_message(video, youtube):
+    channel_thumbnail = get_channel_thumbnail(youtube, video['channel_id'])
     
-    if DISCORD_AVATAR_YOUTUBE:
-        payload["avatar_url"] = DISCORD_AVATAR_YOUTUBE
+    # 태그 처리 로직 수정
+    tags = video['tags'].split(',') if video['tags'] else []
+    formatted_tags = ' '.join(f'`{tag.strip()}`' for tag in tags)
     
-    if DISCORD_USERNAME_YOUTUBE:
-        payload["username"] = DISCORD_USERNAME_YOUTUBE
+    embed = {
+        "title": video['title'],
+        "description": video['description'][:4096],  # Discord 제한
+        "url": video['video_url'],
+        "color": 16711680,  # Red color
+        "fields": [
+            {
+                "name": "⌛ Duration" if LANGUAGE_YOUTUBE == 'English' else "⌛ 영상 길이",
+                "value": video['duration']
+            },
+            {
+                "name": "📁 Category" if LANGUAGE_YOUTUBE == 'English' else "📁 카테고리",
+                "value": video['category_name']
+            },
+            {
+                "name": "🏷️ Tags" if LANGUAGE_YOUTUBE == 'English' else "🏷️ 태그",
+                "value": formatted_tags if formatted_tags else "N/A"
+            },
+            {
+                "name": "🆔 Video ID" if LANGUAGE_YOUTUBE == 'English' else "🆔 비디오 ID",
+                "value": f"`{video['video_id']}`"
+            },
+            {
+                "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 자막",
+                "value": f"[Download](https://downsub.com/?url={video['video_url']})"
+            }
+        ],
+        "author": {
+            "name": video['channel_title'],
+            "url": f"https://www.youtube.com/channel/{video['channel_id']}",
+            "icon_url": channel_thumbnail
+        },
+        "footer": {
+            "text": "YouTube",
+            "icon_url": "https://gallery.cord.town/media/original/youtube/youtube_social_icon_red.png"
+        },
+        "timestamp": video['published_at'],
+        "image": {
+            "url": video['thumbnail_url']
+        }
+    }
     
+    return {
+        "content": None,
+        "embeds": [embed],
+        "attachments": []
+    }
+
+def post_to_discord(message, is_embed=False):
     headers = {'Content-Type': 'application/json'}
+    
+    if is_embed:
+        payload = message
+    else:
+        payload = {"content": message}
+        if DISCORD_AVATAR_YOUTUBE:
+            payload["avatar_url"] = DISCORD_AVATAR_YOUTUBE
+        if DISCORD_USERNAME_YOUTUBE:
+            payload["username"] = DISCORD_USERNAME_YOUTUBE
+    
     response = requests.post(DISCORD_WEBHOOK_YOUTUBE, json=payload, headers=headers)
     if response.status_code != 204:
         logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
@@ -442,6 +512,11 @@ def fetch_and_post_videos(youtube):
                 message += f"\n\n🔴 Scheduled Live Start Time: `{formatted_start_time}`"
 
         post_to_discord(message)
+        
+        if YOUTUBE_DETAILVIEW:
+            embed_message = create_embed_message(video, youtube)
+            post_to_discord(embed_message, is_embed=True)
+        
         save_video(video)
 
 if __name__ == "__main__":
@@ -458,6 +533,7 @@ if __name__ == "__main__":
         logging.info(f"YOUTUBE_MODE: {YOUTUBE_MODE}")
         logging.info(f"INITIALIZE_MODE_YOUTUBE: {INITIALIZE_MODE_YOUTUBE}")
         logging.info(f"IS_FIRST_RUN: {IS_FIRST_RUN}")
+        logging.info(f"YOUTUBE_DETAILVIEW: {YOUTUBE_DETAILVIEW}")
         logging.info(f"데이터베이스 파일 크기: {os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else '파일 없음'}")
         
         conn = sqlite3.connect(DB_PATH)
