@@ -158,10 +158,14 @@ def parse_duration(duration):
 
 def convert_to_local_time(published_at):
     utc_time = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
-    local_time = utc_time.replace(tzinfo=timezone.utc).astimezone()
+    utc_time = utc_time.replace(tzinfo=timezone.utc)
+    
     if LANGUAGE_YOUTUBE == 'Korean':
-        return local_time.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
+        # KST는 UTC+9
+        kst_time = utc_time + timedelta(hours=9)
+        return kst_time.strftime("%Y년 %m월 %d일 %H시 %M분")
     else:
+        local_time = utc_time.astimezone()
         return local_time.strftime("%Y-%m-%d %H:%M:%S")
 
 def apply_advanced_filter(title, advanced_filter):
