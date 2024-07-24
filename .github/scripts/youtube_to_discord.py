@@ -26,6 +26,7 @@ INITIALIZE_MODE_YOUTUBE = os.getenv('INITIALIZE_MODE_YOUTUBE', 'false').lower() 
 ADVANCED_FILTER_YOUTUBE = os.getenv('ADVANCED_FILTER_YOUTUBE', '')
 DATE_FILTER_YOUTUBE = os.getenv('DATE_FILTER_YOUTUBE', '')
 DISCORD_WEBHOOK_YOUTUBE = os.getenv('DISCORD_WEBHOOK_YOUTUBE')
+DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW = os.getenv('DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW')
 DISCORD_AVATAR_YOUTUBE = os.getenv('DISCORD_AVATAR_YOUTUBE', '').strip()
 DISCORD_USERNAME_YOUTUBE = os.getenv('DISCORD_USERNAME_YOUTUBE', '').strip()
 LANGUAGE_YOUTUBE = os.getenv('LANGUAGE_YOUTUBE', 'English')
@@ -186,7 +187,7 @@ def create_embed_message(video, youtube):
         "attachments": []
     }
 
-def post_to_discord(message, is_embed=False):
+def post_to_discord(message, is_embed=False, is_detail=False):
     headers = {'Content-Type': 'application/json'}
     
     if is_embed:
@@ -198,13 +199,15 @@ def post_to_discord(message, is_embed=False):
         if DISCORD_USERNAME_YOUTUBE:
             payload["username"] = DISCORD_USERNAME_YOUTUBE
     
-    response = requests.post(DISCORD_WEBHOOK_YOUTUBE, json=payload, headers=headers)
+    webhook_url = DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW if is_detail and DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW else DISCORD_WEBHOOK_YOUTUBE
+    
+    response = requests.post(webhook_url, json=payload, headers=headers)
     if response.status_code != 204:
         logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
         logging.error(response.text)
     else:
-        logging.info("Discord에 메시지 게시 완료")
-        time.sleep(2)  # 속도 제한
+        logging.info(f"Discord에 메시지 게시 완료 ({'상세' if is_detail else '기본'} 웹훅)")
+    time.sleep(2)  # 속도 제한
 
 def parse_duration(duration):
     parsed_duration = isodate.parse_duration(duration)
@@ -522,7 +525,7 @@ def fetch_and_post_videos(youtube):
                 embed_message = create_embed_message(video, youtube)
                 logging.info(f"임베드 메시지 생성 완료: {video['title']}")
                 time.sleep(1)  # Discord 웹훅 속도 제한 방지를 위한 대기
-                post_to_discord(embed_message, is_embed=True)
+                post_to_discord(embed_message, is_embed=True, is_detail=True)
                 logging.info(f"임베드 메시지 전송 완료: {video['title']}")
             except Exception as e:
                 logging.error(f"임베드 메시지 생성 또는 전송 중 오류 발생: {e}")
