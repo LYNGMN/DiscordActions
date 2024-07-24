@@ -752,6 +752,9 @@ def decode_google_news_url(source_url):
         base64_str = path[-1]
         decoded_str = decode_base64_url_part(base64_str)
         
+        # 디코딩된 문자열 로그
+        logging.info(f"디코딩된 문자열: {decoded_str}")
+
         # 일반 URL 형태인지 먼저 확인
         regular_url = extract_regular_url(decoded_str)
         if regular_url:
@@ -764,6 +767,10 @@ def decode_google_news_url(source_url):
             youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
             logging.info(f"유튜브 링크 추출 성공: {source_url} -> {youtube_url}")
             return youtube_url
+
+        # 디코딩된 문자열에서 URL 추출 실패 시 requests로 리디렉션 따라가기
+        session = requests.Session()
+        return fetch_original_url_via_request(source_url, session)
     
     logging.warning(f"Google 뉴스 URL 디코딩 실패, 원본 URL 반환: {source_url}")
     return source_url
