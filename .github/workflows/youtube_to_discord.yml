@@ -63,9 +63,12 @@ jobs:
     - name: Notify Discord of New YouTube Videos
       env:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        YOUTUBE_MODE: ${{ secrets.YOUTUBE_MODE }}
         YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        INIT_MAX_RESULTS: ${{ secrets.YOUTUBE_INIT_MAX_RESULTS }}
-        MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
+        YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
+        YOUTUBE_SEARCH_KEYWORD: ${{ secrets.YOUTUBE_SEARCH_KEYWORD }}
+        YOUTUBE_INIT_MAX_RESULTS: ${{ secrets.YOUTUBE_INIT_MAX_RESULTS }}
+        YOUTUBE_MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
         IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}
         INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
         ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
