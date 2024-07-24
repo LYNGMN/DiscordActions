@@ -65,7 +65,8 @@ def init_db(reset=False):
                   video_id TEXT PRIMARY KEY,
                   video_url TEXT,
                   description TEXT,
-                  category TEXT,
+                  category_id TEXT,
+                  category_name TEXT,
                   duration TEXT,
                   thumbnail_url TEXT,
                   tags TEXT,
@@ -82,12 +83,15 @@ def save_video(video_data):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''INSERT OR REPLACE INTO videos 
-                 (published_at, channel_title, channel_id, title, video_id, video_url, description, category, duration, thumbnail_url, tags, live_broadcast_content, scheduled_start_time, default_language, caption, source) 
+                 (published_at, channel_title, channel_id, title, video_id, video_url, description, 
+                 category_id, category_name, duration, thumbnail_url, tags, live_broadcast_content, 
+                 scheduled_start_time, caption, source) 
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-              (video_data['published_at'], video_data['channel_title'], video_data['channel_id'], video_data['title'],
-               video_data['video_id'], video_data['video_url'], video_data['description'], 
-               video_data['category'], video_data['duration'], video_data['thumbnail_url'],
-               video_data['tags'], video_data['live_broadcast_content'], video_data['scheduled_start_time'],
+              (video_data['published_at'], video_data['channel_title'], video_data['channel_id'], 
+               video_data['title'], video_data['video_id'], video_data['video_url'], 
+               video_data['description'], video_data['category_id'], video_data['category_name'], 
+               video_data['duration'], video_data['thumbnail_url'], video_data['tags'], 
+               video_data['live_broadcast_content'], video_data['scheduled_start_time'], 
                video_data['default_language'], video_data['caption'], video_data['source']))
     conn.commit()
     conn.close()
@@ -363,7 +367,8 @@ def fetch_and_post_videos(youtube):
             'video_id': video_id,
             'video_url': f"https://youtu.be/{video_id}",
             'description': description,
-            'category': category,
+            'category_id': category_id,
+            'category_name': category_name,
             'duration': duration,
             'thumbnail_url': thumbnail_url,
             'tags': tags,
@@ -389,11 +394,11 @@ def fetch_and_post_videos(youtube):
                 source_text = f"`{video['channel_title']} - YouTube`\n"
             elif YOUTUBE_MODE == 'playlists' and playlist_info:
                 source_text = (
-                    f"`{playlist_info['title']} - YouTube 재생목록 by. {playlist_info['channel_title']}`\n"
+                    f"`📃 {playlist_info['title']} - YouTube 재생목록 by. {playlist_info['channel_title']}`\n\n"
                     f"`{video['channel_title']} - YouTube`\n"
                 )
             elif YOUTUBE_MODE == 'search':
-                source_text = f"`{YOUTUBE_SEARCH_KEYWORD} - YouTube 검색 결과`\n`{video['channel_title']} - YouTube`\n"
+                source_text = f"`🔎 {YOUTUBE_SEARCH_KEYWORD} - YouTube 검색 결과`\n`{video['channel_title']} - YouTube`\n\n"
             else:
                 source_text = f"`{video['channel_title']} - YouTube`\n"
             
@@ -414,11 +419,11 @@ def fetch_and_post_videos(youtube):
                 source_text = f"`{video['channel_title']} - YouTube`\n"
             elif YOUTUBE_MODE == 'playlists' and playlist_info:
                 source_text = (
-                    f"`{playlist_info['title']} - YouTube Playlist by {playlist_info['channel_title']}`\n"
+                    f"`📃 {playlist_info['title']} - YouTube Playlist by {playlist_info['channel_title']}`\n\n"
                     f"`{video['channel_title']} - YouTube`\n"
                 )
             elif YOUTUBE_MODE == 'search':
-                source_text = f"`{YOUTUBE_SEARCH_KEYWORD} - YouTube Search Result`\n`{video['channel_title']} - YouTube`\n"
+                source_text = f"`🔎 {YOUTUBE_SEARCH_KEYWORD} - YouTube Search Result`\n`{video['channel_title']} - YouTube`\n\n"
             else:
                 source_text = f"`{video['channel_title']} - YouTube`\n"
             
