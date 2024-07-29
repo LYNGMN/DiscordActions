@@ -138,6 +138,9 @@ def create_embed_message(video, youtube):
     tags = video['tags'].split(',') if video['tags'] else []
     formatted_tags = ' '.join(f'`{tag.strip()}`' for tag in tags)
     
+    play_text = "Play Video" if LANGUAGE_YOUTUBE == 'English' else "영상 재생"
+    play_link = f"https://www.youtube.com/embed/{video['video_id']}"
+    
     embed = {
         "title": video['title'],
         "description": video['description'][:4096],  # Discord 제한
@@ -163,6 +166,10 @@ def create_embed_message(video, youtube):
             {
                 "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 자막",
                 "value": f"[Download](https://downsub.com/?url={video['video_url']})"
+            },
+            {
+                "name": "▶️ " + play_text,
+                "value": f"[{play_text}]({play_link})"
             }
         ],
         "author": {
@@ -180,28 +187,12 @@ def create_embed_message(video, youtube):
         }
     }
     
-    # 버튼 추가
-    button_text = "Play Video" if LANGUAGE_YOUTUBE == 'English' else "영상 재생"
-    buttons = [
-        {
-            "type": 2,
-            "style": 5,
-            "label": button_text,
-            "url": f"https://www.youtube.com/embed/{video['video_id']}"
-        }
-    ]
-    
     return {
         "content": None,
         "embeds": [embed],
-        "components": [
-            {
-                "type": 1,
-                "components": buttons
-            }
-        ]
+        "attachments": []
     }
-
+    
 def post_to_discord(message, is_embed=False, is_detail=False):
     headers = {'Content-Type': 'application/json'}
     
