@@ -180,7 +180,7 @@ def create_embed_message(video, youtube):
         },
         "footer": {
             "text": "YouTube",
-            "icon_url": "https://gallery.cord.town/media/original/youtube/youtube_social_icon_red.png"
+            "icon_url": "https://icon.dataimpact.ing/media/original/youtube/youtube_social_circle_red.png"
         },
         "timestamp": video['published_at'],
         "image": {
