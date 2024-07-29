@@ -135,7 +135,6 @@ def get_channel_thumbnail(youtube, channel_id):
 def create_embed_message(video, youtube):
     channel_thumbnail = get_channel_thumbnail(youtube, video['channel_id'])
     
-    # 태그 처리 로직 수정
     tags = video['tags'].split(',') if video['tags'] else []
     formatted_tags = ' '.join(f'`{tag.strip()}`' for tag in tags)
     
@@ -181,10 +180,26 @@ def create_embed_message(video, youtube):
         }
     }
     
+    # 버튼 추가
+    button_text = "Play Video" if LANGUAGE_YOUTUBE == 'English' else "영상 재생"
+    buttons = [
+        {
+            "type": 2,
+            "style": 5,
+            "label": button_text,
+            "url": f"https://www.youtube.com/embed/{video['video_id']}"
+        }
+    ]
+    
     return {
         "content": None,
         "embeds": [embed],
-        "attachments": []
+        "components": [
+            {
+                "type": 1,
+                "components": buttons
+            }
+        ]
     }
 
 def post_to_discord(message, is_embed=False, is_detail=False):
