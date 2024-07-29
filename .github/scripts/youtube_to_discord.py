@@ -384,8 +384,12 @@ def fetch_and_post_videos(youtube):
     if not os.path.exists(DB_PATH):
         init_db()
 
-    saved_videos = load_videos()
-    latest_saved_time = saved_videos[0][0] if saved_videos else None
+    # 데이터베이스에서 모든 비디오 ID 가져오기
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT video_id FROM videos")
+    existing_video_ids = set(row[0] for row in c.fetchall())
+    conn.close()
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_YOUTUBE)
 
@@ -411,10 +415,9 @@ def fetch_and_post_videos(youtube):
         video_id = video_detail['id']
         published_at = snippet['publishedAt']
         
-        if any(saved_video[4] == video_id for saved_video in saved_videos):
-            continue
-
-        if latest_saved_time and published_at <= latest_saved_time:
+        # 비디오 ID가 이미 데이터베이스에 있는지 확인
+        if video_id in existing_video_ids:
+            logging.info(f"이미 존재하는 비디오 건너뛰기: {video_id}")
             continue
 
         if not is_within_date_range(published_at, since_date, until_date, past_date):
