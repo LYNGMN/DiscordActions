@@ -139,7 +139,8 @@ def create_embed_message(video, youtube):
     formatted_tags = ' '.join(f'`{tag.strip()}`' for tag in tags)
     
     play_text = "Play Video" if LANGUAGE_YOUTUBE == 'English' else "영상 재생"
-    play_link = f"https://www.youtube.com/embed/{video['video_id']}"
+    play_link = f"https://www.youtube.com/watch?v={video['video_id']}"
+    embed_link = f"https://www.youtube.com/embed/{video['video_id']}"
     
     embed = {
         "title": video['title'],
@@ -164,12 +165,12 @@ def create_embed_message(video, youtube):
                 "value": f"`{video['video_id']}`"
             },
             {
-                "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 자막",
+                "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 영상 자막",
                 "value": f"[Download](https://downsub.com/?url={video['video_url']})"
             },
             {
                 "name": "▶️ " + play_text,
-                "value": f"[{play_text}]({play_link})"
+                "value": f"[Embed]({embed_link})"
             }
         ],
         "author": {
@@ -192,7 +193,7 @@ def create_embed_message(video, youtube):
         "embeds": [embed],
         "attachments": []
     }
-    
+
 def post_to_discord(message, is_embed=False, is_detail=False):
     headers = {'Content-Type': 'application/json'}
     
