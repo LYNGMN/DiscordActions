@@ -153,10 +153,6 @@ def create_embed_message(video, youtube):
                 "value": f"`{video['video_id']}`"
             },            
             {
-                "name": "⌛ Duration" if LANGUAGE_YOUTUBE == 'English' else "⌛ 영상 길이",
-                "value": video['duration']
-            },
-            {
                 "name": "📁 Category" if LANGUAGE_YOUTUBE == 'English' else "📁 영상 분류",
                 "value": video['category_name']
             },
@@ -164,6 +160,10 @@ def create_embed_message(video, youtube):
                 "name": "🏷️ Tags" if LANGUAGE_YOUTUBE == 'English' else "🏷️ 영상 태그",
                 "value": formatted_tags if formatted_tags else "N/A"
             },
+            {
+                "name": "⌛ Duration" if LANGUAGE_YOUTUBE == 'English' else "⌛ 영상 길이",
+                "value": video['duration']
+            },            
             {
                 "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 영상 자막",
                 "value": f"[Download](https://downsub.com/?url={video['video_url']})"
