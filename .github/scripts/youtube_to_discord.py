@@ -149,20 +149,20 @@ def create_embed_message(video, youtube):
         "color": 16711680,  # Red color
         "fields": [
             {
+                "name": "🆔 Video ID" if LANGUAGE_YOUTUBE == 'English' else "🆔 영상 ID",
+                "value": f"`{video['video_id']}`"
+            },            
+            {
                 "name": "⌛ Duration" if LANGUAGE_YOUTUBE == 'English' else "⌛ 영상 길이",
                 "value": video['duration']
             },
             {
-                "name": "📁 Category" if LANGUAGE_YOUTUBE == 'English' else "📁 카테고리",
+                "name": "📁 Category" if LANGUAGE_YOUTUBE == 'English' else "📁 영상 분류",
                 "value": video['category_name']
             },
             {
-                "name": "🏷️ Tags" if LANGUAGE_YOUTUBE == 'English' else "🏷️ 태그",
+                "name": "🏷️ Tags" if LANGUAGE_YOUTUBE == 'English' else "🏷️ 영상 태그",
                 "value": formatted_tags if formatted_tags else "N/A"
-            },
-            {
-                "name": "🆔 Video ID" if LANGUAGE_YOUTUBE == 'English' else "🆔 비디오 ID",
-                "value": f"`{video['video_id']}`"
             },
             {
                 "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 영상 자막",
