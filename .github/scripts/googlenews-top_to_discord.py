@@ -173,6 +173,9 @@ def clean_url(url):
     
     # 백슬래시를 정리
     url = url.replace('\\', '')
+    
+    # URL 디코딩 (예: %2F -> /)
+    url = unquote(url)
 
     parsed_url = urlparse(url)
     
@@ -182,15 +185,19 @@ def clean_url(url):
         query_params = parse_qs(parsed_url.query)
         cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
         cleaned_query = urlencode(cleaned_params)
-        return urlunparse(parsed_url._replace(query=cleaned_query))
-    
-    # 쿼리 파라미터 처리
-    if parsed_url.query:
-        query_params = parse_qs(parsed_url.query)
-        cleaned_query = urlencode(query_params, doseq=True)
         parsed_url = parsed_url._replace(query=cleaned_query)
+
+    # 불필요한 쿼리 파라미터 제거
+    query_params = parse_qs(parsed_url.query)
+    cleaned_query = urlencode(query_params, doseq=True)
+    parsed_url = parsed_url._replace(query=cleaned_query)
     
-    return urlunparse(parsed_url)
+    # 공백 등 비정상적인 문자 처리
+    cleaned_path = quote(parsed_url.path, safe="/")
+    cleaned_query = quote(parsed_url.query, safe="=&")
+    cleaned_url = urlunparse(parsed_url._replace(path=cleaned_path, query=cleaned_query))
+    
+    return cleaned_url
 
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
