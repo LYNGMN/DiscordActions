@@ -18,6 +18,7 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 YOUTUBE_MODE = os.getenv('YOUTUBE_MODE', 'channels').lower()
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_PLAYLIST_ID = os.getenv('YOUTUBE_PLAYLIST_ID')
+YOUTUBE_PLAYLIST_SORT = os.getenv('YOUTUBE_PLAYLIST_SORT', 'default').lower()
 YOUTUBE_SEARCH_KEYWORD = os.getenv('YOUTUBE_SEARCH_KEYWORD')
 INIT_MAX_RESULTS = int(os.getenv('YOUTUBE_INIT_MAX_RESULTS') or '100')
 MAX_RESULTS = int(os.getenv('YOUTUBE_MAX_RESULTS') or '10')
@@ -371,6 +372,16 @@ def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
 
         if not IS_FIRST_RUN and not INITIALIZE_MODE_YOUTUBE:
             playlist_items = playlist_items[:MAX_RESULTS]
+        
+        # 정렬 옵션 적용
+        if YOUTUBE_PLAYLIST_SORT == 'reverse':
+            playlist_items.sort(key=lambda x: x['snippet']['position'], reverse=True)
+        elif YOUTUBE_PLAYLIST_SORT == 'date_newest':
+            playlist_items.sort(key=lambda x: x['snippet']['publishedAt'], reverse=True)
+        elif YOUTUBE_PLAYLIST_SORT == 'date_oldest':
+            playlist_items.sort(key=lambda x: x['snippet']['publishedAt'])
+        else:  # 'default' 또는 기타 값
+            playlist_items.sort(key=lambda x: x['snippet']['position'])
         
         return [(item['snippet']['resourceId']['videoId'], item['snippet']) for item in playlist_items]
     elif mode == 'search':
