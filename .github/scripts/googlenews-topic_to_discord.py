@@ -9,7 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode, unquote, quote
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
