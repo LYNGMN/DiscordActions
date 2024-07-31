@@ -225,6 +225,9 @@ def clean_url(url):
     # 유니코드 이스케이프 시퀀스 처리
     url = unescape_unicode(url)
     
+    # 백슬래시를 정리
+    url = url.replace('\\', '')
+
     parsed_url = urlparse(url)
     
     # MSN 링크 특별 처리
