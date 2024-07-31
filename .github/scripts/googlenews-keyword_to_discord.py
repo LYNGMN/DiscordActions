@@ -212,7 +212,6 @@ def extract_regular_url(decoded_str):
             return match.group(0)
     return None
 
-
 def clean_url(url):
     """URL을 정리하는 함수"""
     parsed_url = urlparse(url)
@@ -223,12 +222,10 @@ def clean_url(url):
         query_params = parse_qs(parsed_url.query)
         cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
         cleaned_query = urlencode(cleaned_params)
-        final_url = urlunparse(parsed_url._replace(query=cleaned_query))
-    else:
-        # MSN이 아닌 경우 원래의 쿼리 파라미터 유지
-        final_url = url
+        return urlunparse(parsed_url._replace(query=cleaned_query))
     
-    return unquote(final_url)  # URL 디코딩
+    # 다른 모든 URL은 그대로 반환
+    return url
 
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
@@ -236,55 +233,19 @@ def decode_google_news_url(source_url):
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
         base64_str = path[-1]
         
-        # 먼저 새로운 방식 시도
         try:
             decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
             decoded_str = decoded_bytes.decode('latin1')
-
-            prefix = b'\x08\x13\x22'.decode('latin1')
-            if decoded_str.startswith(prefix):
-                decoded_str = decoded_str[len(prefix):]
-
-            suffix = b'\xd2\x01\x00'.decode('latin1')
-            if decoded_str.endswith(suffix):
-                decoded_str = decoded_str[:-len(suffix)]
-
-            bytes_array = bytearray(decoded_str, 'latin1')
-            length = bytes_array[0]
-            if length >= 0x80:
-                decoded_str = decoded_str[2:length+1]
-            else:
-                decoded_str = decoded_str[1:length+1]
-
-            if decoded_str.startswith("AU_yqL"):
-                return clean_url(fetch_decoded_batch_execute(base64_str))
-
-            # 유니코드 문자 처리
-            decoded_str = decoded_str.replace("\\u0026", "&").replace("\\u003d", "=")
             
-            # URL 추출 및 정리
+            # URL 추출
             url_match = re.search(r'(https?://[^\s]+)', decoded_str)
             if url_match:
                 extracted_url = url_match.group(1)
                 return clean_url(extracted_url)
-
         except Exception as e:
-            logging.error(f"새로운 디코딩 방식 실패: {e}")
-        
-        # 기존 방식 시도 (유튜브 링크 포함)
-        try:
-            decoded_str = decode_base64_url_part(base64_str)
-            youtube_id = extract_youtube_id(decoded_str)
-            if youtube_id:
-                return f"https://www.youtube.com/watch?v={youtube_id}"
-
-            url_match = re.search(r'(https?://[^\s]+)', decoded_str)
-            if url_match:
-                return clean_url(url_match.group(1))
-        except Exception as e:
-            logging.error(f"기존 디코딩 방식 실패: {e}")
-
-    return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
+            logging.error(f"URL 디코딩 실패: {e}")
+    
+    return clean_url(source_url)
 
 def get_original_url(google_link, session, max_retries=5):
     logging.info(f"ORIGIN_LINK_KEYWORD 값 확인: {ORIGIN_LINK_KEYWORD}")
