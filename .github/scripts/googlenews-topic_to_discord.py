@@ -751,6 +751,24 @@ def extract_youtube_id(decoded_str):
         return match.group(1)
     return None
 
+
+def clean_url(url):
+    """URL을 정리하는 함수"""
+    parsed_url = urlparse(url)
+    
+    # MSN 링크 특별 처리
+    if parsed_url.netloc.endswith('msn.com'):
+        parsed_url = parsed_url._replace(scheme='https')
+        query_params = parse_qs(parsed_url.query)
+        cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
+        cleaned_query = urlencode(cleaned_params)
+        final_url = urlunparse(parsed_url._replace(query=cleaned_query))
+    else:
+        # MSN이 아닌 경우 원래의 쿼리 파라미터 유지
+        final_url = url
+    
+    return unquote(final_url)  # URL 디코딩
+
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
     path = url.path.split("/")
@@ -806,23 +824,6 @@ def decode_google_news_url(source_url):
             logging.error(f"기존 디코딩 방식 실패: {e}")
 
     return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
-
-def clean_url(url):
-    """URL을 정리하는 함수"""
-    parsed_url = urlparse(url)
-    
-    # MSN 링크 https로 변환
-    if parsed_url.netloc.endswith('msn.com'):
-        parsed_url = parsed_url._replace(scheme='https')
-    
-    # 쿼리 파라미터 정리
-    query_params = parse_qs(parsed_url.query)
-    cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
-    cleaned_query = urlencode(cleaned_params)
-    
-    # 최종 URL 생성
-    final_url = urlunparse(parsed_url._replace(query=cleaned_query))
-    return unquote(final_url)  # URL 디코딩
 
 def get_original_url(google_link, session, max_retries=5):
     logging.info(f"ORIGIN_LINK_TOPIC 값 확인: {ORIGIN_LINK_TOPIC}")
