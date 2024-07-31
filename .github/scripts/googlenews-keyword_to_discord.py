@@ -202,6 +202,16 @@ def extract_youtube_id(decoded_str):
         return match.group(1)
     return None
 
+def extract_regular_url(decoded_str):
+    """디코딩된 문자열에서 일반 URL 추출"""
+    parts = re.split(r'[^\x20-\x7E]+', decoded_str)
+    url_pattern = r'(https?://[^\s]+)'
+    for part in parts:
+        match = re.search(url_pattern, part)
+        if match:
+            return match.group(0)
+    return None
+
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
     path = url.path.split("/")
@@ -231,8 +241,9 @@ def decode_google_news_url(source_url):
             if decoded_str.startswith("AU_yqL"):
                 return fetch_decoded_batch_execute(base64_str)
 
-            if decoded_str.startswith("http"):
-                return decoded_str
+            regular_url = extract_regular_url(decoded_str)
+            if regular_url:
+                return regular_url
         except Exception:
             pass  # 새로운 방식이 실패하면 기존 방식 시도
 
@@ -242,11 +253,9 @@ def decode_google_news_url(source_url):
         if youtube_id:
             return f"https://www.youtube.com/watch?v={youtube_id}"
 
-        # URL 패턴 찾기
-        url_pattern = r'(https?://[^\s]+)'
-        match = re.search(url_pattern, decoded_str)
-        if match:
-            return match.group(0)
+        regular_url = extract_regular_url(decoded_str)
+        if regular_url:
+            return regular_url
 
     return source_url  # 디코딩 실패 시 원본 URL 반환
 
