@@ -695,6 +695,11 @@ def save_news_item(pub_date, guid, title, link, topic, related_news):
         
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
+import requests
+import base64
+import re
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode, unquote
+
 def fetch_decoded_batch_execute(id):
     s = (
         '[[["Fbv4je","[\\"garturlreq\\",[[\\"en-US\\",\\"US\\",[\\"FINANCE_TOP_INDICES\\",\\"WEB_TEST_1_0_0\\"],'
@@ -746,16 +751,6 @@ def extract_youtube_id(decoded_str):
         return match.group(1)
     return None
 
-def extract_regular_url(decoded_str):
-    """디코딩된 문자열에서 일반 URL 추출"""
-    parts = re.split(r'[^\x20-\x7E]+', decoded_str)
-    url_pattern = r'(https?://[^\s]+)'
-    for part in parts:
-        match = re.search(url_pattern, part)
-        if match:
-            return match.group(0)
-    return None
-
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
     path = url.path.split("/")
@@ -783,27 +778,55 @@ def decode_google_news_url(source_url):
                 decoded_str = decoded_str[1:length+1]
 
             if decoded_str.startswith("AU_yqL"):
-                return fetch_decoded_batch_execute(base64_str)
+                return clean_url(fetch_decoded_batch_execute(base64_str))
 
-            regular_url = extract_regular_url(decoded_str)
-            if regular_url:
-                return regular_url
-        except Exception:
-            pass  # 새로운 방식이 실패하면 기존 방식 시도
+            # 유니코드 문자 처리
+            decoded_str = decoded_str.replace("\\u0026", "&").replace("\\u003d", "=")
+            
+            # URL 추출 및 정리
+            url_match = re.search(r'(https?://[^\s]+)', decoded_str)
+            if url_match:
+                extracted_url = url_match.group(1)
+                return clean_url(extracted_url)
 
+        except Exception as e:
+            logging.error(f"새로운 디코딩 방식 실패: {e}")
+        
         # 기존 방식 시도 (유튜브 링크 포함)
-        decoded_str = decode_base64_url_part(base64_str)
-        youtube_id = extract_youtube_id(decoded_str)
-        if youtube_id:
-            return f"https://www.youtube.com/watch?v={youtube_id}"
+        try:
+            decoded_str = decode_base64_url_part(base64_str)
+            youtube_id = extract_youtube_id(decoded_str)
+            if youtube_id:
+                return f"https://www.youtube.com/watch?v={youtube_id}"
 
-        regular_url = extract_regular_url(decoded_str)
-        if regular_url:
-            return regular_url
+            url_match = re.search(r'(https?://[^\s]+)', decoded_str)
+            if url_match:
+                return clean_url(url_match.group(1))
+        except Exception as e:
+            logging.error(f"기존 디코딩 방식 실패: {e}")
 
-    return source_url  # 디코딩 실패 시 원본 URL 반환
+    return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
+
+def clean_url(url):
+    """URL을 정리하는 함수"""
+    parsed_url = urlparse(url)
+    
+    # MSN 링크 https로 변환
+    if parsed_url.netloc.endswith('msn.com'):
+        parsed_url = parsed_url._replace(scheme='https')
+    
+    # 쿼리 파라미터 정리
+    query_params = parse_qs(parsed_url.query)
+    cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
+    cleaned_query = urlencode(cleaned_params)
+    
+    # 최종 URL 생성
+    final_url = urlunparse(parsed_url._replace(query=cleaned_query))
+    return unquote(final_url)  # URL 디코딩
 
 def get_original_url(google_link, session, max_retries=5):
+    logging.info(f"ORIGIN_LINK_TOPIC 값 확인: {ORIGIN_LINK_TOPIC}")
+
     if ORIGIN_LINK_TOPIC:
         original_url = decode_google_news_url(google_link)
         if original_url != google_link:
@@ -815,16 +838,16 @@ def get_original_url(google_link, session, max_retries=5):
             try:
                 response = session.get(google_link, allow_redirects=True)
                 if response.status_code == 200:
-                    return response.url
+                    return clean_url(response.url)
             except requests.RequestException as e:
                 logging.error(f"Failed to get original URL: {e}")
             retries += 1
         
         logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-        return google_link
+        return clean_url(google_link)
     else:
         logging.info(f"ORIGIN_LINK_TOPIC가 False, 원 링크 사용: {google_link}")
-        return google_link
+        return clean_url(google_link)
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""

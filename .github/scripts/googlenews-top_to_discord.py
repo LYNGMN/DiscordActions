@@ -187,23 +187,62 @@ def decode_google_news_url(source_url):
             if decoded_str.startswith("AU_yqL"):
                 return fetch_decoded_batch_execute(base64_str)
 
-            regular_url = extract_regular_url(decoded_str)
-            if regular_url:
-                return regular_url
-        except Exception:
-            pass  # 새로운 방식이 실패하면 기존 방식 시도
+            # 유니코드 문자 처리
+            decoded_str = decoded_str.replace("\\u0026", "&").replace("\\u003d", "=")
+            
+            # URL 추출 및 정리
+            url_match = re.search(r'(https?://[^\s]+)', decoded_str)
+            if url_match:
+                extracted_url = url_match.group(1)
+                parsed_url = urlparse(extracted_url)
+                
+                # MSN 링크 https로 변환
+                if parsed_url.netloc.endswith('msn.com'):
+                    parsed_url = parsed_url._replace(scheme='https')
+                
+                # 쿼리 파라미터 정리
+                query_params = parse_qs(parsed_url.query)
+                cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
+                cleaned_query = urlencode(cleaned_params)
+                
+                # 최종 URL 생성
+                final_url = urlunparse(parsed_url._replace(query=cleaned_query))
+                return unquote(final_url)  # URL 디코딩
 
+        except Exception as e:
+            logging.error(f"새로운 디코딩 방식 실패: {e}")
+        
         # 기존 방식 시도 (유튜브 링크 포함)
-        decoded_str = decode_base64_url_part(base64_str)
-        youtube_id = extract_youtube_id(decoded_str)
-        if youtube_id:
-            return f"https://www.youtube.com/watch?v={youtube_id}"
+        try:
+            decoded_str = decode_base64_url_part(base64_str)
+            youtube_id = extract_youtube_id(decoded_str)
+            if youtube_id:
+                return f"https://www.youtube.com/watch?v={youtube_id}"
 
-        regular_url = extract_regular_url(decoded_str)
-        if regular_url:
-            return regular_url
+            url_match = re.search(r'(https?://[^\s]+)', decoded_str)
+            if url_match:
+                return clean_url(url_match.group(1))
+        except Exception as e:
+            logging.error(f"기존 디코딩 방식 실패: {e}")
 
-    return source_url  # 디코딩 실패 시 원본 URL 반환
+    return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
+
+def clean_url(url):
+    """URL을 정리하는 함수"""
+    parsed_url = urlparse(url)
+    
+    # MSN 링크 https로 변환
+    if parsed_url.netloc.endswith('msn.com'):
+        parsed_url = parsed_url._replace(scheme='https')
+    
+    # 쿼리 파라미터 정리
+    query_params = parse_qs(parsed_url.query)
+    cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
+    cleaned_query = urlencode(cleaned_params)
+    
+    # 최종 URL 생성
+    final_url = urlunparse(parsed_url._replace(query=cleaned_query))
+    return unquote(final_url)  # URL 디코딩
 
 def get_original_url(google_link, session, max_retries=5):
     logging.info(f"ORIGIN_LINK_TOP 값 확인: {ORIGIN_LINK_TOP}")
@@ -219,13 +258,13 @@ def get_original_url(google_link, session, max_retries=5):
         try:
             response = session.get(google_link, allow_redirects=True)
             if response.status_code == 200:
-                return response.url
+                return clean_url(response.url)
         except requests.RequestException as e:
             logging.error(f"Failed to get original URL: {e}")
         retries += 1
 
     logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-    return google_link
+    return clean_url(google_link)
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
