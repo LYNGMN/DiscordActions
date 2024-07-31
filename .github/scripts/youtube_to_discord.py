@@ -416,6 +416,7 @@ def fetch_video_details(youtube, video_ids):
 def fetch_and_post_videos(youtube):
     logging.info(f"fetch_and_post_videos 함수 시작")
     logging.info(f"YOUTUBE_DETAILVIEW 설정: {YOUTUBE_DETAILVIEW}")
+    logging.info(f"YOUTUBE_PLAYLIST_SORT 설정: {YOUTUBE_PLAYLIST_SORT}")
 
     if not os.path.exists(DB_PATH):
         init_db()
@@ -433,18 +434,26 @@ def fetch_and_post_videos(youtube):
 
     video_details = fetch_video_details(youtube, video_ids)
 
+    # 비디오 세부 정보를 딕셔너리로 변환
+    video_details_dict = {video['id']: video for video in video_details}
+
     new_videos = []
 
     playlist_info = None
     if YOUTUBE_MODE == 'playlists':
         playlist_info = fetch_playlist_info(youtube, YOUTUBE_PLAYLIST_ID)
 
-    for video_detail in video_details:
+    # videos 리스트의 순서를 유지하면서 처리
+    for video_id, snippet in videos:
+        if video_id not in video_details_dict:
+            logging.warning(f"비디오 세부 정보를 찾을 수 없음: {video_id}")
+            continue
+
+        video_detail = video_details_dict[video_id]
         snippet = video_detail['snippet']
         content_details = video_detail['contentDetails']
         live_streaming_details = video_detail.get('liveStreamingDetails', {})
 
-        video_id = video_detail['id']
         published_at = snippet['publishedAt']
         
         if video_id in existing_video_ids:
@@ -493,7 +502,6 @@ def fetch_and_post_videos(youtube):
         
         new_videos.append(video_data)
 
-    new_videos.sort(key=lambda x: x['published_at'])
     logging.info(f"새로운 비디오 수: {len(new_videos)}")
 
     for video in new_videos:
