@@ -772,27 +772,26 @@ def clean_url(url):
     # 백슬래시를 정리
     url = url.replace('\\', '')
     
-    # URL 디코딩 (예: %2F -> /)
+    # URL 디코딩 (예: %2F -> /, %40 -> @ 등)
     url = unquote(url)
 
     parsed_url = urlparse(url)
     
-    # MSN 링크 특별 처리
+    # MSN 링크 특별 처리: HTTPS로 변환 및 불필요한 쿼리 파라미터 제거
     if parsed_url.netloc.endswith('msn.com'):
         parsed_url = parsed_url._replace(scheme='https')
         query_params = parse_qs(parsed_url.query)
         cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
         cleaned_query = urlencode(cleaned_params)
         parsed_url = parsed_url._replace(query=cleaned_query)
-
-    # 불필요한 쿼리 파라미터 제거
-    query_params = parse_qs(parsed_url.query)
-    cleaned_query = urlencode(query_params, doseq=True)
-    parsed_url = parsed_url._replace(query=cleaned_query)
     
     # 공백 등 비정상적인 문자 처리
-    cleaned_path = quote(parsed_url.path, safe="/")
-    cleaned_query = quote(parsed_url.query, safe="=&")
+    # safe 파라미터에 특수 문자들을 포함하여 인코딩되지 않도록 설정
+    safe_chars = "/:@&=+$,?#"
+    cleaned_path = quote(parsed_url.path, safe=safe_chars)
+    cleaned_query = quote(parsed_url.query, safe=safe_chars)
+    
+    # URL 재구성
     cleaned_url = urlunparse(parsed_url._replace(path=cleaned_path, query=cleaned_query))
     
     return cleaned_url
