@@ -9,7 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
@@ -179,44 +179,68 @@ def decode_google_news_url(source_url):
     if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
         base64_str = path[-1]
         
+        # 먼저 새로운 방식 시도
         try:
             decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
             decoded_str = decoded_bytes.decode('latin1')
-            
-            # URL 추출
-            url_match = re.search(r'(https?://[^\s]+)', decoded_str)
-            if url_match:
-                extracted_url = url_match.group(1)
-                return clean_url(extracted_url)
-        except Exception as e:
-            logging.error(f"URL 디코딩 실패: {e}")
-    
-    return clean_url(source_url)
+
+            prefix = b'\x08\x13\x22'.decode('latin1')
+            if decoded_str.startswith(prefix):
+                decoded_str = decoded_str[len(prefix):]
+
+            suffix = b'\xd2\x01\x00'.decode('latin1')
+            if decoded_str.endswith(suffix):
+                decoded_str = decoded_str[:-len(suffix)]
+
+            bytes_array = bytearray(decoded_str, 'latin1')
+            length = bytes_array[0]
+            if length >= 0x80:
+                decoded_str = decoded_str[2:length+1]
+            else:
+                decoded_str = decoded_str[1:length+1]
+
+            if decoded_str.startswith("AU_yqL"):
+                return clean_url(fetch_decoded_batch_execute(base64_str))
+
+            regular_url = extract_regular_url(decoded_str)
+            if regular_url:
+                return clean_url(regular_url)
+        except Exception:
+            pass  # 새로운 방식이 실패하면 기존 방식 시도
+
+        # 기존 방식 시도 (유튜브 링크 포함)
+        decoded_str = decode_base64_url_part(base64_str)
+        youtube_id = extract_youtube_id(decoded_str)
+        if youtube_id:
+            return f"https://www.youtube.com/watch?v={youtube_id}"
+
+        regular_url = extract_regular_url(decoded_str)
+        if regular_url:
+            return clean_url(regular_url)
+
+    return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
 
 def get_original_url(google_link, session, max_retries=5):
     logging.info(f"ORIGIN_LINK_TOP 값 확인: {ORIGIN_LINK_TOP}")
 
-    if ORIGIN_LINK_TOP:
-        original_url = decode_google_news_url(google_link)
-        if original_url != google_link:
-            return original_url
+    # ORIGIN_LINK_TOP 설정과 상관없이 항상 원본 링크를 시도
+    original_url = decode_google_news_url(google_link)
+    if original_url != google_link:
+        return original_url
 
-        # 디코딩 실패 시 requests 방식 시도
-        retries = 0
-        while retries < max_retries:
-            try:
-                response = session.get(google_link, allow_redirects=True)
-                if response.status_code == 200:
-                    return clean_url(response.url)
-            except requests.RequestException as e:
-                logging.error(f"Failed to get original URL: {e}")
-            retries += 1
-        
-        logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-        return clean_url(google_link)
-    else:
-        logging.info(f"ORIGIN_LINK_TOP가 False, 원 링크 사용: {google_link}")
-        return clean_url(google_link)
+    # 디코딩 실패 시 requests 방식 시도
+    retries = 0
+    while retries < max_retries:
+        try:
+            response = session.get(google_link, allow_redirects=True)
+            if response.status_code == 200:
+                return clean_url(response.url)
+        except requests.RequestException as e:
+            logging.error(f"Failed to get original URL: {e}")
+        retries += 1
+
+    logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
+    return clean_url(google_link)
 
 def fetch_rss_feed(url):
     """RSS 피드를 가져옵니다."""
