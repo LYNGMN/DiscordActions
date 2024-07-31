@@ -756,8 +756,19 @@ def extract_regular_url(decoded_str):
             return match.group(0)
     return None
 
+def unescape_unicode(text):
+    """유니코드 이스케이프 시퀀스를 실제 문자로 변환합니다."""
+    return re.sub(
+        r'\\u([0-9a-fA-F]{4})',
+        lambda m: chr(int(m.group(1), 16)),
+        text
+    )
+
 def clean_url(url):
-    """URL을 정리하는 함수"""
+    """URL을 정리하고 유니코드 문자를 처리하는 함수"""
+    # 유니코드 이스케이프 시퀀스 처리
+    url = unescape_unicode(url)
+    
     parsed_url = urlparse(url)
     
     # MSN 링크 특별 처리
@@ -768,8 +779,13 @@ def clean_url(url):
         cleaned_query = urlencode(cleaned_params)
         return urlunparse(parsed_url._replace(query=cleaned_query))
     
-    # 다른 모든 URL은 그대로 반환
-    return url
+    # 쿼리 파라미터 처리
+    if parsed_url.query:
+        query_params = parse_qs(parsed_url.query)
+        cleaned_query = urlencode(query_params, doseq=True)
+        parsed_url = parsed_url._replace(query=cleaned_query)
+    
+    return urlunparse(parsed_url)
 
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
