@@ -385,6 +385,21 @@ def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
     else:
         raise ValueError("잘못된 모드입니다.")
 
+def fetch_video_details(youtube, video_ids):
+    video_details = []
+    chunk_size = 50
+    for i in range(0, len(video_ids), chunk_size):
+        chunk = video_ids[i:i+chunk_size]
+        try:
+            video_details_response = youtube.videos().list(
+                part="snippet,contentDetails,liveStreamingDetails",
+                id=','.join(chunk)
+            ).execute()
+            video_details.extend(video_details_response.get('items', []))
+        except Exception as e:
+            logging.error(f"비디오 세부 정보를 가져오는 중 오류 발생: {e}")
+    return video_details
+
 def fetch_and_post_videos(youtube):
     logging.info(f"fetch_and_post_videos 함수 시작")
     logging.info(f"YOUTUBE_DETAILVIEW 설정: {YOUTUBE_DETAILVIEW}")
@@ -392,7 +407,6 @@ def fetch_and_post_videos(youtube):
     if not os.path.exists(DB_PATH):
         init_db()
 
-    # 데이터베이스에서 모든 비디오 ID 가져오기
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT video_id FROM videos")
@@ -404,10 +418,7 @@ def fetch_and_post_videos(youtube):
     videos = fetch_videos(youtube, YOUTUBE_MODE, YOUTUBE_CHANNEL_ID, YOUTUBE_PLAYLIST_ID, YOUTUBE_SEARCH_KEYWORD)
     video_ids = [video[0] for video in videos]
 
-    video_details_response = youtube.videos().list(
-        part="snippet,contentDetails,liveStreamingDetails",
-        id=','.join(video_ids)
-    ).execute()
+    video_details = fetch_video_details(youtube, video_ids)
 
     new_videos = []
 
@@ -415,7 +426,7 @@ def fetch_and_post_videos(youtube):
     if YOUTUBE_MODE == 'playlists':
         playlist_info = fetch_playlist_info(youtube, YOUTUBE_PLAYLIST_ID)
 
-    for video_detail in video_details_response['items']:
+    for video_detail in video_details:
         snippet = video_detail['snippet']
         content_details = video_detail['contentDetails']
         live_streaming_details = video_detail.get('liveStreamingDetails', {})
@@ -423,7 +434,6 @@ def fetch_and_post_videos(youtube):
         video_id = video_detail['id']
         published_at = snippet['publishedAt']
         
-        # 비디오 ID가 이미 데이터베이스에 있는지 확인
         if video_id in existing_video_ids:
             logging.info(f"이미 존재하는 비디오 건너뛰기: {video_id}")
             continue
