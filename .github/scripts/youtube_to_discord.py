@@ -373,15 +373,17 @@ def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
         if not IS_FIRST_RUN and not INITIALIZE_MODE_YOUTUBE:
             playlist_items = playlist_items[:MAX_RESULTS]
         
+        # 항상 position으로 정렬
+        playlist_items.sort(key=lambda x: x['snippet']['position'])
+        
         # 정렬 옵션 적용
         if YOUTUBE_PLAYLIST_SORT == 'reverse':
-            playlist_items.sort(key=lambda x: x['snippet']['position'], reverse=True)
+            playlist_items.reverse()
         elif YOUTUBE_PLAYLIST_SORT == 'date_newest':
             playlist_items.sort(key=lambda x: x['snippet']['publishedAt'], reverse=True)
         elif YOUTUBE_PLAYLIST_SORT == 'date_oldest':
             playlist_items.sort(key=lambda x: x['snippet']['publishedAt'])
-        else:  # 'default' 또는 기타 값
-            playlist_items.sort(key=lambda x: x['snippet']['position'])
+        # 'default'인 경우 이미 position으로 정렬되어 있으므로 추가 작업 불필요
         
         return [(item['snippet']['resourceId']['videoId'], item['snippet']) for item in playlist_items]
     elif mode == 'search':
