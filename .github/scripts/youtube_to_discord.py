@@ -19,7 +19,7 @@ YOUTUBE_MODE = os.getenv('YOUTUBE_MODE', 'channels').lower()
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_PLAYLIST_ID = os.getenv('YOUTUBE_PLAYLIST_ID')
 YOUTUBE_SEARCH_KEYWORD = os.getenv('YOUTUBE_SEARCH_KEYWORD')
-INIT_MAX_RESULTS = int(os.getenv('YOUTUBE_INIT_MAX_RESULTS') or '50')
+INIT_MAX_RESULTS = int(os.getenv('YOUTUBE_INIT_MAX_RESULTS') or '100')
 MAX_RESULTS = int(os.getenv('YOUTUBE_MAX_RESULTS') or '10')
 IS_FIRST_RUN = os.getenv('IS_FIRST_RUN', 'false').lower() == 'true'
 INITIALIZE_MODE_YOUTUBE = os.getenv('INITIALIZE_MODE_YOUTUBE', 'false').lower() == 'true'
@@ -353,7 +353,6 @@ def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
     elif mode == 'playlists':
         playlist_items = []
         next_page_token = None
-        max_results = INIT_MAX_RESULTS if IS_FIRST_RUN or INITIALIZE_MODE_YOUTUBE else MAX_RESULTS
 
         while True:
             playlist_request = youtube.playlistItems().list(
@@ -367,10 +366,12 @@ def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
             playlist_items.extend(playlist_response['items'])
             
             next_page_token = playlist_response.get('nextPageToken')
-            if not next_page_token or len(playlist_items) >= max_results:
+            if not next_page_token or (not IS_FIRST_RUN and not INITIALIZE_MODE_YOUTUBE and len(playlist_items) >= MAX_RESULTS):
                 break
 
-        playlist_items = playlist_items[:max_results]
+        if not IS_FIRST_RUN and not INITIALIZE_MODE_YOUTUBE:
+            playlist_items = playlist_items[:MAX_RESULTS]
+        
         return [(item['snippet']['resourceId']['videoId'], item['snippet']) for item in playlist_items]
     elif mode == 'search':
         response = youtube.search().list(
