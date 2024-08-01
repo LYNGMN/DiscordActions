@@ -103,13 +103,16 @@ def init_db(reset=False):
         logging.info("데이터베이스 초기화 완료")
 
 def is_guid_posted(guid):
-    """주어진 GUID가 이미 게시되었는지 확인합니다."""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
-        result = c.fetchone()
-        logging.info(f"GUID {guid} 중복 확인 결과: {'중복' if result else '새로운 항목'}")
-        return result is not None
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
+            result = c.fetchone() is not None
+            logging.info(f"GUID {guid} 확인 결과: {'이미 게시됨' if result else '새로운 항목'}")
+            return result
+    except sqlite3.Error as e:
+        logging.error(f"데이터베이스 오류 (GUID 확인 중): {e}")
+        return False
 
 def save_news_item(pub_date, guid, title, link, related_news):
     """뉴스 항목을 데이터베이스에 저장합니다."""
@@ -523,50 +526,62 @@ def main():
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
     logging.info(f"적용될 날짜 필터 - since_date: {since_date}, until_date: {until_date}, past_date: {past_date}")
 
-    for item in news_items:
-        guid = item.find('guid').text
+    with sqlite3.connect(DB_PATH) as conn:
+        for item in news_items:
+            guid = item.find('guid').text
 
-        if not INITIALIZE_KEYWORD and is_guid_posted(guid):
-            continue
+            if not INITIALIZE_KEYWORD and is_guid_posted(guid, conn):
+                logging.info(f"이미 게시된 항목 건너뜀: {guid}")
+                continue
 
-        title = replace_brackets(item.find('title').text)
-        google_link = item.find('link').text
-        link = get_original_url(google_link, session)
-        pub_date = item.find('pubDate').text
-        description_html = item.find('description').text
-        
-        formatted_date = parse_rss_date(pub_date)
+            title = replace_brackets(item.find('title').text)
+            google_link = item.find('link').text
+            link = get_original_url(google_link, session)
+            pub_date = item.find('pubDate').text
+            description_html = item.find('description').text
+            
+            formatted_date = parse_rss_date(pub_date)
 
-        # 날짜 필터 적용
-        if not is_within_date_range(pub_date, since_date, until_date, past_date):
-            logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
+            # 날짜 필터 적용 (중복 체크 후)
+            if not is_within_date_range(pub_date, since_date, until_date, past_date):
+                logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
+                continue
 
-        logging.info(f"날짜 필터를 통과한 뉴스: {title}")
+            logging.info(f"날짜 필터를 통과한 뉴스: {title}")
 
-        description, related_news = parse_html_description(description_html, session, title, link)
+            description, related_news = parse_html_description(description_html, session, title, link)
 
-        # 고급 검색 필터 적용
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER_KEYWORD):
-            logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
+            # 고급 검색 필터 적용
+            if not apply_advanced_filter(title, description, ADVANCED_FILTER_KEYWORD):
+                logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
+                continue
 
-        discord_message = f"`Google 뉴스 - {category} - 한국 🇰🇷`\n**{title}**\n{link}"
-        if description:
-            discord_message += f"\n{description}"
-        discord_message += f"\n\n📅 {formatted_date}"
+            discord_message = f"`Google 뉴스 - {category} - 한국 🇰🇷`\n**{title}**\n{link}"
+            if description:
+                discord_message += f"\n{description}"
+            discord_message += f"\n\n📅 {formatted_date}"
 
-        send_discord_message(
-            DISCORD_WEBHOOK_KEYWORD,
-            discord_message,
-            avatar_url=DISCORD_AVATAR_KEYWORD,
-            username=DISCORD_USERNAME_KEYWORD
-        )
+            send_discord_message(
+                DISCORD_WEBHOOK_KEYWORD,
+                discord_message,
+                avatar_url=DISCORD_AVATAR_KEYWORD,
+                username=DISCORD_USERNAME_KEYWORD
+            )
 
-        save_news_item(pub_date, guid, title, link, json.dumps(related_news, ensure_ascii=False))
+            save_news_item(pub_date, guid, title, link, json.dumps(related_news, ensure_ascii=False))
 
-        if not INITIALIZE_KEYWORD:
-            time.sleep(3)
+            if not INITIALIZE_KEYWORD:
+                time.sleep(3)
+
+if __name__ == "__main__":
+    try:
+        check_env_variables()
+        main()
+    except Exception as e:
+        logging.error(f"오류 발생: {e}", exc_info=True)
+        sys.exit(1)  # 오류 발생 시 비정상 종료
+    else:
+        logging.info("프로그램 정상 종료")
 
 if __name__ == "__main__":
     try:
