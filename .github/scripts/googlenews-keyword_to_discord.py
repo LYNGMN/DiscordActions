@@ -123,7 +123,7 @@ def is_guid_posted(guid, conn):
         c = conn.cursor()
         c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
         result = c.fetchone() is not None
-            logging.info(f"GUID {guid} 확인 결과: {'이미 게시됨' if result else '새로운 항목'}")
+        logging.info(f"GUID {guid} 확인 결과: {'이미 게시됨' if result else '새로운 항목'}")
         return result
     except sqlite3.Error as e:
         logging.error(f"데이터베이스 오류 (GUID 확인 중): {e}")
