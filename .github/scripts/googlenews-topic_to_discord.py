@@ -1232,28 +1232,21 @@ def is_korean_params(params):
     return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
 
 def main():
-    initialize_mode = os.environ.get('INITIALIZE_MODE_TOPIC', 'false').lower() == 'true'
-    init_db(reset=initialize_mode)
+    init_db(reset=INITIALIZE_TOPIC)
 
     session = requests.Session()
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
-
     lang = get_language_from_params(TOPIC_PARAMS)
 
     if TOPIC_MODE:
         topic_name, topic_id = get_topic_info(TOPIC_KEYWORD, lang)
-        rss_url = f"https://news.google.com/rss/topics/{topic_id}"
-        if TOPIC_PARAMS:
-            rss_url += TOPIC_PARAMS
+        rss_url = f"https://news.google.com/rss/topics/{topic_id}{TOPIC_PARAMS or ''}"
         category = get_topic_category(TOPIC_KEYWORD, lang)
     else:
         rss_url = RSS_URL_TOPIC
         topic_name, topic_keyword = get_topic_by_id(rss_url)
-        if topic_keyword is None:
-            category = TOPIC_CATEGORY.get(lang, "Topics")
-        else:
-            category = get_topic_category(topic_keyword, lang)
+        category = TOPIC_CATEGORY.get(lang, "Topics") if topic_keyword is None else get_topic_category(topic_keyword, lang)
 
     rss_data = fetch_rss_feed(rss_url)
     if rss_data is None:
@@ -1264,31 +1257,31 @@ def main():
         topic_name = parse_rss_title(rss_data)
 
     root = ET.fromstring(rss_data)
-
     news_items = root.findall('.//item')
-    if initialize_mode:
-        news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
-    else:
-        news_items = list(reversed(news_items))
+    news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text)) if INITIALIZE_TOPIC else list(reversed(news_items))
+
+    gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
+    country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
+    news_prefix = get_news_prefix(lang)
 
     for item in news_items:
         guid = item.find('guid').text
 
-        if not initialize_mode and is_guid_posted(guid):
+        if not INITIALIZE_TOPIC and is_guid_posted(guid):
             logging.info(f"이미 게시된 항목 건너뜀: {guid}")
             continue
 
         title = replace_brackets(item.find('title').text)
-        google_link = item.find('link').text
-        link = get_original_url(google_link, session)
         pub_date = item.find('pubDate').text
-        description_html = item.find('description').text
         
-        formatted_date = parse_rss_date(pub_date)
-
         if not is_within_date_range(pub_date, since_date, until_date, past_date):
             logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
+
+        google_link = item.find('link').text
+        link = get_original_url(google_link, session)
+        description_html = item.find('description').text
+        formatted_date = parse_rss_date(pub_date)
 
         related_news = extract_news_items(description_html, session)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
@@ -1298,11 +1291,6 @@ def main():
         if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
-        
-        gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
-        country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
-        
-        news_prefix = get_news_prefix(lang)
 
         logging.info(f"news_prefix: {news_prefix}")
         logging.info(f"category: {category}")
@@ -1310,10 +1298,7 @@ def main():
         logging.info(f"country_emoji: {country_emoji}")
 
         discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
-        if description:
-            discord_message += f"\n>>> {description}\n\n"
-        else:
-            discord_message += "\n\n"
+        discord_message += f"\n>>> {description}\n\n" if description else "\n\n"
         discord_message += f"📅 {formatted_date}"
 
         send_discord_message(
@@ -1325,7 +1310,7 @@ def main():
 
         save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
 
-        if not initialize_mode:
+        if not INITIALIZE_TOPIC:
             time.sleep(3)
                         
 if __name__ == "__main__":
