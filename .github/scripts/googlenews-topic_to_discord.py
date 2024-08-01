@@ -638,7 +638,7 @@ def init_db(reset=False):
         c = conn.cursor()
         if reset:
             c.execute("DROP TABLE IF EXISTS news_items")
-            logging.info("기존 news_items 테이블 삭제")
+            logging.info("기존 news_items 테이블 삭제됨")
         c.execute('''CREATE TABLE IF NOT EXISTS news_items
                      (pub_date TEXT,
                       guid TEXT PRIMARY KEY,
@@ -1232,7 +1232,8 @@ def is_korean_params(params):
     return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
 
 def main():
-    init_db(reset=INITIALIZE_TOPIC)
+    initialize_mode = os.environ.get('INITIALIZE_MODE_TOPIC', 'false').lower() == 'true'
+    init_db(reset=initialize_mode)
 
     session = requests.Session()
 
@@ -1265,7 +1266,7 @@ def main():
     root = ET.fromstring(rss_data)
 
     news_items = root.findall('.//item')
-    if INITIALIZE_TOPIC:
+    if initialize_mode:
         news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
     else:
         news_items = list(reversed(news_items))
@@ -1273,7 +1274,8 @@ def main():
     for item in news_items:
         guid = item.find('guid').text
 
-        if not INITIALIZE_TOPIC and is_guid_posted(guid):
+        if not initialize_mode and is_guid_posted(guid):
+            logging.info(f"이미 게시된 항목 건너뜀: {guid}")
             continue
 
         title = replace_brackets(item.find('title').text)
@@ -1284,7 +1286,6 @@ def main():
         
         formatted_date = parse_rss_date(pub_date)
 
-        # 날짜 필터 적용
         if not is_within_date_range(pub_date, since_date, until_date, past_date):
             logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
@@ -1294,18 +1295,15 @@ def main():
 
         description = parse_html_description(description_html, session)
 
-        # 고급 검색 필터 적용
         if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
             logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
             continue
         
-        # gl 파라미터에서 국가 코드 추출
         gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
         country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
         
         news_prefix = get_news_prefix(lang)
 
-        # 로깅을 통해 각 값 확인
         logging.info(f"news_prefix: {news_prefix}")
         logging.info(f"category: {category}")
         logging.info(f"topic_name: {topic_name}")
@@ -1327,7 +1325,7 @@ def main():
 
         save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
 
-        if not INITIALIZE_TOPIC:
+        if not initialize_mode:
             time.sleep(3)
                         
 if __name__ == "__main__":
