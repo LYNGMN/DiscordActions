@@ -15,7 +15,7 @@ env:
   ORIGIN_LINK_KEYWORD: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_KEYWORD }}
   KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
   KEYWORD: ${{ secrets.KEYWORD }}
-  RSS_URL: ${{ secrets.RSS_URL_GOOGLENEWS_KEYWORD }}
+  RSS_URL_KEYWORD: ${{ secrets.RSS_URL_GOOGLENEWS_KEYWORD }}
   AFTER_DATE: ${{ secrets.AFTER_DATE }}
   BEFORE_DATE: ${{ secrets.BEFORE_DATE }}
   WHEN: ${{ secrets.WHEN }}
@@ -36,80 +36,45 @@ jobs:
           python-version: '3.8'
 
       - name: Install Dependencies
-        run: |
-          pip install requests python-dateutil beautifulsoup4
+        run: pip install requests python-dateutil beautifulsoup4 pytz
 
-      - name: Get workflow ID
-        id: get_workflow_id
+      - name: Get workflow ID and latest successful run ID
+        id: get_workflow_info
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          result-encoding: string
           script: |
-            const workflows = await github.rest.actions.listRepoWorkflows({
-              owner: context.repo.owner,
-              repo: context.repo.repo
-            });
+            const { owner, repo } = context.repo;
+            const workflows = await github.rest.actions.listRepoWorkflows({ owner, repo });
             const workflow = workflows.data.workflows.find(wf => wf.path.endsWith('googlenews-keyword_to_discord.yml'));
             if (!workflow) throw new Error('Workflow not found');
-            return workflow.id.toString();
-
-      - name: Get latest successful run ID
-        id: get_latest_run
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          result-encoding: string
-          script: |
-            const workflowId = "${{ steps.get_workflow_id.outputs.result }}";
-            const workflowRuns = await github.rest.actions.listWorkflowRuns({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: workflowId,
-              status: 'success'
+            const workflowId = workflow.id;
+            
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: workflowId, status: 'success'
             });
-            return workflowRuns.data.workflow_runs[0]?.id.toString() || '';
+            const latestRunId = runs.data.workflow_runs[0]?.id || '';
+            
+            return { workflowId: workflowId.toString(), latestRunId: latestRunId.toString() };
 
       - name: Download previous database
-        if: env.INITIALIZE_MODE_KEYWORD != 'true' && steps.get_latest_run.outputs.result != ''
+        if: env.INITIALIZE_MODE_KEYWORD != 'true' && fromJson(steps.get_workflow_info.outputs.result).latestRunId != ''
         uses: actions/download-artifact@v4
         with:
           name: googlenews_keyword_database
-          run-id: ${{ steps.get_latest_run.outputs.result }}
+          run-id: ${{ fromJson(steps.get_workflow_info.outputs.result).latestRunId }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check if database exists or initialize
-        id: check_db
+      - name: Initialize or check database
         run: |
-          if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}" == "true" ] || [ ! -f google_news_keyword.db ] || [ ! -s google_news_keyword.db ]; then
-            echo "exists=false" >> $GITHUB_OUTPUT
+          if [ "${{ env.INITIALIZE_MODE_KEYWORD }}" == "true" ] || [ ! -f google_news_keyword.db ] || [ ! -s google_news_keyword.db ]; then
             echo "Initializing or creating new database"
             rm -f google_news_keyword.db
             touch google_news_keyword.db
-          else
-            echo "exists=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Read Google News RSS and Post to Discord
-        env:
-          DISCORD_WEBHOOK_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
-          DISCORD_AVATAR_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
-          DISCORD_USERNAME_KEYWORD: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
-          INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
-          ADVANCED_FILTER_KEYWORD: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_KEYWORD }}
-          DATE_FILTER_KEYWORD: ${{ secrets.DATE_FILTER_GOOGLENEWS_KEYWORD }}
-          ORIGIN_LINK_KEYWORD: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_KEYWORD }}
-          KEYWORD_MODE: ${{ secrets.KEYWORD_MODE }}
-          KEYWORD: ${{ secrets.KEYWORD }}
-          RSS_URL: ${{ secrets.RSS_URL }}
-          AFTER_DATE: ${{ secrets.AFTER_DATE }}
-          BEFORE_DATE: ${{ secrets.BEFORE_DATE }}
-          WHEN: ${{ secrets.WHEN }}
-          HL: ${{ secrets.HL }}
-          GL: ${{ secrets.GL }}
-          CEID: ${{ secrets.CEID }}
-        run: |
-          python .github/scripts/googlenews-keyword_to_discord.py
+        run: python .github/scripts/googlenews-keyword_to_discord.py
 
       - name: Upload updated database
         uses: actions/upload-artifact@v4
@@ -121,8 +86,8 @@ jobs:
       - name: Debug Information
         if: always()
         run: |
-          echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-          echo "INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}"
+          echo "Latest successful run ID: ${{ fromJson(steps.get_workflow_info.outputs.result).latestRunId }}"
+          echo "INITIALIZE_MODE_KEYWORD: ${{ env.INITIALIZE_MODE_KEYWORD }}"
           echo "Workspace contents:"
           ls -la
           echo "Database file size:"

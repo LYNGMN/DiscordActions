@@ -9,6 +9,7 @@ import json
 import base64
 import sqlite3
 import sys
+import pytz
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode, unquote, quote
 from datetime import datetime, timedelta
 from dateutil import parser
@@ -988,26 +989,31 @@ def apply_advanced_filter(title, description, advanced_filter):
     return True
 
 def parse_date_filter(filter_string):
-    """날짜 필터 문자열을 파싱하여 기준 날짜와 기간을 반환합니다."""
     since_date = None
     until_date = None
     past_date = None
 
-    # since 또는 until 파싱
+    logging.info(f"파싱 중인 날짜 필터 문자열: {filter_string}")
+
+    if not filter_string:
+        logging.warning("날짜 필터 문자열이 비어있습니다.")
+        return since_date, until_date, past_date
+
     since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
     until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
     
     if since_match:
-        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d')
-    elif until_match:
-        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d')
+        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d').replace(tzinfo=pytz.UTC)
+        logging.info(f"since_date 파싱 결과: {since_date}")
+    if until_match:
+        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d').replace(tzinfo=pytz.UTC)
+        logging.info(f"until_date 파싱 결과: {until_date}")
 
-    # past 파싱
     past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
     if past_match:
         value = int(past_match.group(1))
         unit = past_match.group(2)
-        now = datetime.now()
+        now = datetime.now(pytz.UTC)
         if unit == 'h':
             past_date = now - timedelta(hours=value)
         elif unit == 'd':
@@ -1016,21 +1022,34 @@ def parse_date_filter(filter_string):
             past_date = now - timedelta(days=value*30)  # 근사값 사용
         elif unit == 'y':
             past_date = now - timedelta(days=value*365)  # 근사값 사용
+        logging.info(f"past_date 파싱 결과: {past_date}")
+    else:
+        logging.warning("past: 형식의 날짜 필터를 찾을 수 없습니다.")
 
+    logging.info(f"최종 파싱 결과 - since_date: {since_date}, until_date: {until_date}, past_date: {past_date}")
     return since_date, until_date, past_date
 
 def is_within_date_range(pub_date, since_date, until_date, past_date):
-    """주어진 날짜가 필터 범위 내에 있는지 확인합니다."""
-    pub_datetime = parser.parse(pub_date)
+    pub_datetime = parser.parse(pub_date).replace(tzinfo=pytz.UTC)
+    now = datetime.now(pytz.UTC)
     
+    logging.info(f"검사 중인 기사 날짜: {pub_datetime}")
+    logging.info(f"현재 날짜: {now}")
+    logging.info(f"설정된 필터 - since_date: {since_date}, until_date: {until_date}, past_date: {past_date}")
+
     if past_date:
-        return pub_datetime >= past_date
+        result = pub_datetime >= past_date
+        logging.info(f"past_date 필터 적용 결과: {result}")
+        return result
     
-    if since_date:
-        return pub_datetime >= since_date
-    if until_date:
-        return pub_datetime <= until_date
+    if since_date and pub_datetime < since_date:
+        logging.info(f"since_date 필터에 의해 제외됨")
+        return False
+    if until_date and pub_datetime > until_date:
+        logging.info(f"until_date 필터에 의해 제외됨")
+        return False
     
+    logging.info(f"모든 날짜 필터를 통과함")
     return True
 
 def get_topic_category(keyword, lang='en'):
