@@ -117,14 +117,14 @@ def init_db(reset=False):
             logging.error(f"데이터베이스 초기화 중 오류 발생: {e}")
             raise
 
-def is_guid_posted(guid):
+def is_guid_posted(guid, conn):
+    """주어진 GUID가 이미 게시되었는지 확인합니다."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            c = conn.cursor()
-            c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
-            result = c.fetchone() is not None
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
+        result = c.fetchone() is not None
             logging.info(f"GUID {guid} 확인 결과: {'이미 게시됨' if result else '새로운 항목'}")
-            return result
+        return result
     except sqlite3.Error as e:
         logging.error(f"데이터베이스 오류 (GUID 확인 중): {e}")
         return False
