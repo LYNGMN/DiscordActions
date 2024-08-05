@@ -92,11 +92,16 @@ def init_db(reset=False):
             raise
 
 def is_guid_posted(guid):
-    """주어진 GUID가 이미 게시되었는지 확인합니다."""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
-        return c.fetchone() is not None
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
+            result = c.fetchone() is not None
+            logging.info(f"GUID {guid} 확인 결과: {'이미 게시됨' if result else '새로운 항목'}")
+            return result
+    except sqlite3.Error as e:
+        logging.error(f"데이터베이스 오류 (GUID 확인 중): {e}")
+        return False
 
 def save_news_item(pub_date, guid, title, link, related_news):
     """뉴스 항목을 데이터베이스에 저장합니다."""
@@ -771,4 +776,3 @@ if __name__ == "__main__":
         sys.exit(1)  # 오류 발생 시 비정상 종료
     else:
         logging.info("프로그램 정상 종료")
-
