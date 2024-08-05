@@ -13,6 +13,9 @@ env:
   ADVANCED_FILTER_TOP: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_TOP }}
   DATE_FILTER_TOP: ${{ secrets.DATE_FILTER_GOOGLENEWS_TOP }}
   ORIGIN_LINK_TOP: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_TOP }}
+  TOP_MODE: ${{ secrets.TOP_MODE }}
+  TOP_COUNTRY: ${{ secrets.TOP_COUNTRY }}
+  RSS_URL_TOP: ${{ secrets.RSS_URL_GOOGLENEWS_TOP }}
 
 jobs:
   fetch-and-post:
