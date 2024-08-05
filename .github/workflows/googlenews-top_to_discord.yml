@@ -49,7 +49,29 @@ jobs:
 
       - name: Verify Environment Variables
         run: |
-          python -c "import os; required_vars = ['DISCORD_WEBHOOK_TOP', 'TOP_MODE', 'TOP_COUNTRY', 'RSS_URL_TOP']; missing = [var for var in required_vars if not os.getenv(var)]; exit(1) if missing else print('All required environment variables are set')"
+          python -c """
+          import os
+          
+          top_mode = os.getenv('TOP_MODE', '').lower() == 'true'
+          
+          if top_mode:
+              required_vars = ['DISCORD_WEBHOOK_TOP', 'TOP_MODE', 'TOP_COUNTRY']
+          else:
+              required_vars = ['DISCORD_WEBHOOK_TOP', 'RSS_URL_TOP']
+          
+          missing = [var for var in required_vars if not os.getenv(var)]
+          
+          if missing:
+              print(f'Missing required environment variables: {", ".join(missing)}')
+              exit(1)
+          else:
+              print('All required environment variables are set')
+          
+          if top_mode and os.getenv('RSS_URL_TOP'):
+              print('Warning: RSS_URL_TOP is set but will be ignored because TOP_MODE is true')
+          elif not top_mode and (os.getenv('TOP_MODE') or os.getenv('TOP_COUNTRY')):
+              print('Warning: TOP_MODE or TOP_COUNTRY is set but will be ignored because RSS_URL_TOP is set')
+          """
 
       - name: Get workflow info and download previous database
         id: workflow_info
