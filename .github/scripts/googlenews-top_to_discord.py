@@ -647,6 +647,10 @@ def process_news_item(item, session):
     """개별 뉴스 항목을 처리합니다."""
     try:
         guid = item.find('guid').text
+        if is_guid_posted(guid):
+            logging.info(f"이미 게시된 뉴스 항목 발견, 처리 중단: {guid}")
+            return None
+        
         title = replace_brackets(item.find('title').text)
         google_link = item.find('link').text
         link = get_original_url(google_link, session)
@@ -703,11 +707,10 @@ def main():
             # 후속 실행 시 처리 로직
             new_items = []
             for item in reversed(news_items):  # 최신 항목부터 확인
-                guid = item.find('guid').text
-                if is_guid_posted(guid):
-                    logging.info(f"이미 게시된 뉴스 항목 발견, 처리 중단: {guid}")
-                    break
-                new_items.append(item)
+                processed_item = process_news_item(item, session)
+                if processed_item is None:
+                    continue
+                new_items.append(processed_item)
             
             if new_items:
                 news_items = list(reversed(new_items))  # 새 항목들을 다시 오래된 순서로 정렬
@@ -719,15 +722,11 @@ def main():
 
         for item in news_items:
             try:
-                processed_item = process_news_item(item, session)
-                if processed_item is None:
+                if not is_within_date_range(item["pub_date"], since_date, until_date, past_date):
+                    logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {item['title']}")
                     continue
 
-                if not is_within_date_range(processed_item["pub_date"], since_date, until_date, past_date):
-                    logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {processed_item['title']}")
-                    continue
-
-                discord_message = format_discord_message(processed_item, discord_source, timezone, date_format)
+                discord_message = format_discord_message(item, discord_source, timezone, date_format)
                 
                 retry_count = 3
                 for attempt in range(retry_count):
@@ -748,19 +747,19 @@ def main():
                             raise
 
                 save_news_item(
-                    processed_item["pub_date"],
-                    processed_item["guid"],
-                    processed_item["title"],
-                    processed_item["link"],
-                    processed_item["related_news_json"]
+                    item["pub_date"],
+                    item["guid"],
+                    item["title"],
+                    item["link"],
+                    item["related_news_json"]
                 )
 
                 # 모든 실행에서 3초 간격 적용
                 time.sleep(3)
-                logging.info(f"뉴스 항목 처리 완료: {processed_item['title']} (게시일: {processed_item['pub_date']})")
+                logging.info(f"뉴스 항목 처리 완료: {item['title']} (게시일: {item['pub_date']})")
 
             except Exception as e:
-                logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
+                logging.error(f"뉴스 항목 '{item['title']}' 처리 중 오류 발생: {e}", exc_info=True)
                 continue
 
     except Exception as e:
