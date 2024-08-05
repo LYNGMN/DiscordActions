@@ -647,7 +647,7 @@ def main():
                 logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
                 continue
 
-            related_news = extract_news_items(description_html, session)
+            related_news = extract_news_items(description_html, session, origin_link_top)
             related_news_json = json.dumps(related_news, ensure_ascii=False)
 
             description = parse_html_description(description_html, session)
