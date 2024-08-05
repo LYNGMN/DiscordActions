@@ -416,6 +416,17 @@ class RssUtils:
 # 텍스트 처리 관련 함수들
 class TextUtils:
     @staticmethod
+    def replace_brackets(text):
+        """대괄호와 꺾쇠괄호를 유니코드 문자로 대체합니다."""
+        text = text.replace('[', '［').replace(']', '］')
+        text = text.replace('<', '〈').replace('>', '〉')
+        text = re.sub(r'(?<!\s)(?<!^)［', ' ［', text)
+        text = re.sub(r'］(?!\s)', '］ ', text)
+        text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
+        text = re.sub(r'〉(?!\s)', '〉 ', text)
+        return text
+
+    @staticmethod
     def parse_rss_date(pub_date):
         dt = parser.parse(pub_date)
         if dt.tzinfo is None:
