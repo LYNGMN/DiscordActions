@@ -284,15 +284,12 @@ def decode_google_news_url(source_url):
 
     return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
 
-def get_original_url(google_link, session, max_retries=5):
-    logging.info(f"ORIGIN_LINK_TOP 값 확인: {ORIGIN_LINK_TOP}")
+def get_original_url(google_link, session, origin_link_top, max_retries=5):
+    if origin_link_top:
+        original_url = decode_google_news_url(google_link)
+        if original_url != google_link:
+            return original_url
 
-    # ORIGIN_LINK_TOP 설정과 상관없이 항상 원본 링크를 시도
-    original_url = decode_google_news_url(google_link)
-    if original_url != google_link:
-        return original_url
-
-    # 디코딩 실패 시 requests 방식 시도
     retries = 0
     while retries < max_retries:
         try:
@@ -627,6 +624,8 @@ def main():
         news_items = reversed(news_items)
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
+    origin_link_top = ORIGIN_LINK_TOP
+    logging.info(f"ORIGIN_LINK_TOP 값 확인: {origin_link_top}")
 
     for item in news_items:
         try:
@@ -637,7 +636,7 @@ def main():
 
             title = replace_brackets(item.find('title').text)
             google_link = item.find('link').text
-            link = get_original_url(google_link, session)
+            link = get_original_url(google_link, session, origin_link_top)
             pub_date = item.find('pubDate').text
             description_html = item.find('description').text
             
