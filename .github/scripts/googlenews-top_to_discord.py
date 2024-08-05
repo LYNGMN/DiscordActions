@@ -736,8 +736,10 @@ def main():
                     processed_item["related_news_json"]
                 )
 
-                if not INITIALIZE_TOP:
-                    time.sleep(3)
+                # 초기 실행 여부와 관계없이 항상 3초 간격 적용
+                time.sleep(3)
+                logging.info(f"뉴스 항목 처리 완료: {processed_item['title']}")
+
             except Exception as e:
                 logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
                 continue
