@@ -634,13 +634,53 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     logging.info(f"모든 날짜 필터를 통과함")
     return True
 
+def process_news_item(item, session):
+    """개별 뉴스 항목을 처리합니다."""
+    try:
+        guid = item.find('guid').text
+        title = replace_brackets(item.find('title').text)
+        google_link = item.find('link').text
+        link = get_original_url(google_link, session)
+        pub_date = item.find('pubDate').text
+        description_html = item.find('description').text
+        
+        description = parse_html_description(description_html, session)
+        related_news = extract_news_items(description_html, session)
+        related_news_json = json.dumps(related_news, ensure_ascii=False)
+
+        return {
+            "guid": guid,
+            "title": title,
+            "link": link,
+            "pub_date": pub_date,
+            "description": description,
+            "related_news_json": related_news_json
+        }
+    except Exception as e:
+        logging.error(f"뉴스 항목 처리 중 오류 발생: {e}", exc_info=True)
+        return None
+
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     try:
         check_env_variables()
         rss_url, discord_source, timezone, date_format = get_rss_url()
-        rss_data = fetch_rss_feed(rss_url)
-        news_items = parse_rss_feed(rss_data)
+        
+        retry_count = 3
+        for attempt in range(retry_count):
+            try:
+                rss_data = fetch_rss_feed(rss_url)
+                break
+            except Exception as e:
+                if attempt < retry_count - 1:
+                    logging.warning(f"RSS 피드 가져오기 실패 (시도 {attempt + 1}/{retry_count}): {e}")
+                    time.sleep(5)
+                else:
+                    logging.error(f"RSS 피드 가져오기 최종 실패: {e}")
+                    raise
+
+        root = ET.fromstring(rss_data)
+        news_items = root.findall('.//item')
 
         init_db(reset=INITIALIZE_TOP)
 
@@ -667,12 +707,24 @@ def main():
                     continue
 
                 discord_message = format_discord_message(processed_item, discord_source, timezone, date_format)
-                send_discord_message(
-                    DISCORD_WEBHOOK_TOP,
-                    discord_message,
-                    avatar_url=DISCORD_AVATAR_TOP,
-                    username=DISCORD_USERNAME_TOP
-                )
+                
+                retry_count = 3
+                for attempt in range(retry_count):
+                    try:
+                        send_discord_message(
+                            DISCORD_WEBHOOK_TOP,
+                            discord_message,
+                            avatar_url=DISCORD_AVATAR_TOP,
+                            username=DISCORD_USERNAME_TOP
+                        )
+                        break
+                    except Exception as e:
+                        if attempt < retry_count - 1:
+                            logging.warning(f"Discord 메시지 전송 실패 (시도 {attempt + 1}/{retry_count}): {e}")
+                            time.sleep(5)
+                        else:
+                            logging.error(f"Discord 메시지 전송 최종 실패: {e}")
+                            raise
 
                 save_news_item(
                     processed_item["pub_date"],
@@ -685,7 +737,7 @@ def main():
                 if not INITIALIZE_TOP:
                     time.sleep(3)
             except Exception as e:
-                logging.error(f"뉴스 항목 처리 중 오류 발생: {e}", exc_info=True)
+                logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
                 continue
 
     except Exception as e:
