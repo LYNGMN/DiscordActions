@@ -16,17 +16,23 @@ from dateutil.tz import gettz
 from bs4 import BeautifulSoup
 
 # 로깅 설정
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('google_news_top.log', encoding='utf-8')
-        ]
-    )
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# 환경 변수 설정
+# 환경 변수에서 필요한 정보를 가져옵니다.
+DISCORD_WEBHOOK_TOP = os.environ.get('DISCORD_WEBHOOK_TOP')
+DISCORD_AVATAR_TOP = os.environ.get('DISCORD_AVATAR_TOP', '').strip()
+DISCORD_USERNAME_TOP = os.environ.get('DISCORD_USERNAME_TOP', '').strip()
+INITIALIZE_TOP = os.environ.get('INITIALIZE_MODE_TOP', 'false').lower() == 'true'
+ADVANCED_FILTER_TOP = os.environ.get('ADVANCED_FILTER_TOP', '')
+DATE_FILTER_TOP = os.environ.get('DATE_FILTER_TOP', '')
+ORIGIN_LINK_TOP = os.environ.get('ORIGIN_LINK_TOP', 'true').lower() == 'true'
+RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
+TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
+TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
+
+# DB 설정
+DB_PATH = 'google_news_top.db'
+
 class Config:
     DISCORD_WEBHOOK_TOP = os.environ.get('DISCORD_WEBHOOK_TOP')
     DISCORD_AVATAR_TOP = os.environ.get('DISCORD_AVATAR_TOP', '').strip()
@@ -39,88 +45,163 @@ class Config:
     TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
     TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
 
-    @classmethod
-    def check_env_variables(cls):
-        if not cls.DISCORD_WEBHOOK_TOP:
-            raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOP")
-
-# 데이터베이스 관련 함수들
 class Database:
-    DB_PATH = 'google_news_top.db'
-
-    @classmethod
-    def init_db(cls, reset=False):
-        with sqlite3.connect(cls.DB_PATH) as conn:
+    @staticmethod
+    def init_db(reset=False):
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             try:
                 if reset:
                     c.execute("DROP TABLE IF EXISTS news_items")
                     logging.info("기존 news_items 테이블 삭제됨")
-                
+
                 c.execute('''CREATE TABLE IF NOT EXISTS news_items
                              (pub_date TEXT,
                               guid TEXT PRIMARY KEY,
                               title TEXT,
                               link TEXT,
                               related_news TEXT)''')
-                
+
                 c.execute("SELECT COUNT(*) FROM news_items")
                 count = c.fetchone()[0]
-                
+
                 if reset or count == 0:
                     logging.info("새로운 데이터베이스가 초기화되었습니다.")
                 else:
                     logging.info(f"기존 데이터베이스를 사용합니다. 현재 {count}개의 항목이 있습니다.")
-                
             except sqlite3.Error as e:
                 logging.error(f"데이터베이스 초기화 중 오류 발생: {e}")
                 raise
 
-    @classmethod
-    def is_guid_posted(cls, guid):
-        with sqlite3.connect(cls.DB_PATH) as conn:
+    @staticmethod
+    def is_guid_posted(guid):
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             c.execute("SELECT 1 FROM news_items WHERE guid = ?", (guid,))
             return c.fetchone() is not None
 
-    @classmethod
-    def save_news_item(cls, pub_date, guid, title, link, related_news):
-        with sqlite3.connect(cls.DB_PATH) as conn:
+    @staticmethod
+    def save_news_item(pub_date, guid, title, link, related_news):
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            
+
             c.execute("PRAGMA table_info(news_items)")
             columns = [column[1] for column in c.fetchall()]
-            
+
             related_news_count = len(json.loads(related_news))
-            
+
             for i in range(related_news_count):
                 title_col = f"related_title_{i+1}"
                 press_col = f"related_press_{i+1}"
                 link_col = f"related_link_{i+1}"
-                
+
                 if title_col not in columns:
                     c.execute(f"ALTER TABLE news_items ADD COLUMN {title_col} TEXT")
                 if press_col not in columns:
                     c.execute(f"ALTER TABLE news_items ADD COLUMN {press_col} TEXT")
                 if link_col not in columns:
                     c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
-            
+
             columns = ["pub_date", "guid", "title", "link", "related_news"]
             values = [pub_date, guid, title, link, related_news]
-            
+
             related_news_items = json.loads(related_news)
             for i, item in enumerate(related_news_items):
                 columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
                 values.extend([item['title'], item['press'], item['link']])
-            
+
             placeholders = ", ".join(["?" for _ in values])
             columns_str = ", ".join(columns)
-            
+
             c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
-            
+
             logging.info(f"새 뉴스 항목 저장: {guid}")
 
-# URL 관련 함수들
+class TextUtils:
+    @staticmethod
+    def replace_brackets(text):
+        text = text.replace('[', '［').replace(']', '］')
+        text = text.replace('<', '〈').replace('>', '〉')
+        text = re.sub(r'(?<!\s)(?<!^)［', ' ［', text)
+        text = re.sub(r'］(?!\s)', '］ ', text)
+        text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
+        text = re.sub(r'〉(?!\s)', '〉 ', text)
+        return text
+
+    @staticmethod
+    def parse_html_description(html_desc, session):
+        soup = BeautifulSoup(html_desc, 'html.parser')
+        items = soup.find_all('li')
+
+        news_items = []
+        full_content_link = ""
+        for item in items:
+            if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text:
+                full_content_link_match = item.find('a')
+                if full_content_link_match:
+                    full_content_link = full_content_link_match['href']
+                continue
+
+            title_match = item.find('a')
+            press_match = item.find('font', color="#6f6f6f")
+            if title_match and press_match:
+                google_link = title_match['href']
+                link = UrlUtils.get_original_url(google_link, session)
+                title_text = TextUtils.replace_brackets(title_match.text)
+                press_name = press_match.text
+                news_item = f"- [{title_text}](<{link}>) | {press_name}"
+                news_items.append(news_item)
+
+        news_string = '\n'.join(news_items)
+        if full_content_link:
+            news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
+
+        return news_string
+
+    @staticmethod
+    def parse_rss_date(pub_date, country_configs):
+        dt = parser.parse(pub_date)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=pytz.UTC)
+
+        timezone_str = None
+        country_code = None
+
+        if Config.TOP_MODE:
+            if Config.TOP_COUNTRY in country_configs:
+                timezone_str = country_configs[Config.TOP_COUNTRY][7]
+                country_code = Config.TOP_COUNTRY
+        elif Config.RSS_URL_TOP:
+            parsed_url = urlparse(Config.RSS_URL_TOP)
+            query_params = parse_qs(parsed_url.query)
+            if 'gl' in query_params:
+                country_code = query_params['gl'][0]
+                if country_code in country_configs:
+                    timezone_str = country_configs[country_code][7]
+
+        if timezone_str:
+            try:
+                local_tz = pytz.timezone(timezone_str)
+                dt_local = dt.astimezone(local_tz)
+
+                if country_code == 'KR':
+                    return f"{dt_local.strftime('%Y년 %m월 %d일 %H:%M:%S')} (KST)"
+                elif country_code == 'JP':
+                    return f"{dt_local.strftime('%Y年%m月%d日 %H時%M分%S秒')} (JST)"
+                elif country_code == 'CN':
+                    return f"{dt_local.strftime('%Y年%m月%d日 %H:%M:%S')} (CST)"
+                elif country_code == 'TW':
+                    return f"{dt_local.strftime('%Y年%m月%d日 %H:%M:%S')} (NST)"
+                elif country_code == 'HK':
+                    return f"{dt_local.strftime('%Y年%m月%d日 %H:%M:%S')} (HKT)"
+                else:
+                    tz_abbr = dt_local.strftime('%Z')
+                    return f"{dt_local.strftime('%Y-%m-%d %H:%M:%S')} ({tz_abbr})"
+            except pytz.exceptions.UnknownTimeZoneError:
+                logging.warning(f"알 수 없는 시간대: {timezone_str}. UTC를 사용합니다.")
+
+        return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} (UTC)"
+
 class UrlUtils:
     @staticmethod
     def fetch_decoded_batch_execute(id):
@@ -144,16 +225,16 @@ class UrlUtils:
         )
 
         if response.status_code != 200:
-            raise Exception("Google에서 데이터를 가져오는데 실패했습니다.")
+            raise Exception("Failed to fetch data from Google.")
 
         text = response.text
         header = '[\\"garturlres\\",\\"'
         footer = '\\",'
         if header not in text:
-            raise Exception(f"응답에서 헤더를 찾을 수 없습니다: {text}")
+            raise Exception(f"Header not found in response: {text}")
         start = text.split(header, 1)[1]
         if footer not in start:
-            raise Exception("응답에서 푸터를 찾을 수 없습니다.")
+            raise Exception("Footer not found in response.")
         url = start.split(footer, 1)[0]
         return url
 
@@ -201,29 +282,27 @@ class UrlUtils:
         url = unquote(url)
 
         parsed_url = urlparse(url)
-        
         if parsed_url.netloc.endswith('msn.com'):
             parsed_url = parsed_url._replace(scheme='https')
             query_params = parse_qs(parsed_url.query)
             cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
             cleaned_query = urlencode(cleaned_params)
             parsed_url = parsed_url._replace(query=cleaned_query)
-        
+
         safe_chars = "/:@&=+$,?#"
         cleaned_path = quote(parsed_url.path, safe=safe_chars)
         cleaned_query = quote(parsed_url.query, safe=safe_chars)
-        
+
         cleaned_url = urlunparse(parsed_url._replace(path=cleaned_path, query=cleaned_query))
-        
+
         return cleaned_url
 
-    @classmethod
-    def decode_google_news_url(cls, source_url):
+    @staticmethod
+    def decode_google_news_url(source_url):
         url = urlparse(source_url)
         path = url.path.split("/")
         if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
             base64_str = path[-1]
-            
             try:
                 decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
                 decoded_str = decoded_bytes.decode('latin1')
@@ -244,48 +323,46 @@ class UrlUtils:
                     decoded_str = decoded_str[1:length+1]
 
                 if decoded_str.startswith("AU_yqL"):
-                    return cls.clean_url(cls.fetch_decoded_batch_execute(base64_str))
+                    return UrlUtils.clean_url(UrlUtils.fetch_decoded_batch_execute(base64_str))
 
-                regular_url = cls.extract_regular_url(decoded_str)
+                regular_url = UrlUtils.extract_regular_url(decoded_str)
                 if regular_url:
-                    return cls.clean_url(regular_url)
+                    return UrlUtils.clean_url(regular_url)
             except Exception:
                 pass
 
-            decoded_str = cls.decode_base64_url_part(base64_str)
-            youtube_id = cls.extract_youtube_id(decoded_str)
+            decoded_str = UrlUtils.decode_base64_url_part(base64_str)
+            youtube_id = UrlUtils.extract_youtube_id(decoded_str)
             if youtube_id:
                 return f"https://www.youtube.com/watch?v={youtube_id}"
 
-            regular_url = cls.extract_regular_url(decoded_str)
+            regular_url = UrlUtils.extract_regular_url(decoded_str)
             if regular_url:
-                return cls.clean_url(regular_url)
+                return UrlUtils.clean_url(regular_url)
 
-        return cls.clean_url(source_url)
+        return UrlUtils.clean_url(source_url)
 
-    @classmethod
-    def get_original_url(cls, google_link, session, max_retries=5):
+    @staticmethod
+    def get_original_url(google_link, session, max_retries=5):
         logging.info(f"ORIGIN_LINK_TOP 값 확인: {Config.ORIGIN_LINK_TOP}")
 
-        original_url = cls.decode_google_news_url(google_link)
+        original_url = UrlUtils.decode_google_news_url(google_link)
         if original_url != google_link:
             return original_url
 
         retries = 0
         while retries < max_retries:
             try:
-                response = session.get(google_link, allow_redirects=True, timeout=30)
-                response.raise_for_status()
-                return cls.clean_url(response.url)
+                response = session.get(google_link, allow_redirects=True)
+                if response.status_code == 200:
+                    return UrlUtils.clean_url(response.url)
             except requests.RequestException as e:
-                logging.error(f"원본 URL을 가져오는데 실패 (시도 {retries + 1}/{max_retries}): {e}")
-                retries += 1
-                time.sleep(1)
+                logging.error(f"Failed to get original URL: {e}")
+            retries += 1
 
         logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-        return cls.clean_url(google_link)
+        return UrlUtils.clean_url(google_link)
 
-# RSS 관련 함수들
 class RssUtils:
     @staticmethod
     def fetch_rss_feed(url, max_retries=3, retry_delay=5):
@@ -399,107 +476,27 @@ class RssUtils:
             if not Config.TOP_COUNTRY:
                 raise ValueError("TOP_MODE가 true일 때 TOP_COUNTRY를 지정해야 합니다.")
             
-            if Config.TOP_COUNTRY not in country_configs:
+            if Config.TOP_COUNTRY == 'KR':
+                hl, ceid, google_news, news_type, country_name, country_name_en, flag = ('ko', 'KR:ko', 'Google 뉴스', '주요 뉴스', '한국', 'South Korea', '🇰🇷')
+            elif Config.TOP_COUNTRY == 'JP':
+                hl, ceid, google_news, news_type, country_name, country_name_en, flag = ('ja', 'JP:ja', 'Google ニュース', 'トップニュース', '日本', 'Japan', '🇯🇵')
+            elif Config.TOP_COUNTRY == 'CN':
+                hl, ceid, google_news, news_type, country_name, country_name_en, flag = ('zh-CN', 'CN:zh-Hans', 'Google 新闻', '焦点新闻', '中国', 'China', '🇨🇳')
+            elif Config.TOP_COUNTRY == 'TW':
+                hl, ceid, google_news, news_type, country_name, country_name_en, flag = ('zh-TW', 'TW:zh-Hant', 'Google 新聞', '焦點新聞', '台灣', 'Taiwan', '🇹🇼')
+            elif Config.TOP_COUNTRY == 'HK':
+                hl, ceid, google_news, news_type, country_name, country_name_en, flag = ('zh-HK', 'HK:zh-Hant', 'Google 新聞', '焦點新聞', '香港', 'Hong Kong', '🇭🇰')
+            else:
                 raise ValueError(f"지원되지 않는 국가 코드: {Config.TOP_COUNTRY}")
-            
-            hl, ceid, google_news, news_type, country_name, country_name_en, flag, timezone_str = country_configs[Config.TOP_COUNTRY]
+
             rss_url = f"https://news.google.com/rss?hl={hl}&gl={Config.TOP_COUNTRY}&ceid={ceid}"
-            
-            # Discord 메시지 제목 형식 생성
             discord_title = f"`{google_news} - {news_type} - {country_name} {flag}`"
-            
-            return rss_url, discord_title, country_configs
+            return rss_url, discord_title
         elif Config.RSS_URL_TOP:
-            return Config.RSS_URL_TOP, None, country_configs
+            return Config.RSS_URL_TOP, None
         else:
             raise ValueError("TOP_MODE가 false일 때 RSS_URL_TOP를 지정해야 합니다.")
 
-# 텍스트 처리 관련 함수들
-class TextUtils:
-    @staticmethod
-    def replace_brackets(text):
-        """대괄호와 꺾쇠괄호를 유니코드 문자로 대체합니다."""
-        text = text.replace('[', '［').replace(']', '］')
-        text = text.replace('<', '〈').replace('>', '〉')
-        text = re.sub(r'(?<!\s)(?<!^)［', ' ［', text)
-        text = re.sub(r'］(?!\s)', '］ ', text)
-        text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
-        text = re.sub(r'〉(?!\s)', '〉 ', text)
-        return text
-
-    @staticmethod
-    def parse_rss_date(pub_date, country_configs):
-        dt = parser.parse(pub_date)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=pytz.UTC)
-        
-        timezone_str = None
-        country_code = None
-        
-        if Config.TOP_MODE:
-            if Config.TOP_COUNTRY in country_configs:
-                timezone_str = country_configs[Config.TOP_COUNTRY][7]
-                country_code = Config.TOP_COUNTRY
-        elif Config.RSS_URL_TOP:
-            parsed_url = urlparse(Config.RSS_URL_TOP)
-            query_params = parse_qs(parsed_url.query)
-            if 'gl' in query_params:
-                country_code = query_params['gl'][0]
-                if country_code in country_configs:
-                    timezone_str = country_configs[country_code][7]
-        
-        if timezone_str:
-            try:
-                local_tz = pytz.timezone(timezone_str)
-                dt_local = dt.astimezone(local_tz)
-                
-                if country_code == 'KR':
-                    return f"{dt_local.strftime('%Y년 %m월 %d일 %H:%M:%S')} (KST)"
-                elif country_code == 'JP':
-                    return f"{dt_local.strftime('%Y年%m月%d日 %H時%M分%S秒')} (JST)"
-                elif country_code == 'CN':
-                    return f"{dt_local.strftime('%Y年%m月%d日 %H:%M:%S')} (CST)"
-                elif country_code == 'TW':
-                    return f"{dt_local.strftime('%Y年%m月%d日 %H:%M:%S')} (NST)"
-                elif country_code == 'HK':
-                    return f"{dt_local.strftime('%Y年%m月%d日 %H:%M:%S')} (HKT)"
-                else:
-                    tz_abbr = dt_local.strftime('%Z')
-                    return f"{dt_local.strftime('%Y-%m-%d %H:%M:%S')} ({tz_abbr})"
-            except pytz.exceptions.UnknownTimeZoneError:
-                logging.warning(f"알 수 없는 시간대: {timezone_str}. UTC를 사용합니다.")
-        
-        return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} (UTC)"
-
-# Discord 관련 함수
-class DiscordUtils:
-    @staticmethod
-    def send_discord_message(webhook_url, message, avatar_url=None, username=None, max_retries=3):
-        payload = {"content": message}
-        
-        if avatar_url and avatar_url.strip():
-            payload["avatar_url"] = avatar_url
-        
-        if username and username.strip():
-            payload["username"] = username
-        
-        headers = {"Content-Type": "application/json"}
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(webhook_url, json=payload, headers=headers, timeout=30)
-                response.raise_for_status()
-                logging.info("Discord에 메시지 게시 완료")
-                return
-            except requests.RequestException as e:
-                logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다 (시도 {attempt + 1}/{max_retries}): {e}")
-                if attempt + 1 < max_retries:
-                    time.sleep(5)
-        
-        logging.error("최대 재시도 횟수를 초과했습니다. Discord 메시지 전송 실패.")
-        raise Exception("Discord 메시지 전송 실패")
-
-# 뉴스 처리 관련 함수
 class NewsProcessor:
     @staticmethod
     def extract_news_items(description, session):
@@ -521,6 +518,7 @@ class NewsProcessor:
             return True
 
         text_to_check = (title + ' ' + description).lower()
+
         terms = re.findall(r'([+-]?)(?:"([^"]*)"|\S+)', advanced_filter)
 
         for prefix, term in terms:
@@ -553,7 +551,7 @@ class NewsProcessor:
 
         since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
         until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
-        
+
         if since_match:
             since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d').replace(tzinfo=pytz.UTC)
             logging.info(f"since_date 파싱 결과: {since_date}")
@@ -585,7 +583,7 @@ class NewsProcessor:
     def is_within_date_range(pub_date, since_date, until_date, past_date):
         pub_datetime = parser.parse(pub_date).replace(tzinfo=pytz.UTC)
         now = datetime.now(pytz.UTC)
-        
+
         logging.info(f"검사 중인 기사 날짜: {pub_datetime}")
         logging.info(f"현재 날짜: {now}")
         logging.info(f"설정된 필터 - since_date: {since_date}, until_date: {until_date}, past_date: {past_date}")
@@ -594,27 +592,47 @@ class NewsProcessor:
             result = pub_datetime >= past_date
             logging.info(f"past_date 필터 적용 결과: {result}")
             return result
-        
+
         if since_date and pub_datetime < since_date:
             logging.info(f"since_date 필터에 의해 제외됨")
             return False
         if until_date and pub_datetime > until_date:
             logging.info(f"until_date 필터에 의해 제외됨")
             return False
-        
+
         logging.info(f"모든 날짜 필터를 통과함")
         return True
 
+class DiscordUtils:
+    @staticmethod
+    def send_discord_message(webhook_url, message, avatar_url=None, username=None):
+        payload = {"content": message}
+        
+        if avatar_url and avatar_url.strip():
+            payload["avatar_url"] = avatar_url
+        
+        if username and username.strip():
+            payload["username"] = username
+        
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(webhook_url, json=payload, headers=headers)
+        if response.status_code != 204:
+            logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
+            logging.error(response.text)
+        else:
+            logging.info("Discord에 메시지 게시 완료")
+        time.sleep(3)
+
 def main():
     try:
-        rss_url, discord_title, country_configs = RssUtils.get_rss_url()
+        rss_url, discord_title = RssUtils.get_rss_url()
         rss_data = RssUtils.fetch_rss_feed(rss_url)
         root = ET.fromstring(rss_data)
 
         Database.init_db(reset=Config.INITIALIZE_TOP)
 
         session = requests.Session()
-        
+
         news_items = root.findall('.//item')
         if Config.INITIALIZE_TOP:
             news_items = list(news_items)
@@ -674,9 +692,11 @@ def main():
 
 if __name__ == "__main__":
     try:
-        setup_logging()
-        Config.check_env_variables()
+        check_env_variables()
         main()
     except Exception as e:
-        logging.error(f"프로그램 실행 중 치명적인 오류 발생: {e}", exc_info=True)
-        sys.exit(1)
+        logging.error(f"오류 발생: {e}", exc_info=True)
+        sys.exit(1)  # 오류 발생 시 비정상 종료
+    else:
+        logging.info("프로그램 정상 종료")
+
