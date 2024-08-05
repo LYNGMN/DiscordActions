@@ -687,19 +687,29 @@ def main():
         session = requests.Session()
         
         if INITIALIZE_TOP:
-            news_items = list(news_items)
+            # 초기 실행 시 날짜 기준으로 정렬
+            news_items = sorted(news_items, key=lambda item: parse_pub_date(item.find('pubDate').text))
+            logging.info("초기 실행: 뉴스 항목을 날짜 순으로 정렬했습니다.")
         else:
-            news_items = reversed(news_items)
+            # 후속 실행 시 처리 로직
+            new_items = []
+            for item in reversed(news_items):  # 최신 항목부터 확인
+                guid = item.find('guid').text
+                if is_guid_posted(guid):
+                    logging.info(f"이미 게시된 뉴스 항목 발견, 처리 중단: {guid}")
+                    break
+                new_items.append(item)
+            
+            if new_items:
+                news_items = list(reversed(new_items))  # 새 항목들을 다시 오래된 순서로 정렬
+                logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
+            else:
+                logging.info("후속 실행: 새로운 뉴스 항목이 없습니다.")
 
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
 
         for item in news_items:
             try:
-                guid = item.find('guid').text
-                if not INITIALIZE_TOP and is_guid_posted(guid):
-                    logging.info(f"이미 게시된 뉴스 항목 건너뜀: {guid}")
-                    continue
-
                 processed_item = process_news_item(item, session)
                 if processed_item is None:
                     continue
@@ -736,9 +746,9 @@ def main():
                     processed_item["related_news_json"]
                 )
 
-                # 초기 실행 여부와 관계없이 항상 3초 간격 적용
+                # 모든 실행에서 3초 간격 적용
                 time.sleep(3)
-                logging.info(f"뉴스 항목 처리 완료: {processed_item['title']}")
+                logging.info(f"뉴스 항목 처리 완료: {processed_item['title']} (게시일: {processed_item['pub_date']})")
 
             except Exception as e:
                 logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
