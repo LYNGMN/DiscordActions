@@ -27,7 +27,8 @@ DISCORD_USERNAME_TOP = os.environ.get('DISCORD_USERNAME_TOP', '').strip()
 INITIALIZE_TOP = os.environ.get('INITIALIZE_MODE_TOP', 'false').lower() == 'true'
 ADVANCED_FILTER_TOP = os.environ.get('ADVANCED_FILTER_TOP', '')
 DATE_FILTER_TOP = os.environ.get('DATE_FILTER_TOP', '')
-ORIGIN_LINK_TOP = os.environ.get('ORIGIN_LINK_TOP', 'true').lower() == 'true'
+ORIGIN_LINK_TOP = os.getenv('ORIGIN_LINK_TOP', '').lower()
+ORIGIN_LINK_TOP = ORIGIN_LINK_TOP not in ['false', 'f', '0', 'no', 'n']
 TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
 TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
 RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
