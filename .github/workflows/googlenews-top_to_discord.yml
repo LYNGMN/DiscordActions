@@ -47,33 +47,33 @@ jobs:
             ls -R "$GITHUB_WORKSPACE"
           fi
 
-      # Verify Environment Variables
       - name: Verify Environment Variables
         run: |
-          python -c """
-          import os
-          
-          top_mode = os.getenv('TOP_MODE', '').lower() == 'true'
-          
-          if top_mode:
-              required_vars = ['DISCORD_WEBHOOK_TOP', 'TOP_MODE', 'TOP_COUNTRY']
-          else:
-              required_vars = ['DISCORD_WEBHOOK_TOP', 'RSS_URL_TOP']
-          
-          missing = [var for var in required_vars if not os.getenv(var)]
-          
-          if missing:
-              print(f'Missing required environment variables: {", ".join(missing)}')
-              exit(1)
-          else:
-              print('All required environment variables are set')
-          
-          if top_mode and os.getenv('RSS_URL_TOP'):
-              print('Warning: RSS_URL_TOP is set but will be ignored because TOP_MODE is true')
-          elif not top_mode and (os.getenv('TOP_MODE') or os.getenv('TOP_COUNTRY')):
-              print('Warning: TOP_MODE or TOP_COUNTRY is set but will be ignored because RSS_URL_TOP is set')
-          """
+          if [ "${{ env.TOP_MODE }}" == "true" ]; then
+            required_vars=("DISCORD_WEBHOOK_TOP" "TOP_MODE" "TOP_COUNTRY")
+          else
+            required_vars=("DISCORD_WEBHOOK_TOP" "RSS_URL_TOP")
+          fi
 
+          missing_vars=()
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing_vars+=("$var")
+            fi
+          done
+
+          if [ ${#missing_vars[@]} -ne 0 ]; then
+            echo "Missing required environment variables: ${missing_vars[*]}"
+            exit 1
+          else
+            echo "All required environment variables are set"
+          fi
+
+          if [ "${{ env.TOP_MODE }}" == "true" ] && [ -n "${{ env.RSS_URL_TOP }}" ]; then
+            echo "Warning: RSS_URL_TOP is set but will be ignored because TOP_MODE is true"
+          elif [ "${{ env.TOP_MODE }}" != "true" ] && ([ -n "${{ env.TOP_MODE }}" ] || [ -n "${{ env.TOP_COUNTRY }}" ]); then
+            echo "Warning: TOP_MODE or TOP_COUNTRY is set but will be ignored because RSS_URL_TOP is set"
+          fi
 
       - name: Get workflow info and download previous database
         id: workflow_info
