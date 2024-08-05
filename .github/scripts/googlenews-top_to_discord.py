@@ -394,23 +394,23 @@ class RssUtils:
             'ET': ('en-ET', 'ET:en', 'Google News', 'Top stories', 'Ethiopia', 'Ethiopia', '🇪🇹'),
             'GH': ('en-GH', 'GH:en', 'Google News', 'Top stories', 'Ghana', 'Ghana', '🇬🇭'),
         }
-        
-        if TOP_MODE:
-            if not TOP_COUNTRY:
+
+        if Config.TOP_MODE:
+            if not Config.TOP_COUNTRY:
                 raise ValueError("TOP_MODE가 true일 때 TOP_COUNTRY를 지정해야 합니다.")
             
-            if TOP_COUNTRY not in country_configs:
-                raise ValueError(f"지원되지 않는 국가 코드: {TOP_COUNTRY}")
+            if Config.TOP_COUNTRY not in country_configs:
+                raise ValueError(f"지원되지 않는 국가 코드: {Config.TOP_COUNTRY}")
             
-            hl, ceid, google_news, news_type, country_name, country_name_en, flag, tz = country_configs[TOP_COUNTRY]
-            rss_url = f"https://news.google.com/rss?hl={hl}&gl={TOP_COUNTRY}&ceid={ceid}"
+            hl, ceid, google_news, news_type, country_name, country_name_en, flag, timezone_str = country_configs[Config.TOP_COUNTRY]
+            rss_url = f"https://news.google.com/rss?hl={hl}&gl={Config.TOP_COUNTRY}&ceid={ceid}"
             
             # Discord 메시지 제목 형식 생성
             discord_title = f"`{google_news} - {news_type} - {country_name} {flag}`"
             
-            return rss_url, discord_title
-        elif RSS_URL_TOP:
-            return RSS_URL_TOP, None
+            return rss_url, discord_title, country_configs
+        elif Config.RSS_URL_TOP:
+            return Config.RSS_URL_TOP, None, country_configs
         else:
             raise ValueError("TOP_MODE가 false일 때 RSS_URL_TOP를 지정해야 합니다.")
 
