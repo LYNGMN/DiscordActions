@@ -30,46 +30,59 @@ jobs:
           python-version: '3.8'
 
       - name: Install Dependencies
-        run: pip install requests python-dateutil beautifulsoup4 pytz
+        run: |
+          pip install requests python-dateutil beautifulsoup4 pytz
+          sudo apt-get install sqlite3
 
-      - name: Get workflow info and download previous database
-        id: workflow_info
+      - name: Get workflow ID
+        id: get_workflow_id
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: string
           script: |
-            const { owner, repo } = context.repo;
-            const workflows = await github.rest.actions.listRepoWorkflows({ owner, repo });
+            const workflows = await github.rest.actions.listRepoWorkflows({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
             const workflow = workflows.data.workflows.find(wf => wf.path.endsWith('googlenews-top_to_discord.yml'));
             if (!workflow) throw new Error('Workflow not found');
-            const workflowId = workflow.id.toString();
-            
-            const runs = await github.rest.actions.listWorkflowRuns({
-              owner, repo, workflow_id: workflowId, status: 'success'
-            });
-            const latestRunId = runs.data.workflow_runs[0]?.id.toString() || '';
-            
-            if (process.env.INITIALIZE_MODE_TOP !== 'true' && latestRunId) {
-              try {
-                await github.rest.actions.downloadArtifact({
-                  owner, repo,
-                  artifact_id: latestRunId,
-                  archive_format: 'zip'
-                });
-                console.log('Previous database downloaded successfully');
-              } catch (error) {
-                console.log('Failed to download previous database:', error.message);
-              }
-            }
-            
-            return { workflowId, latestRunId };
+            return workflow.id.toString();
 
-      - name: Initialize or check database
+      - name: Get latest successful run ID
+        id: get_latest_run
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: string
+          script: |
+            const workflowId = "${{ steps.get_workflow_id.outputs.result }}";
+            const workflowRuns = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflowId,
+              status: 'success'
+            });
+            return workflowRuns.data.workflow_runs[0]?.id.toString() || '';
+
+      - name: Download previous database
+        if: env.INITIALIZE_MODE_TOP != 'true' && steps.get_latest_run.outputs.result != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: googlenews_top_database
+          run-id: ${{ steps.get_latest_run.outputs.result }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Check and initialize database
         run: |
-          if [ "${{ env.INITIALIZE_MODE_TOP }}" == "true" ] || [ ! -f google_news_top.db ] || [ ! -s google_news_top.db ]; then
+          if [ "${{ env.INITIALIZE_MODE_TOP }}" == "true" ] || [ ! -f google_news_top.db ]; then
             echo "Initializing or creating new database"
             rm -f google_news_top.db
-            touch google_news_top.db
+            sqlite3 google_news_top.db "CREATE TABLE IF NOT EXISTS news_items (pub_date TEXT, guid TEXT PRIMARY KEY, title TEXT, link TEXT, related_news TEXT);"
+          else
+            echo "Using existing database"
+            sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;"
           fi
 
       - name: Read Google News RSS and Post to Discord
@@ -78,18 +91,20 @@ jobs:
       - name: Upload updated database
         uses: actions/upload-artifact@v4
         with:
-          name: googlenews_database
+          name: googlenews_top_database
           path: google_news_top.db
           retention-days: 90
 
       - name: Debug Information
         if: always()
         run: |
-          echo "Latest successful run ID: ${{ fromJson(steps.workflow_info.outputs.result).latestRunId }}"
+          echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
           echo "INITIALIZE_MODE_TOP: ${{ env.INITIALIZE_MODE_TOP }}"
           echo "Workspace contents:"
           ls -la
           echo "Database file size:"
           ls -lh google_news_top.db || echo "Database file not found"
-          echo "Database contents (if exists):"
+          echo "Database schema:"
+          sqlite3 google_news_top.db ".schema"
+          echo "Total number of entries in database:"
           sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
