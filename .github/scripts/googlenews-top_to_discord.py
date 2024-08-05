@@ -707,6 +707,10 @@ def main():
             # 후속 실행 시 처리 로직
             new_items = []
             for item in reversed(news_items):  # 최신 항목부터 확인
+                guid = item.find('guid').text
+                if is_guid_posted(guid):
+                    logging.info(f"이미 게시된 뉴스 항목 발견, 처리 중단: {guid}")
+                    break
                 processed_item = process_news_item(item, session)
                 if processed_item is None:
                     continue
@@ -714,7 +718,7 @@ def main():
             
             if new_items:
                 news_items = list(reversed(new_items))  # 새 항목들을 다시 오래된 순서로 정렬
-                logging.info(f"후속 실행: {len(new_items)}개의 새로운 뉴스 항목을 처리합니다.")
+                logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
             else:
                 logging.info("후속 실행: 새로운 뉴스 항목이 없습니다.")
 
@@ -736,7 +740,7 @@ def main():
                 )
 
                 discord_message = format_discord_message(item, discord_source, timezone, date_format)
-                
+
                 retry_count = 3
                 for attempt in range(retry_count):
                     try:
