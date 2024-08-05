@@ -293,8 +293,6 @@ def decode_google_news_url(source_url):
     return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
 
 def get_original_url(google_link, session, max_retries=5):
-    logging.info(f"ORIGIN_LINK_TOP 값 확인: {ORIGIN_LINK_TOP}")
-
     # ORIGIN_LINK_TOP 설정과 상관없이 항상 원본 링크를 시도
     original_url = decode_google_news_url(google_link)
     if original_url != google_link:
@@ -676,6 +674,8 @@ def main():
         check_env_variables()
         rss_url, discord_source, timezone, date_format = get_rss_url()
         
+        logging.info(f"ORIGIN_LINK_TOP 값: {ORIGIN_LINK_TOP}")
+
         retry_count = 3
         for attempt in range(retry_count):
             try:
