@@ -101,7 +101,6 @@ def init_db(reset=False):
                           guid TEXT PRIMARY KEY,
                           title TEXT,
                           link TEXT,
-                          topic TEXT,
                           related_news TEXT)''')
             
             # 테이블이 비어있는지 확인
@@ -587,16 +586,6 @@ def main():
 
             if not INITIALIZE_KEYWORD:
                 time.sleep(3)
-
-if __name__ == "__main__":
-    try:
-        check_env_variables()
-        main()
-    except Exception as e:
-        logging.error(f"오류 발생: {e}", exc_info=True)
-        sys.exit(1)  # 오류 발생 시 비정상 종료
-    else:
-        logging.info("프로그램 정상 종료")
 
 if __name__ == "__main__":
     try:
