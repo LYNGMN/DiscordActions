@@ -323,6 +323,15 @@ def fetch_rss_feed(url, max_retries=3, retry_delay=5):
                 logging.error(f"RSS 피드를 가져오는데 실패했습니다: {url}")
                 raise
 
+def parse_rss_feed(rss_data):
+    """RSS 피드를 파싱합니다."""
+    try:
+        root = ET.fromstring(rss_data)
+        return root.findall('.//item')
+    except ET.ParseError as e:
+        logging.error(f"RSS 데이터 파싱 중 오류 발생: {e}")
+        raise
+
 def get_rss_url():
     if TOP_MODE:
         if not TOP_COUNTRY:
