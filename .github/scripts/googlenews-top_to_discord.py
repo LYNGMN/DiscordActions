@@ -690,6 +690,8 @@ def main():
 
         root = ET.fromstring(rss_data)
         news_items = root.findall('.//item')
+        
+        logging.info(f"총 {len(news_items)}개의 뉴스 항목을 가져왔습니다.")
 
         init_db(reset=INITIALIZE_TOP)
 
@@ -702,16 +704,22 @@ def main():
             new_items = []
             for item in reversed(news_items):
                 guid = item.find('guid').text
-                if is_guid_posted(guid):
-                    logging.info(f"이미 게시된 뉴스 항목 발견, 처리 중단: {guid}")
-                    break
-                new_items.append(item)
+                if not is_guid_posted(guid):
+                    new_items.append(item)
+                    logging.info(f"새로운 뉴스 항목 발견: {guid}")
+                else:
+                    logging.info(f"이미 게시된 뉴스 항목 발견: {guid}")
             
             if new_items:
-                news_items = list(reversed(new_items))
+                news_items = new_items  # 뒤집지 않고 그대로 사용
                 logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
             else:
                 logging.info("후속 실행: 새로운 뉴스 항목이 없습니다.")
+                return  # 새로운 항목이 없으면 여기서 함수 종료
+
+        logging.info("처리할 뉴스 항목:")
+        for item in news_items:
+            logging.info(f"- {item.find('title').text} (GUID: {item.find('guid').text})")
 
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
 

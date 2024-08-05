@@ -62,6 +62,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
+      - name: Check database download status
+        run: |
+          if [ ! -f google_news_top.db ]; then
+            echo "Database download failed or this is the first run. A new database will be created."
+          else
+            echo "Database downloaded successfully."
+            echo "Current database entries:"
+            sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;"
+          fi
+
       - name: Check and initialize database
         run: |
           if [ "${{ env.INITIALIZE_MODE_TOP }}" == "true" ] || [ ! -f google_news_top.db ]; then
