@@ -28,18 +28,40 @@ INITIALIZE_TOP = os.environ.get('INITIALIZE_MODE_TOP', 'false').lower() == 'true
 ADVANCED_FILTER_TOP = os.environ.get('ADVANCED_FILTER_TOP', '')
 DATE_FILTER_TOP = os.environ.get('DATE_FILTER_TOP', '')
 ORIGIN_LINK_TOP = os.environ.get('ORIGIN_LINK_TOP', 'true').lower() == 'true'
-RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
 TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
 TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
+RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
 
 # DB 설정
 DB_PATH = 'google_news_top.db'
 
 def check_env_variables():
-    """환경 변수가 설정되어 있는지 확인합니다."""
-    if not DISCORD_WEBHOOK_TOP:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOP")
+    """환경 변수가 올바르게 설정되어 있는지 확인합니다."""
+    global TOP_MODE, RSS_URL_TOP
 
+    if not DISCORD_WEBHOOK_TOP:
+        logging.error("DISCORD_WEBHOOK_TOP 환경 변수가 설정되지 않았습니다.")
+        raise ValueError("DISCORD_WEBHOOK_TOP 환경 변수가 설정되지 않았습니다.")
+
+    if TOP_MODE:
+        if not TOP_COUNTRY:
+            logging.error("TOP_MODE가 true로 설정되었지만 TOP_COUNTRY가 지정되지 않았습니다.")
+            raise ValueError("TOP_MODE가 true일 때는 TOP_COUNTRY를 반드시 지정해야 합니다.")
+        if RSS_URL_TOP:
+            logging.error("TOP_MODE가 true로 설정되었지만 RSS_URL_TOP도 설정되어 있습니다.")
+            raise ValueError("TOP_MODE가 true일 때는 RSS_URL_TOP를 설정하지 않아야 합니다.")
+        logging.info(f"TOP_MODE가 활성화되었습니다. 선택된 국가: {TOP_COUNTRY}")
+    else:
+        if not RSS_URL_TOP:
+            logging.error("TOP_MODE가 false이고 RSS_URL_TOP가 설정되지 않았습니다.")
+            raise ValueError("TOP_MODE가 false일 때는 RSS_URL_TOP를 반드시 설정해야 합니다.")
+        if TOP_COUNTRY:
+            logging.warning("RSS_URL_TOP가 설정되어 있어 TOP_MODE가 false로 설정되었습니다. TOP_COUNTRY 설정은 무시됩니다.")
+        TOP_MODE = False
+        logging.info(f"RSS_URL_TOP가 설정되었습니다: {RSS_URL_TOP}")
+
+    logging.info("환경 변수 확인 완료")
+    
 def init_db(reset=False):
     """데이터베이스를 초기화하거나 기존 데이터베이스를 사용합니다."""
     with sqlite3.connect(DB_PATH) as conn:
@@ -308,107 +330,107 @@ def get_rss_url():
         
         country_configs = {
             # 동아시아
-            'KR': ('ko', 'KR:ko', 'Google 뉴스', '주요 뉴스', '한국', 'South Korea', '🇰🇷'),
-            'JP': ('ja', 'JP:ja', 'Google ニュース', 'トップニュース', '日本', 'Japan', '🇯🇵'),
-            'CN': ('zh-CN', 'CN:zh-Hans', 'Google 新闻', '焦点新闻', '中国', 'China', '🇨🇳'),
-            'TW': ('zh-TW', 'TW:zh-Hant', 'Google 新聞', '焦點新聞', '台灣', 'Taiwan', '🇹🇼'),
-            'HK': ('zh-HK', 'HK:zh-Hant', 'Google 新聞', '焦點新聞', '香港', 'Hong Kong', '🇭🇰'),
+            'KR': ('ko', 'KR:ko', 'Google 뉴스', '주요 뉴스', '한국', 'South Korea', '🇰🇷', 'Asia/Seoul', '%Y년 %m월 %d일 %H:%M:%S'),
+            'JP': ('ja', 'JP:ja', 'Google ニュース', 'トップニュース', '日本', 'Japan', '🇯🇵', 'Asia/Tokyo', '%Y年%m月%d日 %H:%M:%S'),
+            'CN': ('zh-CN', 'CN:zh-Hans', 'Google 新闻', '焦点新闻', '中国', 'China', '🇨🇳', 'Asia/Shanghai', '%Y年%m月%d日 %H:%M:%S'),
+            'TW': ('zh-TW', 'TW:zh-Hant', 'Google 新聞', '焦點新聞', '台灣', 'Taiwan', '🇹🇼', 'Asia/Taipei', '%Y年%m月%d日 %H:%M:%S'),
+            'HK': ('zh-HK', 'HK:zh-Hant', 'Google 新聞', '焦點新聞', '香港', 'Hong Kong', '🇭🇰', 'Asia/Hong_Kong', '%Y年%m月%d日 %H:%M:%S'),
             
             # 동남아시아
-            'VN': ('vi', 'VN:vi', 'Google Tin tức', 'Tin nổi bật', 'Việt Nam', 'Vietnam', '🇻🇳'),
-            'TH': ('th', 'TH:th', 'Google News', 'เรื่องเด่น', 'ประเทศไทย', 'Thailand', '🇹🇭'),
-            'PH': ('en-PH', 'PH:en', 'Google News', 'Top stories', 'Philippines', 'Philippines', '🇵🇭'),
-            'MY': ('ms-MY', 'MY:ms', 'Berita Google', 'Berita hangat', 'Malaysia', 'Malaysia', '🇲🇾'),
-            'SG': ('en-SG', 'SG:en', 'Google News', 'Top stories', 'Singapore', 'Singapore', '🇸🇬'),
-            'ID': ('id', 'ID:id', 'Google Berita', 'Artikel populer', 'Indonesia', 'Indonesia', '🇮🇩'),
+            'VN': ('vi', 'VN:vi', 'Google Tin tức', 'Tin nổi bật', 'Việt Nam', 'Vietnam', '🇻🇳', 'Asia/Ho_Chi_Minh', '%d/%m/%Y %H:%M:%S'),
+            'TH': ('th', 'TH:th', 'Google News', 'เรื่องเด่น', 'ประเทศไทย', 'Thailand', '🇹🇭', 'Asia/Bangkok', '%d/%m/%Y %H:%M:%S'),
+            'PH': ('en-PH', 'PH:en', 'Google News', 'Top stories', 'Philippines', 'Philippines', '🇵🇭', 'Asia/Manila', '%Y-%m-%d %I:%M:%S %p'),
+            'MY': ('ms-MY', 'MY:ms', 'Berita Google', 'Berita hangat', 'Malaysia', 'Malaysia', '🇲🇾', 'Asia/Kuala_Lumpur', '%d/%m/%Y %H:%M:%S'),
+            'SG': ('en-SG', 'SG:en', 'Google News', 'Top stories', 'Singapore', 'Singapore', '🇸🇬', 'Asia/Singapore', '%Y-%m-%d %I:%M:%S %p'),
+            'ID': ('id', 'ID:id', 'Google Berita', 'Artikel populer', 'Indonesia', 'Indonesia', '🇮🇩', 'Asia/Jakarta', '%d/%m/%Y %H:%M:%S'),
             
             # 남아시아
-            'IN': ('en-IN', 'IN:en', 'Google News', 'Top stories', 'India', 'India', '🇮🇳'),
-            'BD': ('bn', 'BD:bn', 'Google News', 'সেরা খবর', 'বাংলাদেশ', 'Bangladesh', '🇧🇩'),
-            'PK': ('en-PK', 'PK:en', 'Google News', 'Top stories', 'Pakistan', 'Pakistan', '🇵🇰'),
+            'IN': ('en-IN', 'IN:en', 'Google News', 'Top stories', 'India', 'India', '🇮🇳', 'Asia/Kolkata', '%d/%m/%Y %I:%M:%S %p'),
+            'BD': ('bn', 'BD:bn', 'Google News', 'সেরা খবর', 'বাংলাদেশ', 'Bangladesh', '🇧🇩', 'Asia/Dhaka', '%d/%m/%Y %H:%M:%S'),
+            'PK': ('en-PK', 'PK:en', 'Google News', 'Top stories', 'Pakistan', 'Pakistan', '🇵🇰', 'Asia/Karachi', '%d/%m/%Y %I:%M:%S %p'),
             
             # 서아시아
-            'IL': ('he', 'IL:he', 'חדשות Google', 'הכתבות המובילות', 'ישראל', 'Israel', '🇮🇱'),
-            'AE': ('ar', 'AE:ar', 'أخبار Google', 'أهم الأخبار', 'الإمارات العربية المتحدة', 'United Arab Emirates', '🇦🇪'),
-            'TR': ('tr', 'TR:tr', 'Google Haberler', 'En çok okunan haberler', 'Türkiye', 'Turkey', '🇹🇷'),
-            'LB': ('ar', 'LB:ar', 'أخبار Google', 'أهم الأخبار', 'لبنان', 'Lebanon', '🇱🇧'),
+            'IL': ('he', 'IL:he', 'חדשות Google', 'הכתבות המובילות', 'ישראל', 'Israel', '🇮🇱', 'Asia/Jerusalem', '%d/%m/%Y %H:%M:%S'),
+            'AE': ('ar', 'AE:ar', 'أخبار Google', 'أهم الأخبار', 'الإمارات العربية المتحدة', 'United Arab Emirates', '🇦🇪', 'Asia/Dubai', '%d/%m/%Y %I:%M:%S %p'),
+            'TR': ('tr', 'TR:tr', 'Google Haberler', 'En çok okunan haberler', 'Türkiye', 'Turkey', '🇹🇷', 'Europe/Istanbul', '%d.%m.%Y %H:%M:%S'),
+            'LB': ('ar', 'LB:ar', 'أخبار Google', 'أهم الأخبار', 'لبنان', 'Lebanon', '🇱🇧', 'Asia/Beirut', '%d/%m/%Y %I:%M:%S %p'),
 
             # 오세아니아
-            'AU': ('en-AU', 'AU:en', 'Google News', 'Top stories', 'Australia', 'Australia', '🇦🇺'),
-            'NZ': ('en-NZ', 'NZ:en', 'Google News', 'Top stories', 'New Zealand', 'New Zealand', '🇳🇿'),
+            'AU': ('en-AU', 'AU:en', 'Google News', 'Top stories', 'Australia', 'Australia', '🇦🇺', 'Australia/Sydney', '%d/%m/%Y %I:%M:%S %p'),
+            'NZ': ('en-NZ', 'NZ:en', 'Google News', 'Top stories', 'New Zealand', 'New Zealand', '🇳🇿', 'Pacific/Auckland', '%d/%m/%Y %I:%M:%S %p'),
 
             # 러시아와 동유럽
-            'RU': ('ru', 'RU:ru', 'Google Новости', 'Главные новости', 'Россия', 'Russia', '🇷🇺'),
-            'UA': ('uk', 'UA:uk', 'Google Новини', 'Головні новини', 'Україна', 'Ukraine', '🇺🇦'),
+            'RU': ('ru', 'RU:ru', 'Google Новости', 'Главные новости', 'Россия', 'Russia', '🇷🇺', 'Europe/Moscow', '%d.%m.%Y %H:%M:%S'),
+            'UA': ('uk', 'UA:uk', 'Google Новини', 'Головні новини', 'Україна', 'Ukraine', '🇺🇦', 'Europe/Kiev', '%d.%m.%Y %H:%M:%S'),
 
             # 유럽
-            'GR': ('el', 'GR:el', 'Ειδήσεις Google', 'Κυριότερες ειδήσεις', 'Ελλάδα', 'Greece', '🇬🇷'),
-            'DE': ('de', 'DE:de', 'Google News', 'Top-Meldungen', 'Deutschland', 'Germany', '🇩🇪'),
-            'NL': ('nl', 'NL:nl', 'Google Nieuws', 'Voorpaginanieuws', 'Nederland', 'Netherlands', '🇳🇱'),
-            'NO': ('no', 'NO:no', 'Google Nyheter', 'Hovedoppslag', 'Norge', 'Norway', '🇳🇴'),
-            'LV': ('lv', 'LV:lv', 'Google ziņas', 'Populārākās ziņas', 'Latvija', 'Latvia', '🇱🇻'),
-            'LT': ('lt', 'LT:lt', 'Google naujienos', 'Populiariausios naujienos', 'Lietuva', 'Lithuania', '🇱🇹'),
-            'RO': ('ro', 'RO:ro', 'Știri Google', 'Cele mai populare subiecte', 'România', 'Romania', '🇷🇴'),
-            'BE': ('fr', 'BE:fr', 'Google Actualités', 'À la une', 'Belgique', 'Belgium', '🇧🇪'),
-            'BG': ('bg', 'BG:bg', 'Google Новини', 'Водещи материали', 'България', 'Bulgaria', '🇧🇬'),
-            'SK': ('sk', 'SK:sk', 'Správy Google', 'Hlavné správy', 'Slovensko', 'Slovakia', '🇸🇰'),
-            'SI': ('sl', 'SI:sl', 'Google News', 'Najpomembnejše novice', 'Slovenija', 'Slovenia', '🇸🇮'),
-            'CH': ('de', 'CH:de', 'Google News', 'Top-Meldungen', 'Schweiz', 'Switzerland', '🇨🇭'),
-            'ES': ('es', 'ES:es', 'Google News', 'Noticias destacadas', 'España', 'Spain', '🇪🇸'),
-            'SE': ('sv', 'SE:sv', 'Google Nyheter', 'Huvudnyheter', 'Sverige', 'Sweden', '🇸🇪'),
-            'RS': ('sr', 'RS:sr', 'Google вести', 'Најважније вести', 'Србија', 'Serbia', '🇷🇸'),
-            'AT': ('de', 'AT:de', 'Google News', 'Top-Meldungen', 'Österreich', 'Austria', '🇦🇹'),
-            'IE': ('en-IE', 'IE:en', 'Google News', 'Top stories', 'Ireland', 'Ireland', '🇮🇪'),
-            'EE': ('et-EE', 'EE:et', 'Google News', 'Populaarseimad lood', 'Eesti', 'Estonia', '🇪🇪'),
-            'IT': ('it', 'IT:it', 'Google News', 'Notizie principali', 'Italia', 'Italy', '🇮🇹'),
-            'CZ': ('cs', 'CZ:cs', 'Zprávy Google', 'Hlavní události', 'Česko', 'Czech Republic', '🇨🇿'),
-            'GB': ('en-GB', 'GB:en', 'Google News', 'Top stories', 'United Kingdom', 'United Kingdom', '🇬🇧'),
-            'PL': ('pl', 'PL:pl', 'Google News', 'Najważniejsze artykuły', 'Polska', 'Poland', '🇵🇱'),
-            'PT': ('pt-PT', 'PT:pt-150', 'Google Notícias', 'Notícias principais', 'Portugal', 'Portugal', '🇵🇹'),
-            'FI': ('fi-FI', 'FI:fi', 'Google Uutiset', 'Pääuutiset', 'Suomi', 'Finland', '🇫🇮'),
-            'FR': ('fr', 'FR:fr', 'Google Actualités', 'À la une', 'France', 'France', '🇫🇷'),
-            'HU': ('hu', 'HU:hu', 'Google Hírek', 'Vezető hírek', 'Magyarország', 'Hungary', '🇭🇺'),
+            'GR': ('el', 'GR:el', 'Ειδήσεις Google', 'Κυριότερες ειδήσεις', 'Ελλάδα', 'Greece', '🇬🇷', 'Europe/Athens', '%d/%m/%Y %H:%M:%S'),
+            'DE': ('de', 'DE:de', 'Google News', 'Top-Meldungen', 'Deutschland', 'Germany', '🇩🇪', 'Europe/Berlin', '%d.%m.%Y %H:%M:%S'),
+            'NL': ('nl', 'NL:nl', 'Google Nieuws', 'Voorpaginanieuws', 'Nederland', 'Netherlands', '🇳🇱', 'Europe/Amsterdam', '%d-%m-%Y %H:%M:%S'),
+            'NO': ('no', 'NO:no', 'Google Nyheter', 'Hovedoppslag', 'Norge', 'Norway', '🇳🇴', 'Europe/Oslo', '%d.%m.%Y %H:%M:%S'),
+            'LV': ('lv', 'LV:lv', 'Google ziņas', 'Populārākās ziņas', 'Latvija', 'Latvia', '🇱🇻', 'Europe/Riga', '%d.%m.%Y %H:%M:%S'),
+            'LT': ('lt', 'LT:lt', 'Google naujienos', 'Populiariausios naujienos', 'Lietuva', 'Lithuania', '🇱🇹', 'Europe/Vilnius', '%Y-%m-%d %H:%M:%S'),
+            'RO': ('ro', 'RO:ro', 'Știri Google', 'Cele mai populare subiecte', 'România', 'Romania', '🇷🇴', 'Europe/Bucharest', '%d.%m.%Y %H:%M:%S'),
+            'BE': ('fr', 'BE:fr', 'Google Actualités', 'À la une', 'Belgique', 'Belgium', '🇧🇪', 'Europe/Brussels', '%d/%m/%Y %H:%M:%S'),
+            'BG': ('bg', 'BG:bg', 'Google Новини', 'Водещи материали', 'България', 'Bulgaria', '🇧🇬', 'Europe/Sofia', '%d.%m.%Y %H:%M:%S'),
+            'SK': ('sk', 'SK:sk', 'Správy Google', 'Hlavné správy', 'Slovensko', 'Slovakia', '🇸🇰', 'Europe/Bratislava', '%d.%m.%Y %H:%M:%S'),
+            'SI': ('sl', 'SI:sl', 'Google News', 'Najpomembnejše novice', 'Slovenija', 'Slovenia', '🇸🇮', 'Europe/Ljubljana', '%d.%m.%Y %H:%M:%S'),
+            'CH': ('de', 'CH:de', 'Google News', 'Top-Meldungen', 'Schweiz', 'Switzerland', '🇨🇭', 'Europe/Zurich', '%d.%m.%Y %H:%M:%S'),
+            'ES': ('es', 'ES:es', 'Google News', 'Noticias destacadas', 'España', 'Spain', '🇪🇸', 'Europe/Madrid', '%d/%m/%Y %H:%M:%S'),
+            'SE': ('sv', 'SE:sv', 'Google Nyheter', 'Huvudnyheter', 'Sverige', 'Sweden', '🇸🇪', 'Europe/Stockholm', '%Y-%m-%d %H:%M:%S'),
+            'RS': ('sr', 'RS:sr', 'Google вести', 'Најважније вести', 'Србија', 'Serbia', '🇷🇸', 'Europe/Belgrade', '%d.%m.%Y %H:%M:%S'),
+            'AT': ('de', 'AT:de', 'Google News', 'Top-Meldungen', 'Österreich', 'Austria', '🇦🇹', 'Europe/Vienna', '%d.%m.%Y %H:%M:%S'),
+            'IE': ('en-IE', 'IE:en', 'Google News', 'Top stories', 'Ireland', 'Ireland', '🇮🇪', 'Europe/Dublin', '%d/%m/%Y %H:%M:%S'),
+            'EE': ('et-EE', 'EE:et', 'Google News', 'Populaarseimad lood', 'Eesti', 'Estonia', '🇪🇪', 'Europe/Tallinn', '%d.%m.%Y %H:%M:%S'),
+            'IT': ('it', 'IT:it', 'Google News', 'Notizie principali', 'Italia', 'Italy', '🇮🇹', 'Europe/Rome', '%d/%m/%Y %H:%M:%S'),
+            'CZ': ('cs', 'CZ:cs', 'Zprávy Google', 'Hlavní události', 'Česko', 'Czech Republic', '🇨🇿', 'Europe/Prague', '%d.%m.%Y %H:%M:%S'),
+            'GB': ('en-GB', 'GB:en', 'Google News', 'Top stories', 'United Kingdom', 'United Kingdom', '🇬🇧', 'Europe/London', '%d/%m/%Y %H:%M:%S'),
+            'PL': ('pl', 'PL:pl', 'Google News', 'Najważniejsze artykuły', 'Polska', 'Poland', '🇵🇱', 'Europe/Warsaw', '%d.%m.%Y %H:%M:%S'),
+            'PT': ('pt-PT', 'PT:pt-150', 'Google Notícias', 'Notícias principais', 'Portugal', 'Portugal', '🇵🇹', 'Europe/Lisbon', '%d/%m/%Y %H:%M:%S'),
+            'FI': ('fi-FI', 'FI:fi', 'Google Uutiset', 'Pääuutiset', 'Suomi', 'Finland', '🇫🇮', 'Europe/Helsinki', '%d.%m.%Y %H:%M:%S'),
+            'FR': ('fr', 'FR:fr', 'Google Actualités', 'À la une', 'France', 'France', '🇫🇷', 'Europe/Paris', '%d/%m/%Y %H:%M:%S'),
+            'HU': ('hu', 'HU:hu', 'Google Hírek', 'Vezető hírek', 'Magyarország', 'Hungary', '🇭🇺', 'Europe/Budapest', '%Y.%m.%d %H:%M:%S'),
 
-            # 북미
-            'CA': ('en-CA', 'CA:en', 'Google News', 'Top stories', 'Canada', 'Canada', '🇨🇦'),
-            'MX': ('es-419', 'MX:es-419', 'Google Noticias', 'Noticias destacadas', 'México', 'Mexico', '🇲🇽'),
-            'US': ('en-US', 'US:en', 'Google News', 'Top stories', 'United States', 'United States', '🇺🇸'),
-            'CU': ('es-419', 'CU:es-419', 'Google Noticias', 'Noticias destacadas', 'Cuba', 'Cuba', '🇨🇺'),
+# 북미
+            'CA': ('en-CA', 'CA:en', 'Google News', 'Top stories', 'Canada', 'Canada', '🇨🇦', 'America/Toronto', '%Y-%m-%d %I:%M:%S %p'),
+            'MX': ('es-419', 'MX:es-419', 'Google Noticias', 'Noticias destacadas', 'México', 'Mexico', '🇲🇽', 'America/Mexico_City', '%d/%m/%Y %H:%M:%S'),
+            'US': ('en-US', 'US:en', 'Google News', 'Top stories', 'United States', 'United States', '🇺🇸', 'America/New_York', '%Y-%m-%d %I:%M:%S %p'),
+            'CU': ('es-419', 'CU:es-419', 'Google Noticias', 'Noticias destacadas', 'Cuba', 'Cuba', '🇨🇺', 'America/Havana', '%d/%m/%Y %H:%M:%S'),
 
             # 남미
-            'AR': ('es-419', 'AR:es-419', 'Google Noticias', 'Noticias destacadas', 'Argentina', 'Argentina', '🇦🇷'),
-            'BR': ('pt-BR', 'BR:pt-419', 'Google Notícias', 'Principais notícias', 'Brasil', 'Brazil', '🇧🇷'),
-            'CL': ('es-419', 'CL:es-419', 'Google Noticias', 'Noticias destacadas', 'Chile', 'Chile', '🇨🇱'),
-            'CO': ('es-419', 'CO:es-419', 'Google Noticias', 'Noticias destacadas', 'Colombia', 'Colombia', '🇨🇴'),
-            'PE': ('es-419', 'PE:es-419', 'Google Noticias', 'Noticias destacadas', 'Perú', 'Peru', '🇵🇪'),
-            'VE': ('es-419', 'VE:es-419', 'Google Noticias', 'Noticias destacadas', 'Venezuela', 'Venezuela', '🇻🇪'),
+            'AR': ('es-419', 'AR:es-419', 'Google Noticias', 'Noticias destacadas', 'Argentina', 'Argentina', '🇦🇷', 'America/Buenos_Aires', '%d/%m/%Y %H:%M:%S'),
+            'BR': ('pt-BR', 'BR:pt-419', 'Google Notícias', 'Principais notícias', 'Brasil', 'Brazil', '🇧🇷', 'America/Sao_Paulo', '%d/%m/%Y %H:%M:%S'),
+            'CL': ('es-419', 'CL:es-419', 'Google Noticias', 'Noticias destacadas', 'Chile', 'Chile', '🇨🇱', 'America/Santiago', '%d-%m-%Y %H:%M:%S'),
+            'CO': ('es-419', 'CO:es-419', 'Google Noticias', 'Noticias destacadas', 'Colombia', 'Colombia', '🇨🇴', 'America/Bogota', '%d/%m/%Y %I:%M:%S %p'),
+            'PE': ('es-419', 'PE:es-419', 'Google Noticias', 'Noticias destacadas', 'Perú', 'Peru', '🇵🇪', 'America/Lima', '%d/%m/%Y %I:%M:%S %p'),
+            'VE': ('es-419', 'VE:es-419', 'Google Noticias', 'Noticias destacadas', 'Venezuela', 'Venezuela', '🇻🇪', 'America/Caracas', '%d/%m/%Y %I:%M:%S %p'),
 
             # 아프리카
-            'ZA': ('en-ZA', 'ZA:en', 'Google News', 'Top stories', 'South Africa', 'South Africa', '🇿🇦'),
-            'NG': ('en-NG', 'NG:en', 'Google News', 'Top stories', 'Nigeria', 'Nigeria', '🇳🇬'),
-            'EG': ('ar', 'EG:ar', 'أخبار Google', 'أهم الأخبار', 'مصر', 'Egypt', '🇪🇬'),
-            'KE': ('en-KE', 'KE:en', 'Google News', 'Top stories', 'Kenya', 'Kenya', '🇰🇪'),
-            'MA': ('fr', 'MA:fr', 'Google Actualités', 'À la une', 'Maroc', 'Morocco', '🇲🇦'),
-            'SN': ('fr', 'SN:fr', 'Google Actualités', 'À la une', 'Sénégal', 'Senegal', '🇸🇳'),
-            'UG': ('en-UG', 'UG:en', 'Google News', 'Top stories', 'Uganda', 'Uganda', '🇺🇬'),
-            'TZ': ('en-TZ', 'TZ:en', 'Google News', 'Top stories', 'Tanzania', 'Tanzania', '🇹🇿'),
-            'ZW': ('en-ZW', 'ZW:en', 'Google News', 'Top stories', 'Zimbabwe', 'Zimbabwe', '🇿🇼'),
-            'ET': ('en-ET', 'ET:en', 'Google News', 'Top stories', 'Ethiopia', 'Ethiopia', '🇪🇹'),
-            'GH': ('en-GH', 'GH:en', 'Google News', 'Top stories', 'Ghana', 'Ghana', '🇬🇭'),
+            'ZA': ('en-ZA', 'ZA:en', 'Google News', 'Top stories', 'South Africa', 'South Africa', '🇿🇦', 'Africa/Johannesburg', '%Y-%m-%d %H:%M:%S'),
+            'NG': ('en-NG', 'NG:en', 'Google News', 'Top stories', 'Nigeria', 'Nigeria', '🇳🇬', 'Africa/Lagos', '%d/%m/%Y %I:%M:%S %p'),
+            'EG': ('ar', 'EG:ar', 'أخبار Google', 'أهم الأخبار', 'مصر', 'Egypt', '🇪🇬', 'Africa/Cairo', '%d/%m/%Y %I:%M:%S %p'),
+            'KE': ('en-KE', 'KE:en', 'Google News', 'Top stories', 'Kenya', 'Kenya', '🇰🇪', 'Africa/Nairobi', '%d/%m/%Y %I:%M:%S %p'),
+            'MA': ('fr', 'MA:fr', 'Google Actualités', 'À la une', 'Maroc', 'Morocco', '🇲🇦', 'Africa/Casablanca', '%d/%m/%Y %H:%M:%S'),
+            'SN': ('fr', 'SN:fr', 'Google Actualités', 'À la une', 'Sénégal', 'Senegal', '🇸🇳', 'Africa/Dakar', '%d/%m/%Y %H:%M:%S'),
+            'UG': ('en-UG', 'UG:en', 'Google News', 'Top stories', 'Uganda', 'Uganda', '🇺🇬', 'Africa/Kampala', '%d/%m/%Y %I:%M:%S %p'),
+            'TZ': ('en-TZ', 'TZ:en', 'Google News', 'Top stories', 'Tanzania', 'Tanzania', '🇹🇿', 'Africa/Dar_es_Salaam', '%d/%m/%Y %I:%M:%S %p'),
+            'ZW': ('en-ZW', 'ZW:en', 'Google News', 'Top stories', 'Zimbabwe', 'Zimbabwe', '🇿🇼', 'Africa/Harare', '%d/%m/%Y %I:%M:%S %p'),
+            'ET': ('en-ET', 'ET:en', 'Google News', 'Top stories', 'Ethiopia', 'Ethiopia', '🇪🇹', 'Africa/Addis_Ababa', '%d/%m/%Y %I:%M:%S %p'),
+            'GH': ('en-GH', 'GH:en', 'Google News', 'Top stories', 'Ghana', 'Ghana', '🇬🇭', 'Africa/Accra', '%d/%m/%Y %I:%M:%S %p'),
         }
-        
+
         if TOP_COUNTRY not in country_configs:
             raise ValueError(f"지원되지 않는 국가 코드: {TOP_COUNTRY}")
         
-        hl, ceid, google_news, news_type, country_name, country_name_en, flag = country_configs[TOP_COUNTRY]
+        hl, ceid, google_news, news_type, country_name, country_name_en, flag, timezone, date_format = country_configs[TOP_COUNTRY]
         rss_url = f"https://news.google.com/rss?hl={hl}&gl={TOP_COUNTRY}&ceid={ceid}"
         
         # Discord 메시지 제목 형식 생성
-        discord_source= f"`{google_news} - {news_type} - {country_name} {flag}`"
+        discord_source = f"`{google_news} - {news_type} - {country_name} {flag}`"
         
-        return rss_url, discord_source
+        return rss_url, discord_source, timezone, date_format
     elif RSS_URL_TOP:
-        return RSS_URL_TOP, None
+        return RSS_URL_TOP, None, 'UTC', '%Y-%m-%d %H:%M:%S'
     else:
         raise ValueError("TOP_MODE가 false일 때 RSS_URL_TOP를 지정해야 합니다.")
 
@@ -452,11 +474,30 @@ def parse_html_description(html_desc, session):
 
     return news_string
 
-def parse_rss_date(pub_date):
+def parse_rss_date(pub_date, timezone, date_format):
     """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
     dt = parser.parse(pub_date)
-    dt_kst = dt.astimezone(gettz('Asia/Seoul'))
-    return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        dt = dt.replace(tzinfo=pytz.UTC)
+    local_dt = dt.astimezone(pytz.timezone(timezone))
+    return local_dt.strftime(date_format)
+
+def format_discord_message(news_item, discord_source, timezone, date_format):
+    """Discord 메시지를 포맷팅합니다."""
+    formatted_date = parse_rss_date(news_item['pub_date'], timezone, date_format)
+
+    if discord_source:
+        message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
+    else:
+        message = f"**{news_item['title']}**\n{news_item['link']}"
+    
+    if news_item['description']:
+        message += f"\n>>> {news_item['description']}\n\n"
+    else:
+        message += "\n\n"
+    
+    message += f"📅 {formatted_date}"
+    return message
 
 def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅을 사용하여 메시지를 전송합니다."""
@@ -586,73 +627,61 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
 
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
-    rss_url, discord_source = get_rss_url()
-    rss_data = fetch_rss_feed(rss_url)
-    root = ET.fromstring(rss_data)
+    try:
+        check_env_variables()
+        rss_url, discord_source, timezone, date_format = get_rss_url()
+        rss_data = fetch_rss_feed(rss_url)
+        news_items = parse_rss_feed(rss_data)
 
-    init_db(reset=INITIALIZE_TOP)
+        init_db(reset=INITIALIZE_TOP)
 
-    session = requests.Session()
-    
-    news_items = root.findall('.//item')
-    if INITIALIZE_TOP:
-        news_items = list(news_items)
-    else:
-        news_items = reversed(news_items)
-
-    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
-
-    for item in news_items:
-        guid = item.find('guid').text
-
-        if not INITIALIZE_TOP and is_guid_posted(guid):
-            continue
-
-        title = replace_brackets(item.find('title').text)
-        google_link = item.find('link').text
-        link = get_original_url(google_link, session)
-        pub_date = item.find('pubDate').text
-        description_html = item.find('description').text
+        session = requests.Session()
         
-        formatted_date = parse_rss_date(pub_date)
-
-        # 날짜 필터 적용
-        if not is_within_date_range(pub_date, since_date, until_date, past_date):
-            logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
-
-        related_news = extract_news_items(description_html, session)
-        related_news_json = json.dumps(related_news, ensure_ascii=False)
-
-        description = parse_html_description(description_html, session)
-
-        # 고급 검색 필터 적용
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOP):
-            logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
-
-        # Discord 메시지 구성
-        if discord_source:
-            discord_message = f"{discord_source}\n**{title}**\n{link}"
+        if INITIALIZE_TOP:
+            news_items = list(news_items)
         else:
-            discord_message = f"**{title}**\n{link}"
-        if description:
-            discord_message += f"\n>>> {description}\n\n"
-        else:
-            discord_message += "\n\n"
-        discord_message += f"📅 {formatted_date}"
+            news_items = reversed(news_items)
 
-        send_discord_message(
-            DISCORD_WEBHOOK_TOP,
-            discord_message,
-            avatar_url=DISCORD_AVATAR_TOP,
-            username=DISCORD_USERNAME_TOP
-        )
+        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
 
-        save_news_item(pub_date, guid, title, link, related_news_json)
+        for item in news_items:
+            try:
+                processed_item = process_news_item(item, session)
+                if processed_item is None:
+                    continue
 
-        if not INITIALIZE_TOP:
-            time.sleep(3)
+                if not is_within_date_range(processed_item["pub_date"], since_date, until_date, past_date):
+                    logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {processed_item['title']}")
+                    continue
+
+                if not INITIALIZE_TOP and is_guid_posted(processed_item["guid"]):
+                    continue
+
+                discord_message = format_discord_message(processed_item, discord_source, timezone, date_format)
+                send_discord_message(
+                    DISCORD_WEBHOOK_TOP,
+                    discord_message,
+                    avatar_url=DISCORD_AVATAR_TOP,
+                    username=DISCORD_USERNAME_TOP
+                )
+
+                save_news_item(
+                    processed_item["pub_date"],
+                    processed_item["guid"],
+                    processed_item["title"],
+                    processed_item["link"],
+                    processed_item["related_news_json"]
+                )
+
+                if not INITIALIZE_TOP:
+                    time.sleep(3)
+            except Exception as e:
+                logging.error(f"뉴스 항목 처리 중 오류 발생: {e}", exc_info=True)
+                continue
+
+    except Exception as e:
+        logging.error(f"프로그램 실행 중 오류 발생: {e}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     try:
