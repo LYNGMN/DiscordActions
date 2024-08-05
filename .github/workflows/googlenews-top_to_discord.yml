@@ -24,72 +24,72 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-name: Set up Python
-uses: actions/setup-python@v5
-with:
-  python-version: '3.8'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
 
-name: Install Dependencies
-run: pip install requests python-dateutil beautifulsoup4 pytz
+      - name: Install Dependencies
+        run: pip install requests python-dateutil beautifulsoup4 pytz
 
-name: Get workflow info and download previous database
-id: workflow_info
-uses: actions/github-script@v7
-with:
-  github-token: ${{ secrets.GITHUB_TOKEN }}
-  script: |
-    const { owner, repo } = context.repo;
-    const workflows = await github.rest.actions.listRepoWorkflows({ owner, repo });
-    const workflow = workflows.data.workflows.find(wf => wf.path.endsWith('googlenews-top_to_discord.yml'));
-    if (!workflow) throw new Error('Workflow not found');
-    const workflowId = workflow.id.toString();
+      - name: Get workflow info and download previous database
+        id: workflow_info
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const workflows = await github.rest.actions.listRepoWorkflows({ owner, repo });
+            const workflow = workflows.data.workflows.find(wf => wf.path.endsWith('googlenews-top_to_discord.yml'));
+            if (!workflow) throw new Error('Workflow not found');
+            const workflowId = workflow.id.toString();
+            
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: workflowId, status: 'success'
+            });
+            const latestRunId = runs.data.workflow_runs[0]?.id.toString() || '';
+            
+            if (process.env.INITIALIZE_MODE_TOP !== 'true' && latestRunId) {
+              try {
+                await github.rest.actions.downloadArtifact({
+                  owner, repo,
+                  artifact_id: latestRunId,
+                  archive_format: 'zip'
+                });
+                console.log('Previous database downloaded successfully');
+              } catch (error) {
+                console.log('Failed to download previous database:', error.message);
+              }
+            }
+            
+            return { workflowId, latestRunId };
 
-    const runs = await github.rest.actions.listWorkflowRuns({
-      owner, repo, workflow_id: workflowId, status: 'success'
-    });
-    const latestRunId = runs.data.workflow_runs[0]?.id.toString() || '';
+      - name: Initialize or check database
+        run: |
+          if [ "${{ env.INITIALIZE_MODE_TOP }}" == "true" ] || [ ! -f google_news_top.db ] || [ ! -s google_news_top.db ]; then
+            echo "Initializing or creating new database"
+            rm -f google_news_top.db
+            touch google_news_top.db
+          fi
 
-    if (process.env.INITIALIZE_MODE_TOP !== 'true' && latestRunId) {
-      try {
-        await github.rest.actions.downloadArtifact({
-          owner, repo,
-          artifact_id: latestRunId,
-          archive_format: 'zip'
-        });
-        console.log('Previous database downloaded successfully');
-      } catch (error) {
-        console.log('Failed to download previous database:', error.message);
-      }
-    }
+      - name: Read Google News RSS and Post to Discord
+        run: python .github/scripts/googlenews-top_to_discord.py
 
-    return { workflowId, latestRunId };
+      - name: Upload updated database
+        uses: actions/upload-artifact@v4
+        with:
+          name: googlenews_database
+          path: google_news_top.db
+          retention-days: 90
 
-name: Initialize or check database
-run: |
-  if [ "${{ env.INITIALIZE_MODE_TOP }}" == "true" ] || [ ! -f google_news_top.db ] || [ ! -s google_news_top.db ]; then
-    echo "Initializing or creating new database"
-    rm -f google_news_top.db
-    touch google_news_top.db
-  fi
-
-name: Read Google News RSS and Post to Discord
-run: python .github/scripts/googlenews-top_to_discord.py
-
-name: Upload updated database
-uses: actions/upload-artifact@v4
-with:
-  name: googlenews_database
-  path: google_news_top.db
-  retention-days: 90
-
-name: Debug Information
-if: always()
-run: |
-  echo "Latest successful run ID: ${{ fromJson(steps.workflow_info.outputs.result).latestRunId }}"
-  echo "INITIALIZE_MODE_TOP: ${{ env.INITIALIZE_MODE_TOP }}"
-  echo "Workspace contents:"
-  ls -la
-  echo "Database file size:"
-  ls -lh google_news_top.db || echo "Database file not found"
-  echo "Database contents (if exists):"
-  sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
+      - name: Debug Information
+        if: always()
+        run: |
+          echo "Latest successful run ID: ${{ fromJson(steps.workflow_info.outputs.result).latestRunId }}"
+          echo "INITIALIZE_MODE_TOP: ${{ env.INITIALIZE_MODE_TOP }}"
+          echo "Workspace contents:"
+          ls -la
+          echo "Database file size:"
+          ls -lh google_news_top.db || echo "Database file not found"
+          echo "Database contents (if exists):"
+          sqlite3 google_news_top.db "SELECT COUNT(*) FROM news_items;" || echo "Unable to query database"
