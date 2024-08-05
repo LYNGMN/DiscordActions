@@ -52,7 +52,7 @@ jobs:
 
           missing_vars=()
           for var in "${required_vars[@]}"; do
-            if [ -z "${!var}" ]; then
+            if [ -z "${!var}" ];then
               missing_vars+=("$var")
             fi
           done
@@ -78,7 +78,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const workflows = await github.rest.actions.listRepoWorkflows({ owner, repo });
-            const workflow = workflows.data.workflows.find(wf => wf.path.endswith('googlenews-top_to_discord.yml'));
+            const workflow = workflows.data.workflows.find(wf => wf.path && typeof wf.path === 'string' && wf.path.endsWith('googlenews-top_to_discord.yml'));
             if (!workflow) throw new Error('Workflow not found');
             const workflowId = workflow.id.toString();
             
@@ -124,7 +124,7 @@ jobs:
       - name: Debug Information
         if: always()
         run: |
-          echo "Latest successful run ID: ${{ fromJson(steps.workflow_info.outputs.result).latestRunId }}"
+          echo "Latest successful run ID: ${{ steps.workflow_info.outputs.latestRunId }}"
           echo "INITIALIZE_MODE_TOP: ${{ env.INITIALIZE_MODE_TOP }}"
           echo "Workspace contents:"
           ls -la
