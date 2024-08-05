@@ -615,71 +615,78 @@ def construct_discord_message(discord_title, title, link, description, formatted
     return f"{discord_title}\n**{title}**\n<{link}>\n{description}\n{formatted_date}"
 
 def main():
-    try:
-        rss_url, discord_title = get_rss_url()
-        rss_data = fetch_rss_feed(rss_url)
-        root = ET.fromstring(rss_data)
+    """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
+    rss_url, discord_title = get_rss_url()
+    rss_data = fetch_rss_feed(rss_url)
+    root = ET.fromstring(rss_data)
 
-        init_db(reset=INITIALIZE_TOP)
+    init_db(reset=INITIALIZE_TOP)
 
-        session = requests.Session()
-        
-        news_items = root.findall('.//item')
-        if INITIALIZE_TOP:
-            news_items = list(news_items)
-        else:
-            news_items = reversed(news_items)
+    session = requests.Session()
+    
+    news_items = root.findall('.//item')
+    if INITIALIZE_TOP:
+        news_items = list(news_items)
+    else:
+        news_items = reversed(news_items)
 
-        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
+    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
 
-        for item in news_items:
-            try:
-                guid = item.find('guid').text
+    for item in news_items:
+        try:
+            guid = item.find('guid').text
 
-                if not INITIALIZE_TOP and is_guid_posted(guid):
-                    continue
-
-                title = replace_brackets(item.find('title').text)
-                google_link = item.find('link').text
-                link = get_original_url(google_link, session)
-                pub_date = item.find('pubDate').text
-                description_html = item.find('description').text
-                
-                formatted_date = parse_rss_date(pub_date)
-
-                if not is_within_date_range(pub_date, since_date, until_date, past_date):
-                    logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
-                    continue
-
-                related_news = extract_news_items(description_html, session)
-                related_news_json = json.dumps(related_news, ensure_ascii=False)
-
-                description = parse_html_description(description_html, session)
-
-                if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOP):
-                    logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-                    continue
-
-                discord_message = f"{discord_title}\n**{title}**\n<{link}>\n{description}\n{formatted_date}"
-
-                send_discord_message(
-                    DISCORD_WEBHOOK_TOP,
-                    discord_message,
-                    avatar_url=DISCORD_AVATAR_TOP,
-                    username=DISCORD_USERNAME_TOP
-                )
-
-                save_news_item(pub_date, guid, title, link, related_news_json)
-
-                if not INITIALIZE_TOP:
-                    time.sleep(3)
-            except Exception as e:
-                logging.error(f"뉴스 항목 처리 중 오류 발생: {e}", exc_info=True)
+            if not INITIALIZE_TOP and is_guid_posted(guid):
                 continue
 
-    except Exception as e:
-        logging.error(f"main 함수 실행 중 오류 발생: {e}", exc_info=True)
-        raise
+            title = replace_brackets(item.find('title').text)
+            google_link = item.find('link').text
+            link = get_original_url(google_link, session)
+            pub_date = item.find('pubDate').text
+            description_html = item.find('description').text
+            
+            formatted_date = parse_rss_date(pub_date)
+
+            # 날짜 필터 적용
+            if not is_within_date_range(pub_date, since_date, until_date, past_date):
+                logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
+                continue
+
+            related_news = extract_news_items(description_html, session)
+            related_news_json = json.dumps(related_news, ensure_ascii=False)
+
+            description = parse_html_description(description_html, session)
+
+            # 고급 검색 필터 적용
+            if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOP):
+                logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
+                continue
+
+            # Discord 메시지 구성
+            if discord_title:
+                discord_message = f"{discord_title}\n**{title}**\n<{link}>"
+            else:
+                discord_message = f"**{title}**\n<{link}>"
+            if description:
+                discord_message += f"\n>>> {description}\n\n"
+            else:
+                discord_message += "\n\n"
+            discord_message += f"📅 {formatted_date}"
+
+            send_discord_message(
+                DISCORD_WEBHOOK_TOP,
+                discord_message,
+                avatar_url=DISCORD_AVATAR_TOP,
+                username=DISCORD_USERNAME_TOP
+            )
+
+            save_news_item(pub_date, guid, title, link, related_news_json)
+
+            if not INITIALIZE_TOP:
+                time.sleep(3)
+        except Exception as e:
+            logging.error(f"뉴스 항목 처리 중 오류 발생: {e}", exc_info=True)
+            continue
 
 if __name__ == "__main__":
     try:
