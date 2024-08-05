@@ -610,10 +610,6 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     logging.info(f"모든 날짜 필터를 통과함")
     return True
 
-def construct_discord_message(discord_title, title, link, description, formatted_date):
-    """Discord 메시지를 구성합니다."""
-    return f"{discord_title}\n**{title}**\n<{link}>\n{description}\n{formatted_date}"
-
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     rss_url, discord_title = get_rss_url()
@@ -664,9 +660,9 @@ def main():
 
             # Discord 메시지 구성
             if discord_title:
-                discord_message = f"{discord_title}\n**{title}**\n<{link}>"
+                discord_message = f"{discord_title}\n**{title}**\n{link}"
             else:
-                discord_message = f"**{title}**\n<{link}>"
+                discord_message = f"**{title}**\n{link}"
             if description:
                 discord_message += f"\n>>> {description}\n\n"
             else:
