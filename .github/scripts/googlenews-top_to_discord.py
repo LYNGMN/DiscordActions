@@ -714,7 +714,7 @@ def main():
             
             if new_items:
                 news_items = list(reversed(new_items))  # 새 항목들을 다시 오래된 순서로 정렬
-                logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
+                logging.info(f"후속 실행: {len(new_items)}개의 새로운 뉴스 항목을 처리합니다.")
             else:
                 logging.info("후속 실행: 새로운 뉴스 항목이 없습니다.")
 
@@ -725,6 +725,15 @@ def main():
                 if not is_within_date_range(item["pub_date"], since_date, until_date, past_date):
                     logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {item['title']}")
                     continue
+
+                # 뉴스 항목을 먼저 데이터베이스에 저장
+                save_news_item(
+                    item["pub_date"],
+                    item["guid"],
+                    item["title"],
+                    item["link"],
+                    item["related_news_json"]
+                )
 
                 discord_message = format_discord_message(item, discord_source, timezone, date_format)
                 
@@ -745,14 +754,6 @@ def main():
                         else:
                             logging.error(f"Discord 메시지 전송 최종 실패: {e}")
                             raise
-
-                save_news_item(
-                    item["pub_date"],
-                    item["guid"],
-                    item["title"],
-                    item["link"],
-                    item["related_news_json"]
-                )
 
                 # 모든 실행에서 3초 간격 적용
                 time.sleep(3)
@@ -775,3 +776,4 @@ if __name__ == "__main__":
         sys.exit(1)  # 오류 발생 시 비정상 종료
     else:
         logging.info("프로그램 정상 종료")
+
