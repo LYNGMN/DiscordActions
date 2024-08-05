@@ -18,21 +18,7 @@ from bs4 import BeautifulSoup
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# 환경 변수에서 필요한 정보를 가져옵니다.
-DISCORD_WEBHOOK_TOP = os.environ.get('DISCORD_WEBHOOK_TOP')
-DISCORD_AVATAR_TOP = os.environ.get('DISCORD_AVATAR_TOP', '').strip()
-DISCORD_USERNAME_TOP = os.environ.get('DISCORD_USERNAME_TOP', '').strip()
-INITIALIZE_TOP = os.environ.get('INITIALIZE_MODE_TOP', 'false').lower() == 'true'
-ADVANCED_FILTER_TOP = os.environ.get('ADVANCED_FILTER_TOP', '')
-DATE_FILTER_TOP = os.environ.get('DATE_FILTER_TOP', '')
-ORIGIN_LINK_TOP = os.environ.get('ORIGIN_LINK_TOP', 'true').lower() == 'true'
-RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
-TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
-TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
-
-# DB 설정
-DB_PATH = 'google_news_top.db'
-
+# 환경 변수 클래스
 class Config:
     DISCORD_WEBHOOK_TOP = os.environ.get('DISCORD_WEBHOOK_TOP')
     DISCORD_AVATAR_TOP = os.environ.get('DISCORD_AVATAR_TOP', '').strip()
@@ -45,6 +31,16 @@ class Config:
     TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
     TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
 
+    @staticmethod
+    def check_env_variables():
+        """환경 변수가 설정되어 있는지 확인합니다."""
+        if not Config.DISCORD_WEBHOOK_TOP:
+            raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOP")
+
+# DB 설정
+DB_PATH = 'google_news_top.db'
+
+# 데이터베이스 초기화 및 데이터 저장 함수
 class Database:
     @staticmethod
     def init_db(reset=False):
@@ -117,6 +113,7 @@ class Database:
 
             logging.info(f"새 뉴스 항목 저장: {guid}")
 
+# 텍스트 유틸리티 함수
 class TextUtils:
     @staticmethod
     def replace_brackets(text):
@@ -202,6 +199,7 @@ class TextUtils:
 
         return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} (UTC)"
 
+# URL 유틸리티 함수
 class UrlUtils:
     @staticmethod
     def fetch_decoded_batch_execute(id):
@@ -363,6 +361,7 @@ class UrlUtils:
         logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
         return UrlUtils.clean_url(google_link)
 
+# RSS 유틸리티 함수
 class RssUtils:
     @staticmethod
     def fetch_rss_feed(url, max_retries=3, retry_delay=5):
@@ -497,6 +496,7 @@ class RssUtils:
         else:
             raise ValueError("TOP_MODE가 false일 때 RSS_URL_TOP를 지정해야 합니다.")
 
+# 뉴스 항목 처리 및 필터링 함수
 class NewsProcessor:
     @staticmethod
     def extract_news_items(description, session):
@@ -603,6 +603,7 @@ class NewsProcessor:
         logging.info(f"모든 날짜 필터를 통과함")
         return True
 
+# Discord 유틸리티 함수
 class DiscordUtils:
     @staticmethod
     def send_discord_message(webhook_url, message, avatar_url=None, username=None):
@@ -623,6 +624,7 @@ class DiscordUtils:
             logging.info("Discord에 메시지 게시 완료")
         time.sleep(3)
 
+# 메인 함수
 def main():
     try:
         rss_url, discord_title = RssUtils.get_rss_url()
@@ -654,7 +656,7 @@ def main():
                 pub_date = item.find('pubDate').text
                 description_html = item.find('description').text
                 
-                formatted_date = TextUtils.parse_rss_date(pub_date, country_configs)
+                formatted_date = TextUtils.parse_rss_date(pub_date, RssUtils.country_configs)
 
                 if not NewsProcessor.is_within_date_range(pub_date, since_date, until_date, past_date):
                     logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
@@ -692,11 +694,10 @@ def main():
 
 if __name__ == "__main__":
     try:
-        check_env_variables()
+        Config.check_env_variables()
         main()
     except Exception as e:
         logging.error(f"오류 발생: {e}", exc_info=True)
         sys.exit(1)  # 오류 발생 시 비정상 종료
     else:
         logging.info("프로그램 정상 종료")
-
