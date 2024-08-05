@@ -36,8 +36,30 @@ DB_PATH = 'google_news_top.db'
 
 def check_env_variables():
     """환경 변수가 설정되어 있는지 확인합니다."""
-    if not DISCORD_WEBHOOK_TOP:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOP")
+    TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
+    RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
+
+    # TOP_MODE와 RSS_URL_TOP에 따른 필수 변수 설정
+    if TOP_MODE:
+        required_vars = ['DISCORD_WEBHOOK_TOP', 'TOP_MODE', 'TOP_COUNTRY']
+        warning_vars = ['RSS_URL_TOP']
+    elif RSS_URL_TOP:
+        required_vars = ['DISCORD_WEBHOOK_TOP', 'RSS_URL_TOP']
+        warning_vars = ['TOP_MODE', 'TOP_COUNTRY']
+    else:
+        raise ValueError("필수 환경 변수 중 하나를 설정해야 합니다: 'TOP_MODE' 또는 'RSS_URL_TOP'")
+
+    # 필수 변수 확인
+    missing_vars = [var for var in required_vars if not os.environ.get(var)]
+    unnecessary_vars = [var for var in warning_vars if os.environ.get(var)]
+
+    if missing_vars:
+        raise ValueError(f"필수 환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
+
+    if unnecessary_vars:
+        logging.warning(f"불필요한 환경 변수가 설정되어 있습니다: {', '.join(unnecessary_vars)}")
+
+    logging.info("모든 필수 환경 변수가 설정되어 있습니다.")
 
 def init_db(reset=False):
     """데이터베이스를 초기화하거나 기존 데이터베이스를 사용합니다."""
@@ -151,14 +173,15 @@ def fetch_decoded_batch_execute(id):
     return url
 
 def decode_base64_url_part(encoded_str):
+    """Base64 URL 부분을 디코딩합니다."""
     base64_str = encoded_str.replace("-", "+").replace("_", "/")
     base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
     try:
         decoded_bytes = base64.urlsafe_b64decode(base64_str)
-        decoded_str = decoded_bytes.decode('latin1')
-        return decoded_str
+        return decoded_bytes.decode('latin1')
     except Exception as e:
-        return f"디코딩 중 오류 발생: {e}"
+        logging.error(f"Base64 디코딩 중 오류 발생: {e}")
+        return encoded_str  # 디코딩 실패 시 원래 문자열 반환
 
 def extract_youtube_id(decoded_str):
     pattern = r'\x08 "\x0b([\w-]{11})\x98\x01\x01'
@@ -184,37 +207,35 @@ def unescape_unicode(text):
         text
     )
 
-def clean_url(url):
-    """URL을 정리하고 유니코드 문자를 처리하는 함수"""
-    # 유니코드 이스케이프 시퀀스 처리
-    url = unescape_unicode(url)
-    
-    # 백슬래시를 정리
-    url = url.replace('\\', '')
-    
-    # URL 디코딩 (예: %2F -> /, %40 -> @ 등)
-    url = unquote(url)
-
-    parsed_url = urlparse(url)
-    
-    # MSN 링크 특별 처리: HTTPS로 변환 및 불필요한 쿼리 파라미터 제거
-    if parsed_url.netloc.endswith('msn.com'):
+def clean_msn_url(parsed_url):
+    """MSN 링크를 정리합니다."""
+    try:
         parsed_url = parsed_url._replace(scheme='https')
         query_params = parse_qs(parsed_url.query)
         cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
         cleaned_query = urlencode(cleaned_params)
-        parsed_url = parsed_url._replace(query=cleaned_query)
-    
-    # 공백 등 비정상적인 문자 처리
-    # safe 파라미터에 특수 문자들을 포함하여 인코딩되지 않도록 설정
-    safe_chars = "/:@&=+$,?#"
-    cleaned_path = quote(parsed_url.path, safe=safe_chars)
-    cleaned_query = quote(parsed_url.query, safe=safe_chars)
-    
-    # URL 재구성
-    cleaned_url = urlunparse(parsed_url._replace(path=cleaned_path, query=cleaned_query))
-    
-    return cleaned_url
+        return parsed_url._replace(query=cleaned_query)
+    except Exception as e:
+        logging.error(f"MSN 링크 정리 중 오류 발생: {e}")
+        return parsed_url
+
+def clean_url(url):
+    """URL을 정리하고 유니코드 문자를 처리하는 함수"""
+    try:
+        url = unescape_unicode(url).replace('\\', '')
+        url = unquote(url)
+        parsed_url = urlparse(url)
+
+        if parsed_url.netloc.endswith('msn.com'):
+            parsed_url = clean_msn_url(parsed_url)
+
+        safe_chars = "/:@&=+$,?#"
+        cleaned_path = quote(parsed_url.path, safe=safe_chars)
+        cleaned_query = quote(parsed_url.query, safe=safe_chars)
+        return urlunparse(parsed_url._replace(path=cleaned_path, query=cleaned_query))
+    except Exception as e:
+        logging.error(f"URL 정리 중 오류 발생: {e}")
+        return url
 
 def decode_google_news_url(source_url):
     url = urlparse(source_url)
@@ -275,12 +296,13 @@ def get_original_url(google_link, session, max_retries=5):
     retries = 0
     while retries < max_retries:
         try:
-            response = session.get(google_link, allow_redirects=True)
-            if response.status_code == 200:
-                return clean_url(response.url)
+            response = session.get(google_link, allow_redirects=True, timeout=30)
+            response.raise_for_status()
+            return clean_url(response.url)
         except requests.RequestException as e:
-            logging.error(f"Failed to get original URL: {e}")
-        retries += 1
+            logging.error(f"Failed to get original URL (attempt {retries + 1}/{max_retries}): {e}")
+            retries += 1
+            time.sleep(1)
 
     logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
     return clean_url(google_link)
@@ -290,9 +312,9 @@ def fetch_rss_feed(url, max_retries=3, retry_delay=5):
     for attempt in range(max_retries):
         try:
             response = requests.get(url, timeout=30)
-            response.raise_for_status()  # 4xx, 5xx 상태 코드에 대해 예외를 발생시킵니다.
+            response.raise_for_status()
             return response.content
-        except RequestException as e:
+        except requests.RequestException as e:
             logging.warning(f"RSS 피드 가져오기 실패 (시도 {attempt + 1}/{max_retries}): {e}")
             if attempt + 1 < max_retries:
                 time.sleep(retry_delay)
@@ -457,26 +479,31 @@ def parse_rss_date(pub_date):
     dt_kst = dt.astimezone(gettz('Asia/Seoul'))
     return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
 
-def send_discord_message(webhook_url, message, avatar_url=None, username=None):
+def send_discord_message(webhook_url, message, avatar_url=None, username=None, max_retries=3):
     """Discord 웹훅을 사용하여 메시지를 전송합니다."""
     payload = {"content": message}
     
-    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
     
-    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
     if username and username.strip():
         payload["username"] = username
     
     headers = {"Content-Type": "application/json"}
-    response = requests.post(webhook_url, json=payload, headers=headers)
-    if response.status_code != 204:
-        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
-        logging.error(response.text)
-    else:
-        logging.info("Discord에 메시지 게시 완료")
-    time.sleep(3)
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(webhook_url, json=payload, headers=headers, timeout=30)
+            response.raise_for_status()
+            logging.info("Discord에 메시지 게시 완료")
+            return
+        except requests.RequestException as e:
+            logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다 (시도 {attempt + 1}/{max_retries}): {e}")
+            if attempt + 1 < max_retries:
+                time.sleep(5)
+    
+    logging.error("최대 재시도 횟수를 초과했습니다. Discord 메시지 전송 실패.")
+    raise Exception("Discord 메시지 전송 실패")
 
 def extract_news_items(description, session):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
@@ -584,74 +611,71 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     return True
 
 def main():
-    """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
-    rss_url, discord_title = get_rss_url()
-    rss_data = fetch_rss_feed(rss_url)
-    root = ET.fromstring(rss_data)
+    try:
+        rss_url, discord_title = get_rss_url()
+        rss_data = fetch_rss_feed(rss_url)
+        root = ET.fromstring(rss_data)
 
-    init_db(reset=INITIALIZE_TOP)
+        init_db(reset=INITIALIZE_TOP)
 
-    session = requests.Session()
-    
-    news_items = root.findall('.//item')
-    if INITIALIZE_TOP:
-        news_items = list(news_items)
-    else:
-        news_items = reversed(news_items)
-
-    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
-
-    for item in news_items:
-        guid = item.find('guid').text
-
-        if not INITIALIZE_TOP and is_guid_posted(guid):
-            continue
-
-        title = replace_brackets(item.find('title').text)
-        google_link = item.find('link').text
-        link = get_original_url(google_link, session)
-        pub_date = item.find('pubDate').text
-        description_html = item.find('description').text
+        session = requests.Session()
         
-        formatted_date = parse_rss_date(pub_date)
-
-        # 날짜 필터 적용
-        if not is_within_date_range(pub_date, since_date, until_date, past_date):
-            logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
-
-        related_news = extract_news_items(description_html, session)
-        related_news_json = json.dumps(related_news, ensure_ascii=False)
-
-        description = parse_html_description(description_html, session)
-
-        # 고급 검색 필터 적용
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOP):
-            logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
-
-        # Discord 메시지 구성
-        if discord_title:
-            discord_message = f"{discord_title}\n**{title}**\n{link}"
+        news_items = root.findall('.//item')
+        if INITIALIZE_TOP:
+            news_items = list(news_items)
         else:
-            discord_message = f"**{title}**\n{link}"
-        if description:
-            discord_message += f"\n>>> {description}\n\n"
-        else:
-            discord_message += "\n\n"
-        discord_message += f"📅 {formatted_date}"
+            news_items = reversed(news_items)
 
-        send_discord_message(
-            DISCORD_WEBHOOK_TOP,
-            discord_message,
-            avatar_url=DISCORD_AVATAR_TOP,
-            username=DISCORD_USERNAME_TOP
-        )
+        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
 
-        save_news_item(pub_date, guid, title, link, related_news_json)
+        for item in news_items:
+            try:
+                guid = item.find('guid').text
 
-        if not INITIALIZE_TOP:
-            time.sleep(3)
+                if not INITIALIZE_TOP and is_guid_posted(guid):
+                    continue
+
+                title = replace_brackets(item.find('title').text)
+                google_link = item.find('link').text
+                link = get_original_url(google_link, session)
+                pub_date = item.find('pubDate').text
+                description_html = item.find('description').text
+                
+                formatted_date = parse_rss_date(pub_date)
+
+                if not is_within_date_range(pub_date, since_date, until_date, past_date):
+                    logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
+                    continue
+
+                related_news = extract_news_items(description_html, session)
+                related_news_json = json.dumps(related_news, ensure_ascii=False)
+
+                description = parse_html_description(description_html, session)
+
+                if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOP):
+                    logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
+                    continue
+
+                discord_message = construct_discord_message(discord_title, title, link, description, formatted_date)
+
+                send_discord_message(
+                    DISCORD_WEBHOOK_TOP,
+                    discord_message,
+                    avatar_url=DISCORD_AVATAR_TOP,
+                    username=DISCORD_USERNAME_TOP
+                )
+
+                save_news_item(pub_date, guid, title, link, related_news_json)
+
+                if not INITIALIZE_TOP:
+                    time.sleep(3)
+            except Exception as e:
+                logging.error(f"뉴스 항목 처리 중 오류 발생: {e}", exc_info=True)
+                continue
+
+    except Exception as e:
+        logging.error(f"main 함수 실행 중 오류 발생: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     try:
