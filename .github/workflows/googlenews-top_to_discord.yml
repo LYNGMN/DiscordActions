@@ -47,6 +47,7 @@ jobs:
             ls -R "$GITHUB_WORKSPACE"
           fi
 
+      # Verify Environment Variables
       - name: Verify Environment Variables
         run: |
           python -c """
@@ -72,6 +73,7 @@ jobs:
           elif not top_mode and (os.getenv('TOP_MODE') or os.getenv('TOP_COUNTRY')):
               print('Warning: TOP_MODE or TOP_COUNTRY is set but will be ignored because RSS_URL_TOP is set')
           """
+
 
       - name: Get workflow info and download previous database
         id: workflow_info
