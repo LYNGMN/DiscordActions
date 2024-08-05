@@ -695,15 +695,17 @@ def main():
 
         for item in news_items:
             try:
+                guid = item.find('guid').text
+                if not INITIALIZE_TOP and is_guid_posted(guid):
+                    logging.info(f"이미 게시된 뉴스 항목 건너뜀: {guid}")
+                    continue
+
                 processed_item = process_news_item(item, session)
                 if processed_item is None:
                     continue
 
                 if not is_within_date_range(processed_item["pub_date"], since_date, until_date, past_date):
                     logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {processed_item['title']}")
-                    continue
-
-                if not INITIALIZE_TOP and is_guid_posted(processed_item["guid"]):
                     continue
 
                 discord_message = format_discord_message(processed_item, discord_source, timezone, date_format)
@@ -753,3 +755,4 @@ if __name__ == "__main__":
         sys.exit(1)  # 오류 발생 시 비정상 종료
     else:
         logging.info("프로그램 정상 종료")
+
