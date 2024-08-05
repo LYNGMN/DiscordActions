@@ -610,6 +610,10 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     logging.info(f"모든 날짜 필터를 통과함")
     return True
 
+def construct_discord_message(discord_title, title, link, description, formatted_date):
+    """Discord 메시지를 구성합니다."""
+    return f"{discord_title}\n**{title}**\n<{link}>\n{description}\n{formatted_date}"
+
 def main():
     try:
         rss_url, discord_title = get_rss_url()
@@ -656,7 +660,7 @@ def main():
                     logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
                     continue
 
-                discord_message = construct_discord_message(discord_title, title, link, description, formatted_date)
+                discord_message = f"{discord_title}\n**{title}**\n<{link}>\n{description}\n{formatted_date}"
 
                 send_discord_message(
                     DISCORD_WEBHOOK_TOP,
