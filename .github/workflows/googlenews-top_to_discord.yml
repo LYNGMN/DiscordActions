@@ -30,7 +30,7 @@ jobs:
           python-version: '3.12'
 
       - name: Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -40,12 +40,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f "$GITHUB_WORKSPACE/requirements.txt" ]; then
-            pip install -r "$GITHUB_WORKSPACE/requirements.txt"
-          else
-            echo "requirements.txt not found in $GITHUB_WORKSPACE"
-            ls -R "$GITHUB_WORKSPACE"
-          fi
+          pip install requests python-dateutil beautifulsoup4 pytz
 
       - name: Verify Environment Variables
         run: |
@@ -83,7 +78,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const workflows = await github.rest.actions.listRepoWorkflows({ owner, repo });
-            const workflow = workflows.data.workflows.find(wf => wf.path.endsWith('googlenews-top_to_discord.yml'));
+            const workflow = workflows.data.workflows.find(wf => wf.path.endswith('googlenews-top_to_discord.yml'));
             if (!workflow) throw new Error('Workflow not found');
             const workflowId = workflow.id.toString();
             
