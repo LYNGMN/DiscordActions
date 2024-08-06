@@ -1168,14 +1168,13 @@ def parse_rss_date(pub_date, timezone, date_format):
     local_dt = dt.astimezone(pytz.timezone(timezone))
     return local_dt.strftime(date_format)
 
-def format_discord_message(news_item, discord_source, timezone, date_format):
+def format_discord_message(news_item, news_prefix, category, topic_name, country_emoji, timezone, date_format):
     """Discord 메시지를 포맷팅합니다."""
     formatted_date = parse_rss_date(news_item['pub_date'], timezone, date_format)
 
-    if discord_source:
-        message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
-    else:
-        message = f"**{news_item['title']}**\n{news_item['link']}"
+    discord_source = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`"
+
+    message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
     
     if news_item['description']:
         message += f"\n>>> {news_item['description']}\n\n"
