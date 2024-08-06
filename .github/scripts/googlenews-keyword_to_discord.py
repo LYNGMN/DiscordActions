@@ -504,7 +504,7 @@ def convert_to_local_time(pub_date, country_code):
     except ValueError:
         return pub_date
 
-    _, _, _, _, _, _, _, timezone, date_format = country_configs.get(country_code, country_configs['US'])
+    _, _, _, _, _, _, timezone, date_format = country_configs.get(country_code, country_configs['US'])
 
     local_time = utc_time.astimezone(pytz.timezone(timezone))
     return local_time.strftime(date_format)
