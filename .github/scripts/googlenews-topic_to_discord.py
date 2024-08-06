@@ -592,6 +592,185 @@ def get_news_prefix(lang):
     }
     return news_prefix_map.get(lang, "Google News")
 
+def get_topic_category(keyword, lang='en'):
+    """토픽 키워드에 해당하는 카테고리를 반환합니다."""
+    categories = {
+        "headlines": {
+            "en": "Headlines news",
+            "ko": "헤드라인 뉴스",
+            "zh": "头条新闻",
+            "ja": "ヘッドライン ニュース",
+            "de": "Schlagzeilen",
+            "fr": "Actualités à la une",
+            "es": "Titulares",
+            "pt": "Notícias principais",
+            "it": "Notizie in primo piano",
+            "nl": "Hoofdnieuws",
+            "sv": "Nyheter i fokus",
+            "ar": "عناوين الأخبار",
+            "ru": "Главные новости",
+            "keywords": ["headlines", "korea", "us", "japan", "china", "world", "politics"]
+        },
+        "entertainment": {
+            "en": "Entertainment news",
+            "ko": "연예 뉴스",
+            "zh": "娱乐新闻",
+            "ja": "芸能関連のニュース",
+            "de": "Nachrichten aus dem Bereich Unterhaltung",
+            "fr": "Actus divertissements",
+            "es": "Noticias sobre espectáculos",
+            "pt": "Notícias de entretenimento",
+            "it": "Notizie di intrattenimento",
+            "nl": "Entertainmentnieuws",
+            "sv": "Underhållningsnyheter",
+            "ar": "أخبار ترفيهية",
+            "ru": "Развлекательные новости",
+            "keywords": ["entertainment", "celebrity", "tv", "music", "movies", "theater"]
+        },
+        "sports": {
+            "en": "Sports news",
+            "ko": "스포츠 뉴스",
+            "zh": "体育新闻",
+            "ja": "スポーツ関連のニュース",
+            "de": "Nachrichten aus dem Bereich Sport",
+            "fr": "Actus sportives",
+            "es": "Noticias sobre deportes",
+            "pt": "Notícias de esportes",
+            "it": "Notizie sportive",
+            "nl": "Sportnieuws",
+            "sv": "Sportnyheter",
+            "ar": "الأخبار الرياضية",
+            "ru": "Спортивные новости",
+            "keywords": ["sports", "soccer", "cycling", "motorsports", "tennis", "martial_arts", 
+                         "basketball", "baseball", "american_football", "sports_betting", 
+                         "water_sports", "hockey", "golf", "cricket", "rugby"]
+        },
+        "business": {
+            "en": "Business news",
+            "ko": "비즈니스 뉴스",
+            "zh": "财经新闻",
+            "ja": "ビジネス関連のニュース",
+            "de": "Wirtschaftsmeldungen",
+            "fr": "Actus économiques",
+            "es": "Noticias de negocios",
+            "pt": "Notícias de negócios",
+            "it": "Notizie economiche",
+            "nl": "Zakennieuws",
+            "sv": "Ekonominyheter",
+            "ar": "أخبار الأعمال",
+            "ru": "Бизнес новости",
+            "keywords": ["business", "economy", "personal_finance", "finance", "digital_currency"]
+        },
+        "technology": {
+            "en": "Technology news",
+            "ko": "기술 뉴스",
+            "zh": "科技新闻",
+            "ja": "テクノロジー関連のニュース",
+            "de": "Nachrichten aus dem Bereich Technologie",
+            "fr": "Actus technologie",
+            "es": "Noticias de tecnología",
+            "pt": "Notícias de tecnologia",
+            "it": "Notizie di tecnologia",
+            "nl": "Technologienieuws",
+            "sv": "Teknologinyheter",
+            "ar": "أخبار التكنولوجيا",
+            "ru": "Технологические новости",
+            "keywords": ["technology", "science_technology", "mobile", "energy", "games", "internet_security", 
+                         "electronics", "virtual_reality", "robotics"]
+        },
+        "health": {
+            "en": "Health news",
+            "ko": "건강 뉴스",
+            "zh": "健康新闻",
+            "ja": "健康関連のニュース",
+            "de": "Nachrichten aus dem Bereich Gesundheit",
+            "fr": "Actus santé",
+            "es": "Noticias sobre salud",
+            "pt": "Notícias de saúde",
+            "it": "Notizie di salute",
+            "nl": "Gezondheidsnieuws",
+            "sv": "Hälsonews",
+            "ar": "أخبار الصحة",
+            "ru": "Новости здоровья",
+            "keywords": ["health", "nutrition", "public_health", "mental_health", "medicine"]
+        },
+        "science": {
+            "en": "Science news",
+            "ko": "과학 뉴스",
+            "zh": "科学新闻",
+            "ja": "科学関連のニュース",
+            "de": "Nachrichten aus dem Bereich Wissenschaft",
+            "fr": "Actus sciences",
+            "es": "Noticias de ciencia",
+            "pt": "Notícias de ciência",
+            "it": "Notizie di scienza",
+            "nl": "Wetenschapsnieuws",
+            "sv": "Vetenskapsnyheter",
+            "ar": "أخبار علمية",
+            "ru": "Научные новости",
+            "keywords": ["science", "space", "wildlife", "environment", "neuroscience", 
+                         "physics", "geography", "paleontology", "social_science"]
+        },
+        "education": {
+            "en": "Education news",
+            "ko": "교육 뉴스",
+            "zh": "教育新闻",
+            "ja": "教育関連のニュース",
+            "de": "Nachrichten aus dem Bereich Bildung",
+            "fr": "Actus enseignement",
+            "es": "Noticias sobre educación",
+            "pt": "Notícias de educação",
+            "it": "Notizie di istruzione",
+            "nl": "Onderwijsnieuws",
+            "sv": "Utbildningsnyheter",
+            "ar": "أخبار التعليم",
+            "ru": "Образовательные новости",
+            "keywords": ["education", "job_market", "online_education", "higher_education"]
+        },
+        "lifestyle": {
+            "en": "Lifestyle news",
+            "ko": "라이프스타일 뉴스",
+            "zh": "生活时尚新闻",
+            "ja": "ライフスタイル関連のニュース",
+            "de": "Nachrichten aus dem Bereich Lifestyle",
+            "fr": "Actus mode de vie",
+            "es": "Noticias de estilo de vida",
+            "pt": "Notícias de estilo de vida",
+            "it": "Notizie di lifestyle",
+            "nl": "Lifestyle nieuws",
+            "sv": "Livsstilsnyheter",
+            "ar": "أخبار أسلوب الحياة",
+            "ru": "Новости образа жизни",
+            "keywords": ["lifestyle", "automotive", "art_design", "beauty", "food", "travel", 
+                         "shopping", "home", "outdoor", "fashion"]
+        }
+    }
+    
+    for category, data in categories.items():
+        if keyword in data["keywords"]:
+            return data[lang]
+    
+    return "기타 뉴스" if lang == 'ko' else "Other News"
+
+def get_topic_display_name(keyword, lang):
+    """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
+    topic_info = TOPIC_MAP.get(keyword, {}).get(lang)
+    if topic_info:
+        return topic_info[0]
+    else:
+        # 해당 언어가 없을 경우 en을 기본값으로 사용
+        return TOPIC_MAP.get(keyword, {}).get("en", (keyword, ''))[0]
+
+def get_country_emoji(country_code):
+    """국가 코드를 유니코드 플래그 이모지로 변환합니다."""
+    if len(country_code) != 2:
+        return ''
+    return chr(ord(country_code[0].upper()) + 127397) + chr(ord(country_code[1].upper()) + 127397)
+
+def is_korean_params(params):
+    """파라미터가 한국어 설정인지 확인합니다."""
+    return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
+
 def get_language_from_params(params):
     """URL 파라미터에서 언어 코드를 추출합니다."""
     hl_match = re.search(r'hl=(\w+)', params)
@@ -620,15 +799,19 @@ def get_topic_by_id(rss_url_topic):
     return None, None
 
 def check_env_variables():
-    """환경 변수가 설정되어 있는지 확인합니다."""
+    """환경 변수가 올바르게 설정되어 있는지 확인합니다."""
     if not DISCORD_WEBHOOK_TOPIC:
-        raise ValueError("환경 변수가 설정되지 않았습니다: DISCORD_WEBHOOK_TOPIC")
+        logging.error("DISCORD_WEBHOOK_TOPIC 환경 변수가 설정되지 않았습니다.")
+        raise ValueError("DISCORD_WEBHOOK_TOPIC 환경 변수가 설정되지 않았습니다.")
+
     if TOPIC_MODE:
         if TOPIC_KEYWORD not in TOPIC_MAP:
+            logging.error(f"유효하지 않은 토픽 키워드입니다: {TOPIC_KEYWORD}")
             raise ValueError(f"유효하지 않은 토픽 키워드입니다: {TOPIC_KEYWORD}")
         logging.info(f"토픽 모드 활성화: {TOPIC_KEYWORD}, 파라미터: {TOPIC_PARAMS}")
     else:
         if not RSS_URL_TOPIC:
+            logging.error("토픽 모드가 비활성화되었을 때는 RSS_URL_TOPIC을 설정해야 합니다.")
             raise ValueError("토픽 모드가 비활성화되었을 때는 RSS_URL_TOPIC을 설정해야 합니다.")
         logging.info(f"일반 모드 활성화, RSS 피드 URL: {RSS_URL_TOPIC}")
 
@@ -649,6 +832,15 @@ def init_db(reset=False):
                           topic TEXT,
                           related_news TEXT)''')
             
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_guid ON news_items(guid)")
+            
+            # 데이터베이스 무결성 검사
+            c.execute("PRAGMA integrity_check")
+            integrity_result = c.fetchone()[0]
+            if integrity_result != "ok":
+                logging.error(f"데이터베이스 무결성 검사 실패: {integrity_result}")
+                raise sqlite3.IntegrityError("데이터베이스 무결성 검사 실패")
+            
             # 테이블이 비어있는지 확인
             c.execute("SELECT COUNT(*) FROM news_items")
             count = c.fetchone()[0]
@@ -661,6 +853,8 @@ def init_db(reset=False):
         except sqlite3.Error as e:
             logging.error(f"데이터베이스 초기화 중 오류 발생: {e}")
             raise
+
+    logging.info("데이터베이스 초기화 완료")
 
 def is_guid_posted(guid):
     try:
@@ -851,7 +1045,7 @@ def decode_google_news_url(source_url):
         except Exception:
             pass  # 새로운 방식이 실패하면 기존 방식 시도
 
-        # 기존 방식 시도 (유튜브 링크 포함)
+		# 기존 방식 시도 (유튜브 링크 포함)
         decoded_str = decode_base64_url_part(base64_str)
         youtube_id = extract_youtube_id(decoded_str)
         if youtube_id:
@@ -864,40 +1058,63 @@ def decode_google_news_url(source_url):
     return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
 
 def get_original_url(google_link, session, max_retries=5):
-    logging.info(f"ORIGIN_LINK_TOPIC 값 확인: {ORIGIN_LINK_TOPIC}")
+    # ORIGIN_LINK_TOPIC 설정과 상관없이 항상 원본 링크를 시도
+    original_url = decode_google_news_url(google_link)
+    if original_url != google_link:
+        return original_url
 
-    if ORIGIN_LINK_TOPIC:
-        original_url = decode_google_news_url(google_link)
-        if original_url != google_link:
-            return original_url
+    # 디코딩 실패 시 requests 방식 시도
+    retries = 0
+    while retries < max_retries:
+        try:
+            response = session.get(google_link, allow_redirects=True)
+            if response.status_code == 200:
+                return clean_url(response.url)
+        except requests.RequestException as e:
+            logging.error(f"Failed to get original URL: {e}")
+        retries += 1
 
-        # 디코딩 실패 시 requests 방식 시도
-        retries = 0
-        while retries < max_retries:
-            try:
-                response = session.get(google_link, allow_redirects=True)
-                if response.status_code == 200:
-                    return clean_url(response.url)
-            except requests.RequestException as e:
-                logging.error(f"Failed to get original URL: {e}")
-            retries += 1
-        
-        logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-        return clean_url(google_link)
-    else:
-        logging.info(f"ORIGIN_LINK_TOPIC가 False, 원 링크 사용: {google_link}")
-        return clean_url(google_link)
+    logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
+    return clean_url(google_link)
 
-def fetch_rss_feed(url):
+def fetch_rss_feed(url, max_retries=3, retry_delay=5):
     """RSS 피드를 가져옵니다."""
-    response = requests.get(url)
-    return response.content
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()  # 4xx, 5xx 상태 코드에 대해 예외를 발생시킵니다.
+            return response.content
+        except requests.RequestException as e:
+            logging.warning(f"RSS 피드 가져오기 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+            if attempt + 1 < max_retries:
+                time.sleep(retry_delay)
+            else:
+                logging.error(f"RSS 피드를 가져오는데 실패했습니다: {url}")
+                raise
 
-def parse_rss_title(rss_data):
-    root = ET.fromstring(rss_data)
-    title = root.find('.//channel/title').text
-    topic_name = title.split(' - ')[0]
-    return topic_name
+def parse_rss_feed(rss_data):
+    """RSS 피드를 파싱합니다."""
+    try:
+        root = ET.fromstring(rss_data)
+        return root.findall('.//item')
+    except ET.ParseError as e:
+        logging.error(f"RSS 데이터 파싱 중 오류 발생: {e}")
+        raise
+
+def get_rss_url():
+    if TOPIC_MODE:
+        if not TOPIC_KEYWORD:
+            raise ValueError("TOPIC_MODE가 true일 때 TOPIC_KEYWORD를 지정해야 합니다.")
+        
+        lang = get_language_from_params(TOPIC_PARAMS)
+        topic_name, topic_id = get_topic_info(TOPIC_KEYWORD, lang)
+        rss_url = f"https://news.google.com/rss/topics/{topic_id}{TOPIC_PARAMS or ''}"
+        
+        return rss_url, topic_name, lang
+    elif RSS_URL_TOPIC:
+        return RSS_URL_TOPIC, None, 'en'
+    else:
+        raise ValueError("TOPIC_MODE가 false일 때 RSS_URL_TOPIC를 지정해야 합니다.")
 
 def replace_brackets(text):
     """대괄호와 꺾쇠괄호를 유니코드 문자로 대체합니다."""
@@ -935,9 +1152,66 @@ def parse_html_description(html_desc, session):
 
     news_string = '\n'.join(news_items)
     if full_content_link:
-        news_string += f"▶️ [Google 뉴스에서 전체 콘텐츠 보기]({full_content_link})"
+        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
 
     return news_string
+
+def parse_pub_date(pub_date_str):
+    """문자열 형태의 발행일을 datetime 객체로 파싱합니다."""
+    return parser.parse(pub_date_str)
+
+def parse_rss_date(pub_date, timezone, date_format):
+    """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
+    dt = parser.parse(pub_date)
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        dt = dt.replace(tzinfo=pytz.UTC)
+    local_dt = dt.astimezone(pytz.timezone(timezone))
+    return local_dt.strftime(date_format)
+
+def format_discord_message(news_item, discord_source, timezone, date_format):
+    """Discord 메시지를 포맷팅합니다."""
+    formatted_date = parse_rss_date(news_item['pub_date'], timezone, date_format)
+
+    if discord_source:
+        message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
+    else:
+        message = f"**{news_item['title']}**\n{news_item['link']}"
+    
+    if news_item['description']:
+        message += f"\n>>> {news_item['description']}\n\n"
+    else:
+        message += "\n\n"
+    
+    message += f"📅 {formatted_date}"
+    return message
+
+def send_discord_message(webhook_url, message, avatar_url=None, username=None, max_retries=3, retry_delay=5):
+    """Discord 웹훅을 사용하여 메시지를 전송합니다. 실패 시 재시도합니다."""
+    payload = {"content": message}
+    
+    if avatar_url and avatar_url.strip():
+        payload["avatar_url"] = avatar_url
+    
+    if username and username.strip():
+        payload["username"] = username
+    
+    headers = {"Content-Type": "application/json"}
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(webhook_url, json=payload, headers=headers)
+            response.raise_for_status()  # 4xx, 5xx 상태 코드에 대해 예외를 발생시킵니다.
+            logging.info("Discord에 메시지 게시 완료")
+            return  # 성공적으로 전송되면 함수 종료
+        except requests.RequestException as e:
+            if attempt < max_retries - 1:
+                logging.warning(f"Discord 메시지 전송 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+                time.sleep(retry_delay)
+            else:
+                logging.error(f"Discord 메시지 전송 최종 실패: {e}")
+                raise  # 모든 재시도가 실패하면 예외를 발생시킵니다.
+
+    time.sleep(3)  # 성공적인 전송 후 3초 대기
 
 def extract_news_items(description, session):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
@@ -952,33 +1226,6 @@ def extract_news_items(description, session):
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
-
-def parse_rss_date(pub_date):
-    """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
-    dt = parser.parse(pub_date)
-    dt_kst = dt.astimezone(gettz('Asia/Seoul'))
-    return dt_kst.strftime('%Y년 %m월 %d일 %H:%M:%S')
-
-def send_discord_message(webhook_url, message, avatar_url=None, username=None):
-    """Discord 웹훅을 사용하여 메시지를 전송합니다."""
-    payload = {"content": message}
-    
-    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
-    if avatar_url and avatar_url.strip():
-        payload["avatar_url"] = avatar_url
-    
-    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
-    if username and username.strip():
-        payload["username"] = username
-    
-    headers = {"Content-Type": "application/json"}
-    response = requests.post(webhook_url, json=payload, headers=headers)
-    if response.status_code != 204:
-        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
-        logging.error(response.text)
-    else:
-        logging.info("Discord에 메시지 게시 완료")
-    time.sleep(3)
 
 def apply_advanced_filter(title, description, advanced_filter):
     """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
@@ -1071,267 +1318,95 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     logging.info(f"모든 날짜 필터를 통과함")
     return True
 
-def get_topic_category(keyword, lang='en'):
-    """토픽 키워드에 해당하는 카테고리를 반환합니다."""
-    categories = {
-        "headlines": {
-            "en": "Headlines news",
-            "ko": "헤드라인 뉴스",
-            "zh": "头条新闻",
-            "ja": "ヘッドライン ニュース",
-            "de": "Schlagzeilen",
-            "fr": "Actualités à la une",
-            "es": "Titulares",
-            "pt": "Notícias principais",
-            "it": "Notizie in primo piano",
-            "nl": "Hoofdnieuws",
-            "sv": "Nyheter i fokus",
-            "ar": "عناوين الأخبار",
-            "ru": "Главные новости",
-            "keywords": ["headlines", "korea", "us", "japan", "china", "world", "politics"]
-        },
-        "entertainment": {
-            "en": "Entertainment news",
-            "ko": "연예 뉴스",
-            "zh": "娱乐新闻",
-            "ja": "芸能関連のニュース",
-            "de": "Nachrichten aus dem Bereich Unterhaltung",
-            "fr": "Actus divertissements",
-            "es": "Noticias sobre espectáculos",
-            "pt": "Notícias de entretenimento",
-            "it": "Notizie di intrattenimento",
-            "nl": "Entertainmentnieuws",
-            "sv": "Underhållningsnyheter",
-            "ar": "أخبار ترفيهية",
-            "ru": "Развлекательные новости",
-            "keywords": ["entertainment", "celebrity", "tv", "music", "movies", "theater"]
-        },
-        "sports": {
-            "en": "Sports news",
-            "ko": "스포츠 뉴스",
-            "zh": "体育新闻",
-            "ja": "スポーツ関連のニュース",
-            "de": "Nachrichten aus dem Bereich Sport",
-            "fr": "Actus sportives",
-            "es": "Noticias sobre deportes",
-            "pt": "Notícias de esportes",
-            "it": "Notizie sportive",
-            "nl": "Sportnieuws",
-            "sv": "Sportnyheter",
-            "ar": "الأخبار الرياضية",
-            "ru": "Спортивные новости",
-            "keywords": ["sports", "soccer", "cycling", "motorsports", "tennis", "martial_arts", 
-                         "basketball", "baseball", "american_football", "sports_betting", 
-                         "water_sports", "hockey", "golf", "cricket", "rugby"]
-        },
-        "business": {
-            "en": "Business news",
-            "ko": "비즈니스 뉴스",
-            "zh": "财经新闻",
-            "ja": "ビジネス関連のニュース",
-            "de": "Wirtschaftsmeldungen",
-            "fr": "Actus économiques",
-            "es": "Noticias de negocios",
-            "pt": "Notícias de negócios",
-            "it": "Notizie economiche",
-            "nl": "Zakennieuws",
-            "sv": "Ekonominyheter",
-            "ar": "أخبار الأعمال",
-            "ru": "Бизнес новости",
-            "keywords": ["business", "economy", "personal_finance", "finance", "digital_currency"]
-        },
-        "technology": {
-            "en": "Technology news",
-            "ko": "기술 뉴스",
-            "zh": "科技新闻",
-            "ja": "テクノロジー関連のニュース",
-            "de": "Nachrichten aus dem Bereich Technologie",
-            "fr": "Actus technologie",
-            "es": "Noticias de tecnología",
-            "pt": "Notícias de tecnologia",
-            "it": "Notizie di tecnologia",
-            "nl": "Technologienieuws",
-            "sv": "Teknologinyheter",
-            "ar": "أخبار التكنولوجيا",
-            "ru": "Технологические новости",
-            "keywords": ["technology", "science_technology", "mobile", "energy", "games", "internet_security", 
-                         "electronics", "virtual_reality", "robotics"]
-        },
-        "health": {
-            "en": "Health news",
-            "ko": "건강 뉴스",
-            "zh": "健康新闻",
-            "ja": "健康関連のニュース",
-            "de": "Nachrichten aus dem Bereich Gesundheit",
-            "fr": "Actus santé",
-            "es": "Noticias sobre salud",
-            "pt": "Notícias de saúde",
-            "it": "Notizie di salute",
-            "nl": "Gezondheidsnieuws",
-            "sv": "Hälsonews",
-            "ar": "أخبار الصحة",
-            "ru": "Новости здоровья",
-            "keywords": ["health", "nutrition", "public_health", "mental_health", "medicine"]
-        },
-        "science": {
-            "en": "Science news",
-            "ko": "과학 뉴스",
-            "zh": "科学新闻",
-            "ja": "科学関連のニュース",
-            "de": "Nachrichten aus dem Bereich Wissenschaft",
-            "fr": "Actus sciences",
-            "es": "Noticias de ciencia",
-            "pt": "Notícias de ciência",
-            "it": "Notizie di scienza",
-            "nl": "Wetenschapsnieuws",
-            "sv": "Vetenskapsnyheter",
-            "ar": "أخبار علمية",
-            "ru": "Научные новости",
-            "keywords": ["science", "space", "wildlife", "environment", "neuroscience", 
-                         "physics", "geography", "paleontology", "social_science"]
-        },
-        "education": {
-            "en": "Education news",
-            "ko": "교육 뉴스",
-            "zh": "教育新闻",
-            "ja": "教育関連のニュース",
-            "de": "Nachrichten aus dem Bereich Bildung",
-            "fr": "Actus enseignement",
-            "es": "Noticias sobre educación",
-            "pt": "Notícias de educação",
-            "it": "Notizie di istruzione",
-            "nl": "Onderwijsnieuws",
-            "sv": "Utbildningsnyheter",
-            "ar": "أخبار التعليم",
-            "ru": "Образовательные новости",
-            "keywords": ["education", "job_market", "online_education", "higher_education"]
-        },
-        "lifestyle": {
-            "en": "Lifestyle news",
-            "ko": "라이프스타일 뉴스",
-            "zh": "生活时尚新闻",
-            "ja": "ライフスタイル関連のニュース",
-            "de": "Nachrichten aus dem Bereich Lifestyle",
-            "fr": "Actus mode de vie",
-            "es": "Noticias de estilo de vida",
-            "pt": "Notícias de estilo de vida",
-            "it": "Notizie di lifestyle",
-            "nl": "Lifestyle nieuws",
-            "sv": "Livsstilsnyheter",
-            "ar": "أخبار أسلوب الحياة",
-            "ru": "Новости образа жизни",
-            "keywords": ["lifestyle", "automotive", "art_design", "beauty", "food", "travel", 
-                         "shopping", "home", "outdoor", "fashion"]
-        }
-    }
-    
-    for category, data in categories.items():
-        if keyword in data["keywords"]:
-            return data[lang]
-    
-    return "기타 뉴스" if lang == 'ko' else "Other News"
-
-def get_topic_display_name(keyword, lang):
-    """토픽 키워드에 해당하는 표시 이름을 반환합니다."""
-    topic_info = TOPIC_MAP.get(keyword, {}).get(lang)
-    if topic_info:
-        return topic_info[0]
-    else:
-        # 해당 언어가 없을 경우 en을 기본값으로 사용
-        return TOPIC_MAP.get(keyword, {}).get("en", (keyword, ''))[0]
-
-def get_country_emoji(country_code):
-    """국가 코드를 유니코드 플래그 이모지로 변환합니다."""
-    if len(country_code) != 2:
-        return ''
-    return chr(ord(country_code[0].upper()) + 127397) + chr(ord(country_code[1].upper()) + 127397)
-
-def is_korean_params(params):
-    """파라미터가 한국어 설정인지 확인합니다."""
-    return 'hl=ko' in params and 'gl=KR' in params and 'ceid=KR%3Ako' in params
-
 def main():
-    init_db(reset=INITIALIZE_TOPIC)
-
-    session = requests.Session()
-
-    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
-    lang = get_language_from_params(TOPIC_PARAMS)
-
-    if TOPIC_MODE:
-        topic_name, topic_id = get_topic_info(TOPIC_KEYWORD, lang)
-        rss_url = f"https://news.google.com/rss/topics/{topic_id}{TOPIC_PARAMS or ''}"
-        category = get_topic_category(TOPIC_KEYWORD, lang)
-    else:
-        rss_url = RSS_URL_TOPIC
-        topic_name, topic_keyword = get_topic_by_id(rss_url)
-        category = TOPIC_CATEGORY.get(lang, "Topics") if topic_keyword is None else get_topic_category(topic_keyword, lang)
-
-    rss_data = fetch_rss_feed(rss_url)
-    if rss_data is None:
-        logging.error("RSS 데이터를 가져오는 데 실패했습니다.")
-        return
-
-    if not TOPIC_MODE and topic_name is None:
-        topic_name = parse_rss_title(rss_data)
-
-    root = ET.fromstring(rss_data)
-    news_items = root.findall('.//item')
-    news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text)) if INITIALIZE_TOPIC else list(reversed(news_items))
-
-    gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
-    country_emoji = get_country_emoji(gl_param.group(1) if gl_param else 'KR')
-    news_prefix = get_news_prefix(lang)
-
-    for item in news_items:
-        guid = item.find('guid').text
-
-        if not INITIALIZE_TOPIC and is_guid_posted(guid):
-            logging.info(f"이미 게시된 항목 건너뜀: {guid}")
-            continue
-
-        title = replace_brackets(item.find('title').text)
-        pub_date = item.find('pubDate').text
+    """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
+    try:
+        check_env_variables()
+        rss_url, topic_name, lang = get_rss_url()
         
-        if not is_within_date_range(pub_date, since_date, until_date, past_date):
-            logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
+        logging.info(f"RSS 피드 URL: {rss_url}")
+        logging.debug(f"ORIGIN_LINK_TOPIC 값: {ORIGIN_LINK_TOPIC}")
 
-        google_link = item.find('link').text
-        link = get_original_url(google_link, session)
-        description_html = item.find('description').text
-        formatted_date = parse_rss_date(pub_date)
+        rss_data = fetch_rss_feed(rss_url)
+        news_items = parse_rss_feed(rss_data)
+        
+        total_items = len(news_items)
+        logging.info(f"총 {total_items}개의 뉴스 항목을 가져왔습니다.")
 
-        related_news = extract_news_items(description_html, session)
-        related_news_json = json.dumps(related_news, ensure_ascii=False)
+        init_db(reset=INITIALIZE_TOPIC)
 
-        description = parse_html_description(description_html, session)
+        session = requests.Session()
+        
+        if INITIALIZE_TOPIC:
+            news_items = sorted(news_items, key=lambda item: parse_pub_date(item.find('pubDate').text))
+            logging.info("초기 실행: 뉴스 항목을 날짜 순으로 정렬했습니다.")
+        else:
+            new_items = [item for item in reversed(news_items) if not is_guid_posted(item.find('guid').text)]
+            news_items = new_items
+            logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
 
-        if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
-            logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-            continue
+        if not news_items:
+            logging.info("처리할 새로운 뉴스 항목이 없습니다.")
+            return
 
-        logging.info(f"news_prefix: {news_prefix}")
-        logging.info(f"category: {category}")
-        logging.info(f"topic_name: {topic_name}")
-        logging.info(f"country_emoji: {country_emoji}")
+        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
+        logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
 
-        discord_message = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`\n**{title}**\n{link}"
-        discord_message += f"\n>>> {description}\n\n" if description else "\n\n"
-        discord_message += f"📅 {formatted_date}"
+        processed_count = 0
+        for item in news_items:
+            try:
+                guid = item.find('guid').text
+                pub_date = item.find('pubDate').text
+                if not is_within_date_range(pub_date, since_date, until_date, past_date):
+                    logging.debug(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
+                    continue
 
-        send_discord_message(
-            DISCORD_WEBHOOK_TOPIC,
-            discord_message,
-            avatar_url=DISCORD_AVATAR_TOPIC,
-            username=DISCORD_USERNAME_TOPIC
-        )
+                title = replace_brackets(item.find('title').text)
+                google_link = item.find('link').text
+                link = get_original_url(google_link, session)
+                description_html = item.find('description').text
 
-        save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
+                related_news = extract_news_items(description_html, session)
+                related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-        if not INITIALIZE_TOPIC:
-            time.sleep(3)
-                        
+                description = parse_html_description(description_html, session)
+
+                if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
+                    logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
+                    continue
+
+                news_item = {
+                    "guid": guid,
+                    "title": title,
+                    "link": link,
+                    "pub_date": pub_date,
+                    "description": description
+                }
+
+                discord_message = format_discord_message(news_item, f"`{topic_name}`", 'Asia/Seoul', '%Y년 %m월 %d일 %H:%M:%S')
+                
+                send_discord_message(
+                    DISCORD_WEBHOOK_TOPIC,
+                    discord_message,
+                    avatar_url=DISCORD_AVATAR_TOPIC,
+                    username=DISCORD_USERNAME_TOPIC
+                )
+
+                save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
+
+                processed_count += 1
+                logging.info(f"뉴스 항목 처리 완료: {title}")
+
+            except Exception as e:
+                logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
+                continue
+
+        logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
+
+    except Exception as e:
+        logging.error(f"프로그램 실행 중 오류 발생: {e}", exc_info=True)
+        sys.exit(1)
+
 if __name__ == "__main__":
     try:
         check_env_variables()

@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 env:
+  INITIALIZE_MODE_TOPIC: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
   DISCORD_WEBHOOK_TOPIC: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_TOPIC }}
   DISCORD_AVATAR_TOPIC: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_TOPIC }}
   DISCORD_USERNAME_TOPIC: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_TOPIC }}
@@ -74,21 +75,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
-      - name: Check and initialize database
-        run: |
-          if [ "${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}" == "true" ] || [ ! -f google_news_topic.db ]; then
-            echo "Initializing or creating new database"
-            rm -f google_news_topic.db
-            sqlite3 google_news_topic.db "CREATE TABLE IF NOT EXISTS news_items (pub_date TEXT, guid TEXT PRIMARY KEY, title TEXT, link TEXT, topic TEXT, related_news TEXT);"
-          else
-            echo "Using existing database"
-            sqlite3 google_news_topic.db "SELECT COUNT(*) FROM news_items;"
-          fi
-
       - name: Read Google News RSS and Post to Discord
         run: python .github/scripts/googlenews-topic_to_discord.py
-        env:
-          INITIALIZE_MODE_TOPIC: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}
 
       - name: Upload updated database
         uses: actions/upload-artifact@v4
@@ -101,7 +89,7 @@ jobs:
         if: always()
         run: |
           echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-          echo "INITIALIZE_MODE_TOPIC: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_TOPIC }}"
+          echo "INITIALIZE_MODE_TOPIC: ${{ env.INITIALIZE_MODE_TOPIC }}"
           echo "Workspace contents:"
           ls -la
           echo "Database file size:"
