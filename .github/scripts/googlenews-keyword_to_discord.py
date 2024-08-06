@@ -716,7 +716,7 @@ def main():
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
         logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
 
-        hl, ceid, google_news, news_type, country_name, country_name_en, flag, timezone, date_format = country_configs.get(country_code, country_configs['US'])
+        hl, ceid, google_news, country_name, country_name_en, flag, timezone, date_format = country_configs.get(country_code, country_configs['US'])
 
         processed_count = 0
         for item in news_items:
