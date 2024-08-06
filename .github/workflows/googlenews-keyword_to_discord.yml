@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 env:
+  INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
   DISCORD_WEBHOOK_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
   DISCORD_AVATAR_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}
   DISCORD_USERNAME_KEYWORD: ${{ secrets.DISCORD_USERNAME_GOOGLENEWS_KEYWORD }}
-  INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
   ADVANCED_FILTER_KEYWORD: ${{ secrets.ADVANCED_FILTER_GOOGLENEWS_KEYWORD }}
   DATE_FILTER_KEYWORD: ${{ secrets.DATE_FILTER_GOOGLENEWS_KEYWORD }}
   ORIGIN_LINK_KEYWORD: ${{ secrets.ORIGIN_LINK_GOOGLENEWS_KEYWORD }}
@@ -64,14 +64,6 @@ jobs:
           name: googlenews_keyword_database
           run-id: ${{ fromJson(steps.get_workflow_info.outputs.result).latestRunId }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Initialize or check database
-        run: |
-          if [ "${{ env.INITIALIZE_MODE_KEYWORD }}" == "true" ] || [ ! -f google_news_keyword.db ] || [ ! -s google_news_keyword.db ]; then
-            echo "Initializing or creating new database"
-            rm -f google_news_keyword.db
-            touch google_news_keyword.db
-          fi
 
       - name: Read Google News RSS and Post to Discord
         run: python .github/scripts/googlenews-keyword_to_discord.py
