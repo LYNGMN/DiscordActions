@@ -530,7 +530,7 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None, m
             response.raise_for_status()
             logging.info("Discord에 메시지 게시 완료")
             return
-		except requests.RequestException as e:
+        except requests.RequestException as e:
             if attempt < max_retries - 1:
                 logging.warning(f"Discord 메시지 전송 실패 (시도 {attempt + 1}/{max_retries}): {e}")
                 time.sleep(retry_delay)
