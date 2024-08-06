@@ -1160,17 +1160,30 @@ def parse_pub_date(pub_date_str):
     """문자열 형태의 발행일을 datetime 객체로 파싱합니다."""
     return parser.parse(pub_date_str)
 
-def parse_rss_date(pub_date, timezone, date_format):
-    """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
-    dt = parser.parse(pub_date)
-    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-        dt = dt.replace(tzinfo=pytz.UTC)
-    local_dt = dt.astimezone(pytz.timezone(timezone))
-    return local_dt.strftime(date_format)
+def convert_to_local_time(pub_date, country_code):
+    utc_time = datetime.strptime(pub_date, "%a, %d %b %Y %H:%M:%S %z")
+    utc_time = utc_time.replace(tzinfo=pytz.UTC)
 
-def format_discord_message(news_item, news_prefix, category, topic_name, country_emoji, timezone, date_format):
+    time_formats = {
+        'KR': ('Asia/Seoul', '%Y년 %m월 %d일 %H:%M:%S (KST)'),
+        'US': ('America/New_York', '%Y-%m-%d %I:%M:%S %p (EST)'),
+        'JP': ('Asia/Tokyo', '%Y年%m月%d日 %H:%M:%S (JST)'),
+        'CN': ('Asia/Shanghai', '%Y年%m月%d日 %H:%M:%S (CST)')
+    }
+
+    if country_code in time_formats:
+        timezone, time_format = time_formats[country_code]
+        local_time = utc_time.astimezone(pytz.timezone(timezone))
+        return local_time.strftime(time_format)
+    else:
+        return utc_time.strftime('%Y-%m-%d %H:%M:%S')
+
+def parse_rss_date(pub_date, country_code):
+    return convert_to_local_time(pub_date, country_code)
+
+def format_discord_message(news_item, news_prefix, category, topic_name, country_emoji, country_code):
     """Discord 메시지를 포맷팅합니다."""
-    formatted_date = parse_rss_date(news_item['pub_date'], timezone, date_format)
+    formatted_date = parse_rss_date(news_item['pub_date'], country_code)
 
     discord_source = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`"
 
@@ -1320,7 +1333,6 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     try:
-        check_env_variables()
         rss_url, topic_name, lang = get_rss_url()
         
         logging.info(f"RSS 피드 URL: {rss_url}")
@@ -1350,6 +1362,12 @@ def main():
 
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
         logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
+
+        gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
+        country_code = gl_param.group(1) if gl_param else 'KR'
+        country_emoji = get_country_emoji(country_code)
+        news_prefix = get_news_prefix(lang)
+        category = get_topic_category(TOPIC_KEYWORD, lang) if TOPIC_MODE else TOPIC_CATEGORY.get(lang, "Topics")
 
         processed_count = 0
         for item in news_items:
@@ -1382,7 +1400,14 @@ def main():
                     "description": description
                 }
 
-                discord_message = format_discord_message(news_item, f"`{topic_name}`", 'Asia/Seoul', '%Y년 %m월 %d일 %H:%M:%S')
+                discord_message = format_discord_message(
+                    news_item,
+                    news_prefix,
+                    category,
+                    topic_name,
+                    country_emoji,
+                    country_code
+                )
                 
                 send_discord_message(
                     DISCORD_WEBHOOK_TOPIC,
