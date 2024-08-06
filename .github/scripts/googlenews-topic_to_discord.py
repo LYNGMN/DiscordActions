@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import pytz
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode, unquote, quote
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
@@ -1161,8 +1162,12 @@ def parse_pub_date(pub_date_str):
     return parser.parse(pub_date_str)
 
 def convert_to_local_time(pub_date, country_code):
-    utc_time = datetime.strptime(pub_date, "%a, %d %b %Y %H:%M:%S %z")
-    utc_time = utc_time.replace(tzinfo=pytz.UTC)
+    try:
+        # email.utils.parsedate_to_datetime 함수를 사용하여 날짜 파싱
+        utc_time = parsedate_to_datetime(pub_date)
+    except ValueError:
+        # 파싱에 실패한 경우 원본 문자열 반환
+        return pub_date
 
     time_formats = {
         'KR': ('Asia/Seoul', '%Y년 %m월 %d일 %H:%M:%S (KST)'),
