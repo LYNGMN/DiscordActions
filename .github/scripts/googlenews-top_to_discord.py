@@ -750,7 +750,7 @@ def main():
                 )
 
                 processed_count += 1
-                logging.debug(f"뉴스 항목 처리 완료: {processed_item['title']}")
+                logging.info(f"뉴스 항목 처리 완료: {processed_item['title']}")
 
             except Exception as e:
                 logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
