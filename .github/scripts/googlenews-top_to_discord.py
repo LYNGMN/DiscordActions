@@ -79,6 +79,15 @@ def init_db(reset=False):
                           link TEXT,
                           related_news TEXT)''')
             
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_guid ON news_items(guid)")
+            
+            # 데이터베이스 무결성 검사
+            c.execute("PRAGMA integrity_check")
+            integrity_result = c.fetchone()[0]
+            if integrity_result != "ok":
+                logging.error(f"데이터베이스 무결성 검사 실패: {integrity_result}")
+                raise sqlite3.IntegrityError("데이터베이스 무결성 검사 실패")
+            
             # 테이블이 비어있는지 확인
             c.execute("SELECT COUNT(*) FROM news_items")
             count = c.fetchone()[0]
@@ -91,6 +100,8 @@ def init_db(reset=False):
         except sqlite3.Error as e:
             logging.error(f"데이터베이스 초기화 중 오류 발생: {e}")
             raise
+
+    logging.info("데이터베이스 초기화 완료")
 
 def is_guid_posted(guid):
     try:
@@ -516,26 +527,33 @@ def format_discord_message(news_item, discord_source, timezone, date_format):
     message += f"📅 {formatted_date}"
     return message
 
-def send_discord_message(webhook_url, message, avatar_url=None, username=None):
-    """Discord 웹훅을 사용하여 메시지를 전송합니다."""
+def send_discord_message(webhook_url, message, avatar_url=None, username=None, max_retries=3, retry_delay=5):
+    """Discord 웹훅을 사용하여 메시지를 전송합니다. 실패 시 재시도합니다."""
     payload = {"content": message}
     
-    # 아바타 URL이 제공되고 비어있지 않으면 payload에 추가
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
     
-    # 사용자 이름이 제공되고 비어있지 않으면 payload에 추가
     if username and username.strip():
         payload["username"] = username
     
     headers = {"Content-Type": "application/json"}
-    response = requests.post(webhook_url, json=payload, headers=headers)
-    if response.status_code != 204:
-        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
-        logging.error(response.text)
-    else:
-        logging.info("Discord에 메시지 게시 완료")
-    time.sleep(3)
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(webhook_url, json=payload, headers=headers)
+            response.raise_for_status()  # 4xx, 5xx 상태 코드에 대해 예외를 발생시킵니다.
+            logging.info("Discord에 메시지 게시 완료")
+            return  # 성공적으로 전송되면 함수 종료
+        except requests.RequestException as e:
+            if attempt < max_retries - 1:
+                logging.warning(f"Discord 메시지 전송 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+                time.sleep(retry_delay)
+            else:
+                logging.error(f"Discord 메시지 전송 최종 실패: {e}")
+                raise  # 모든 재시도가 실패하면 예외를 발생시킵니다.
+
+    time.sleep(3)  # 성공적인 전송 후 3초 대기
 
 def extract_news_items(description, session):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
@@ -671,28 +689,17 @@ def process_news_item(item, session):
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     try:
-        check_env_variables()
         rss_url, discord_source, timezone, date_format = get_rss_url()
         
-        logging.info(f"ORIGIN_LINK_TOP 값: {ORIGIN_LINK_TOP}")
+        logging.info(f"RSS 피드 URL: {rss_url}")
+        logging.debug(f"ORIGIN_LINK_TOP 값: {ORIGIN_LINK_TOP}")
 
-        retry_count = 3
-        for attempt in range(retry_count):
-            try:
-                rss_data = fetch_rss_feed(rss_url)
-                break
-            except Exception as e:
-                if attempt < retry_count - 1:
-                    logging.warning(f"RSS 피드 가져오기 실패 (시도 {attempt + 1}/{retry_count}): {e}")
-                    time.sleep(5)
-                else:
-                    logging.error(f"RSS 피드 가져오기 최종 실패: {e}")
-                    raise
-
+        rss_data = fetch_rss_feed(rss_url)
         root = ET.fromstring(rss_data)
         news_items = root.findall('.//item')
         
-        logging.info(f"총 {len(news_items)}개의 뉴스 항목을 가져왔습니다.")
+        total_items = len(news_items)
+        logging.info(f"총 {total_items}개의 뉴스 항목을 가져왔습니다.")
 
         init_db(reset=INITIALIZE_TOP)
 
@@ -702,33 +709,23 @@ def main():
             news_items = sorted(news_items, key=lambda item: parse_pub_date(item.find('pubDate').text))
             logging.info("초기 실행: 뉴스 항목을 날짜 순으로 정렬했습니다.")
         else:
-            new_items = []
-            for item in reversed(news_items):
-                guid = item.find('guid').text
-                if not is_guid_posted(guid):
-                    new_items.append(item)
-                    logging.info(f"새로운 뉴스 항목 발견: {guid}")
-                else:
-                    logging.info(f"이미 게시된 뉴스 항목 발견: {guid}")
-            
-            if new_items:
-                news_items = new_items  # 뒤집지 않고 그대로 사용
-                logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
-            else:
-                logging.info("후속 실행: 새로운 뉴스 항목이 없습니다.")
-                return  # 새로운 항목이 없으면 여기서 함수 종료
+            new_items = [item for item in reversed(news_items) if not is_guid_posted(item.find('guid').text)]
+            news_items = new_items
+            logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
 
-        logging.info("처리할 뉴스 항목:")
-        for item in news_items:
-            logging.info(f"- {item.find('title').text} (GUID: {item.find('guid').text})")
+        if not news_items:
+            logging.info("처리할 새로운 뉴스 항목이 없습니다.")
+            return
 
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
+        logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
 
+        processed_count = 0
         for item in news_items:
             try:
                 pub_date = item.find('pubDate').text
                 if not is_within_date_range(pub_date, since_date, until_date, past_date):
-                    logging.info(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
+                    logging.debug(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
                     continue
 
                 processed_item = process_news_item(item, session)
@@ -744,31 +741,22 @@ def main():
                 )
 
                 discord_message = format_discord_message(processed_item, discord_source, timezone, date_format)
+                
+                send_discord_message(
+                    DISCORD_WEBHOOK_TOP,
+                    discord_message,
+                    avatar_url=DISCORD_AVATAR_TOP,
+                    username=DISCORD_USERNAME_TOP
+                )
 
-                retry_count = 3
-                for attempt in range(retry_count):
-                    try:
-                        send_discord_message(
-                            DISCORD_WEBHOOK_TOP,
-                            discord_message,
-                            avatar_url=DISCORD_AVATAR_TOP,
-                            username=DISCORD_USERNAME_TOP
-                        )
-                        break
-                    except Exception as e:
-                        if attempt < retry_count - 1:
-                            logging.warning(f"Discord 메시지 전송 실패 (시도 {attempt + 1}/{retry_count}): {e}")
-                            time.sleep(5)
-                        else:
-                            logging.error(f"Discord 메시지 전송 최종 실패: {e}")
-                            raise
-
-                time.sleep(3)
-                logging.info(f"뉴스 항목 처리 완료: {processed_item['title']} (게시일: {processed_item['pub_date']})")
+                processed_count += 1
+                logging.debug(f"뉴스 항목 처리 완료: {processed_item['title']}")
 
             except Exception as e:
                 logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
                 continue
+
+        logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
 
     except Exception as e:
         logging.error(f"프로그램 실행 중 오류 발생: {e}", exc_info=True)
