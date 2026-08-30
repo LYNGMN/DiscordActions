@@ -166,6 +166,41 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                     )
                 self.assertNotIn("body must not leak", str(raised.exception))
 
+    def test_preflight_reports_every_failed_profile_without_secret_values(self):
+        profiles = self.profiles[:2]
+        session = QueueSession(
+            [
+                FakeResponse(status_code=401),
+                FakeResponse(payload={"name": "wrong-name"}),
+            ]
+        )
+
+        with self.assertLogs(self.dispatcher.LOGGER, level="ERROR") as captured:
+            with self.assertRaisesRegex(RuntimeError, "webhook_preflight_failed"):
+                self.dispatcher.validate_webhooks(profiles, self.env, session)
+
+        logs = "\n".join(captured.output)
+        self.assertEqual(2, len(session.calls))
+        self.assertIn("profile_id=top_us reason=http_401", logs)
+        self.assertIn("profile_id=top_kr reason=name_mismatch", logs)
+        self.assertNotIn("discord.com", logs)
+        self.assertNotIn("token1", logs)
+        self.assertNotIn("token2", logs)
+
+    def test_preflight_rate_limit_stops_remaining_metadata_requests(self):
+        profiles = self.profiles[:2]
+        session = QueueSession(
+            [
+                FakeResponse(status_code=429),
+                FakeResponse(payload={"name": profiles[1].expected_webhook_name}),
+            ]
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "webhook_rate_limited"):
+            self.dispatcher.validate_webhooks(profiles, self.env, session)
+
+        self.assertEqual(1, len(session.calls))
+
     def test_handlers_run_in_exact_registry_order_with_isolated_environments(self):
         calls = []
         summary = self.dispatcher.run_profiles(

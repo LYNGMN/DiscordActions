@@ -114,23 +114,51 @@ def validate_webhooks(
             raise RuntimeError("invalid_webhook")
         validated_urls.append((profile, value.strip()))
 
+    first_error_code = None
     for profile, webhook_url in validated_urls:
+        error_code = None
+        reason = None
         try:
             response = session.get(webhook_url, timeout=(5.0, 15.0))
         except Exception:
-            raise RuntimeError("webhook_preflight_failed") from None
-        if response.status_code == 429:
-            raise RuntimeError("webhook_rate_limited")
-        if response.status_code != 200:
-            raise RuntimeError("webhook_preflight_failed")
-        try:
-            payload = response.json()
-        except (TypeError, ValueError):
-            raise RuntimeError("webhook_metadata_invalid") from None
-        if not isinstance(payload, dict) or not isinstance(payload.get("name"), str):
-            raise RuntimeError("webhook_metadata_invalid")
-        if payload["name"] != profile.expected_webhook_name:
-            raise RuntimeError("webhook_name_mismatch")
+            error_code = "webhook_preflight_failed"
+            reason = "request_error"
+        else:
+            if response.status_code == 429:
+                error_code = "webhook_rate_limited"
+                reason = "http_429"
+            elif response.status_code != 200:
+                error_code = "webhook_preflight_failed"
+                reason = "http_{}".format(response.status_code)
+            else:
+                try:
+                    payload = response.json()
+                except (TypeError, ValueError):
+                    error_code = "webhook_metadata_invalid"
+                    reason = "invalid_json"
+                else:
+                    if not isinstance(payload, dict) or not isinstance(
+                        payload.get("name"), str
+                    ):
+                        error_code = "webhook_metadata_invalid"
+                        reason = "invalid_metadata"
+                    elif payload["name"] != profile.expected_webhook_name:
+                        error_code = "webhook_name_mismatch"
+                        reason = "name_mismatch"
+
+        if error_code is not None:
+            LOGGER.error(
+                "Discord webhook preflight failed: profile_id=%s reason=%s",
+                profile.profile_id,
+                reason,
+            )
+            if first_error_code is None:
+                first_error_code = error_code
+            if error_code == "webhook_rate_limited":
+                break
+
+    if first_error_code is not None:
+        raise RuntimeError(first_error_code)
 
 
 def run_profiles(
