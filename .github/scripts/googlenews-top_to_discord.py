@@ -24,6 +24,7 @@ from google_news_delivery_state import (
     prepare_scheduled_items,
     reserve_delivery,
 )
+from google_news_discord_delivery import send_webhook_message
 from google_news_profile_result import write_profile_result
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
@@ -392,20 +393,8 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     if username and username.strip():
         payload["username"] = username
     
-    headers = {"Content-Type": "application/json"}
-
     try:
-        response = requests.post(
-            webhook_url,
-            json=payload,
-            headers=headers,
-            params={"wait": "true"},
-            timeout=(5.0, 15.0),
-        )
-        response.raise_for_status()
-        message_id = response.json().get("id")
-        if not isinstance(message_id, str) or not message_id.isdigit():
-            raise ValueError("invalid message id")
+        message_id = send_webhook_message(webhook_url, payload)
         logging.info("Discord에 메시지 게시 완료")
         return message_id
     except (requests.RequestException, TypeError, ValueError) as error:

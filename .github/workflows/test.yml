@@ -32,6 +32,7 @@ jobs:
         run: >-
           python -m py_compile
           .github/scripts/google_news_delivery_state.py
+          .github/scripts/google_news_discord_delivery.py
           .github/scripts/google_news_dispatcher.py
           .github/scripts/google_news_manual_test.py
           .github/scripts/google_news_profile_result.py

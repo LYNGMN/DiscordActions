@@ -165,6 +165,8 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
             with self.subTest(script=script_path.name):
                 module = load_script(script_path)
                 response = SimpleNamespace(
+                    status_code=200,
+                    headers={},
                     raise_for_status=lambda: None,
                     json=lambda: {"id": "123456789012345678"},
                 )
@@ -181,6 +183,95 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertEqual(
                     "Google News", post.call_args.kwargs["json"]["username"]
                 )
+
+    def test_discord_429_waits_and_retries_once(self):
+        for script_path in SCRIPT_PATHS:
+            for source, headers, retry_payload in (
+                ("header", {"Retry-After": "0"}, {}),
+                ("json", {}, {"retry_after": 0.0}),
+            ):
+                with self.subTest(script=script_path.name, source=source):
+                    module = load_script(script_path)
+                    rate_limited = SimpleNamespace(
+                        status_code=429,
+                        headers=headers,
+                        raise_for_status=mock.Mock(
+                            side_effect=module.requests.HTTPError("rate limited")
+                        ),
+                        json=lambda: retry_payload,
+                    )
+                    delivered = SimpleNamespace(
+                        status_code=200,
+                        headers={},
+                        raise_for_status=lambda: None,
+                        json=lambda: {"id": "123456789012345678"},
+                    )
+
+                    with mock.patch.object(
+                        module.requests,
+                        "post",
+                        side_effect=[rate_limited, delivered],
+                    ) as post:
+                        message_id = module.send_discord_message(
+                            "https://discord.com/api/webhooks/redacted",
+                            "safe message",
+                            username="Google News",
+                        )
+
+                    self.assertEqual("123456789012345678", message_id)
+                    self.assertEqual(2, post.call_count)
+
+    def test_discord_429_retry_is_bounded_and_never_loops(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name, case="excessive-delay"):
+                module = load_script(script_path)
+                rate_limited = SimpleNamespace(
+                    status_code=429,
+                    headers={"Retry-After": "61"},
+                    raise_for_status=mock.Mock(
+                        side_effect=module.requests.HTTPError("rate limited")
+                    ),
+                    json=lambda: {"retry_after": 61.0},
+                )
+
+                with mock.patch.object(
+                    module.requests, "post", return_value=rate_limited
+                ) as post, self.assertRaisesRegex(
+                    RuntimeError, "discord_delivery_failed"
+                ):
+                    module.send_discord_message(
+                        "https://discord.com/api/webhooks/redacted",
+                        "safe message",
+                        username="Google News",
+                    )
+
+                self.assertEqual(1, post.call_count)
+
+            with self.subTest(script=script_path.name, case="second-429"):
+                module = load_script(script_path)
+                rate_limited = SimpleNamespace(
+                    status_code=429,
+                    headers={"Retry-After": "0"},
+                    raise_for_status=mock.Mock(
+                        side_effect=module.requests.HTTPError("rate limited")
+                    ),
+                    json=lambda: {"retry_after": 0.0},
+                )
+
+                with mock.patch.object(
+                    module.requests,
+                    "post",
+                    side_effect=[rate_limited, rate_limited],
+                ) as post, self.assertRaisesRegex(
+                    RuntimeError, "discord_delivery_failed"
+                ):
+                    module.send_discord_message(
+                        "https://discord.com/api/webhooks/redacted",
+                        "safe message",
+                        username="Google News",
+                    )
+
+                self.assertEqual(2, post.call_count)
 
     def test_validation_mode_never_calls_discord(self):
         for script_path in SCRIPT_PATHS:

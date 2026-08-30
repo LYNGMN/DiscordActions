@@ -21,6 +21,7 @@ EXPECTED_WEBHOOK_SECRETS = (
 )
 NEW_MODULES = (
     "google_news_delivery_state.py",
+    "google_news_discord_delivery.py",
     "google_news_dispatcher.py",
     "google_news_manual_test.py",
     "google_news_profile_result.py",
