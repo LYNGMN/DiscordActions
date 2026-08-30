@@ -74,6 +74,7 @@ class ProfileRunResult:
 class DispatchSummary:
     status: str
     manual_test: bool
+    error_code: Optional[str]
     started_at: str
     finished_at: str
     profiles: Sequence[ProfileRunResult]
@@ -82,6 +83,7 @@ class DispatchSummary:
         return {
             "status": self.status,
             "manual_test": self.manual_test,
+            "error_code": self.error_code,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "profiles": [profile.to_dict() for profile in self.profiles],
@@ -188,6 +190,7 @@ def run_profiles(
     summary = DispatchSummary(
         status=status,
         manual_test=bool(manual_test),
+        error_code=None,
         started_at=started_at,
         finished_at=_utc_timestamp(),
         profiles=tuple(results),
@@ -300,6 +303,17 @@ def main(argv=None) -> int:
         error_code = str(error)
         if not ERROR_CODE.fullmatch(error_code):
             error_code = "dispatch_failed"
+        state_path = Path(arguments.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        failed_summary = DispatchSummary(
+            status="failed",
+            manual_test=bool(arguments.manual_test),
+            error_code=error_code,
+            started_at=_utc_timestamp(),
+            finished_at=_utc_timestamp(),
+            profiles=tuple(),
+        )
+        _write_summary(state_path / "run-summary.json", failed_summary)
         LOGGER.error("Google News 디스패처 실패 (코드: %s)", error_code)
         return 1
     LOGGER.info(

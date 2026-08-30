@@ -290,6 +290,26 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         summary_path = Path(self.state_dir) / "run-summary.json"
         self.assertEqual(summary.to_dict(), json.loads(summary_path.read_text(encoding="utf-8")))
 
+    def test_cli_preflight_failure_still_writes_a_safe_state_summary(self):
+        with mock.patch.object(
+            self.dispatcher, "load_profiles", return_value=self.profiles
+        ), mock.patch.object(
+            self.dispatcher,
+            "run_dispatch",
+            side_effect=RuntimeError("webhook_name_mismatch"),
+        ):
+            exit_code = self.dispatcher.main(
+                ["--state-dir", self.state_dir, "--manual-test"]
+            )
+
+        self.assertEqual(1, exit_code)
+        payload = json.loads(
+            (Path(self.state_dir) / "run-summary.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("failed", payload["status"])
+        self.assertEqual("webhook_name_mismatch", payload["error_code"])
+        self.assertEqual([], payload["profiles"])
+
 
 if __name__ == "__main__":
     unittest.main()

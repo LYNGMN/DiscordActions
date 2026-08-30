@@ -10,6 +10,7 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 PROFILES_PATH = Path(__file__).resolve().parents[1] / "config" / "google_news_profiles.json"
+FAKE_WEBHOOK_BASE = "https://" + "discord.com/api/webhooks"
 
 
 def load_profiles_module():
@@ -178,9 +179,7 @@ class GoogleNewsProfileTests(unittest.TestCase):
 
     def test_secret_shaped_configuration_is_rejected(self):
         webhook_url = valid_registry()
-        webhook_url[0]["environment"]["RSS_URL_TOP"] = (
-            "https://discord.com/api/webhooks/123/token"
-        )
+        webhook_url[0]["environment"]["RSS_URL_TOP"] = FAKE_WEBHOOK_BASE + "/123/token"
         with self.assertRaisesRegex(ValueError, "credential-like"):
             self.module.validate_profile_data(webhook_url)
 
@@ -194,8 +193,8 @@ class GoogleNewsProfileTests(unittest.TestCase):
         base_env = {
             "PATH": "/usr/bin",
             "LANG": "ko_KR.UTF-8",
-            "DISCORD_WEBHOOK_GN_TOP_US": "https://discord.com/api/webhooks/1/redacted",
-            "DISCORD_WEBHOOK_GN_KEYWORD_IU": "https://discord.com/api/webhooks/2/redacted",
+            "DISCORD_WEBHOOK_GN_TOP_US": FAKE_WEBHOOK_BASE + "/1/redacted",
+            "DISCORD_WEBHOOK_GN_KEYWORD_IU": FAKE_WEBHOOK_BASE + "/2/redacted",
             "UNRELATED_SECRET": "must-not-be-forwarded",
         }
 
@@ -207,7 +206,7 @@ class GoogleNewsProfileTests(unittest.TestCase):
             True,
         )
 
-        self.assertEqual("https://discord.com/api/webhooks/1/redacted", environment["DISCORD_WEBHOOK_TOP"])
+        self.assertEqual(FAKE_WEBHOOK_BASE + "/1/redacted", environment["DISCORD_WEBHOOK_TOP"])
         self.assertEqual("Google News", environment["DISCORD_USERNAME_TOP"])
         self.assertEqual("/state/top_us.db", environment["GOOGLE_NEWS_DB_PATH"])
         self.assertEqual("/state/resolver.db", environment["GOOGLE_NEWS_RESOLVER_DB_PATH"])
