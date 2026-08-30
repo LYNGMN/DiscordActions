@@ -4,7 +4,8 @@ import json
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 import sqlite3
 from unittest import mock
@@ -75,6 +76,28 @@ class QueueSession:
 
 
 class GoogleNewsUrlResolverTests(unittest.TestCase):
+    @staticmethod
+    def _successful_responses(original_url):
+        html = (
+            '<c-wiz><div jscontroller="abc" data-n-a-sg="signature" '
+            'data-n-a-ts="1725891265"></div></c-wiz>'
+        )
+        rpc_payload = [
+            [
+                "wrb.fr",
+                "Fbv4je",
+                json.dumps(["garturlres", original_url]),
+                None,
+                None,
+                [3],
+                "generic",
+            ]
+        ]
+        return (
+            FakeResponse(text=html),
+            FakeResponse(text=")]}'\n\n" + json.dumps(rpc_payload)),
+        )
+
     def test_disabled_resolution_returns_original_url_without_network(self):
         module = load_resolver_module()
         source_url = "https://news.google.com/rss/articles/article-id?oc=5"
@@ -363,9 +386,247 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
             second_result = resolver.resolve(second_url)
 
         self.assertEqual("fallback", second_result.status)
-        self.assertEqual("rate_limited", second_result.error_code)
+        self.assertEqual("circuit_open", second_result.error_code)
         self.assertEqual(1, len(session.get_calls))
         self.assertEqual(0, len(session.post_calls))
+
+    def test_network_resolution_budget_falls_back_without_an_extra_request(self):
+        module = load_resolver_module()
+        first_url = "https://news.google.com/rss/articles/CBMiBudgetOne?oc=5"
+        second_url = "https://news.google.com/rss/articles/CBMiBudgetTwo?oc=5"
+        get_response, post_response = self._successful_responses(
+            "https://publisher.example/first"
+        )
+        session = QueueSession(
+            get_responses=[get_response],
+            post_responses=[post_response],
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resolver = module.GoogleNewsUrlResolver(
+                session=session,
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+                max_network_resolutions=1,
+            )
+
+            first_result = resolver.resolve(first_url)
+            second_result = resolver.resolve(second_url)
+            stats = resolver.get_stats()
+
+        self.assertEqual("resolved", first_result.status)
+        self.assertEqual("fallback", second_result.status)
+        self.assertEqual("budget_exhausted", second_result.error_code)
+        self.assertEqual(1, len(session.get_calls))
+        self.assertEqual(1, len(session.post_calls))
+        self.assertEqual(2, stats["resolution_calls"])
+        self.assertEqual(1, stats["network_resolution_attempts"])
+        self.assertEqual(1, stats["budget_exhausted"])
+        self.assertEqual(1, stats["fallbacks"])
+
+    def test_related_resolution_uses_cache_without_new_network_requests(self):
+        module = load_resolver_module()
+        source_url = "https://news.google.com/rss/articles/CBMiRelatedCached?oc=5"
+        original_url = "https://publisher.example/related-cached"
+        get_response, post_response = self._successful_responses(original_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "news.db")
+            priming_session = QueueSession(
+                get_responses=[get_response],
+                post_responses=[post_response],
+            )
+            priming_resolver = module.GoogleNewsUrlResolver(
+                session=priming_session,
+                db_path=db_path,
+                min_interval_seconds=0,
+            )
+            self.assertEqual("resolved", priming_resolver.resolve(source_url).status)
+
+            resolver = module.GoogleNewsUrlResolver(
+                session=UnexpectedSession(),
+                db_path=db_path,
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve_related(source_url)
+
+        self.assertEqual("cache_hit", result.status)
+        self.assertEqual(original_url, result.url)
+
+    def test_related_uncached_modern_url_skips_network(self):
+        module = load_resolver_module()
+        source_url = "https://news.google.com/rss/articles/CBMiRelatedUncached?oc=5"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resolver = module.GoogleNewsUrlResolver(
+                session=UnexpectedSession(),
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve_related(source_url)
+            stats = resolver.get_stats()
+
+        self.assertEqual("fallback", result.status)
+        self.assertEqual("related_network_skipped", result.error_code)
+        self.assertEqual(1, stats["related_network_skipped"])
+        self.assertEqual(0, stats["network_resolution_attempts"])
+
+    def test_rate_limit_circuit_is_reused_by_a_new_resolver(self):
+        module = load_resolver_module()
+        first_url = "https://news.google.com/rss/articles/CBMiPersistentLimit?oc=5"
+        second_url = "https://news.google.com/rss/articles/CBMiPersistentNext?oc=5"
+        fixed_now = datetime(2026, 8, 31, 3, 0, tzinfo=timezone.utc)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "news.db")
+            first_session = QueueSession(
+                get_responses=[
+                    FakeResponse(status_code=429, headers={"Retry-After": "120"})
+                ]
+            )
+            with mock.patch.object(
+                module.GoogleNewsUrlResolver,
+                "_utc_now",
+                return_value=fixed_now,
+            ):
+                first_resolver = module.GoogleNewsUrlResolver(
+                    session=first_session,
+                    db_path=db_path,
+                    min_interval_seconds=0,
+                )
+                first_result = first_resolver.resolve(first_url)
+
+                second_session = QueueSession()
+                second_resolver = module.GoogleNewsUrlResolver(
+                    session=second_session,
+                    db_path=db_path,
+                    min_interval_seconds=0,
+                )
+                second_result = second_resolver.resolve(second_url)
+                stats = second_resolver.get_stats()
+
+            with sqlite3.connect(db_path) as connection:
+                state = connection.execute(
+                    """
+                    SELECT blocked_until, last_error_code
+                    FROM google_news_resolver_state
+                    WHERE state_key = 'global'
+                    """
+                ).fetchone()
+
+        self.assertEqual("http_429", first_result.error_code)
+        self.assertEqual("circuit_open", second_result.error_code)
+        self.assertEqual(0, len(second_session.get_calls))
+        self.assertEqual(
+            fixed_now + timedelta(seconds=120),
+            datetime.fromisoformat(state[0]),
+        )
+        self.assertEqual("http_429", state[1])
+        self.assertEqual(1, stats["circuit_skipped"])
+        self.assertEqual(
+            (fixed_now + timedelta(seconds=120)).isoformat(),
+            stats["circuit_blocked_until"],
+        )
+
+    def test_retry_after_http_date_is_honored_and_large_delay_is_capped(self):
+        module = load_resolver_module()
+        fixed_now = datetime(2026, 8, 31, 3, 0, tzinfo=timezone.utc)
+        cases = (
+            (format_datetime(fixed_now + timedelta(minutes=10), usegmt=True), 600),
+            ("999999", 6 * 60 * 60),
+            (None, 60 * 60),
+        )
+
+        for index, (header, expected_seconds) in enumerate(cases):
+            with self.subTest(header=header), tempfile.TemporaryDirectory() as temp_dir:
+                headers = {"Retry-After": header} if header is not None else {}
+                session = QueueSession(
+                    get_responses=[FakeResponse(status_code=429, headers=headers)]
+                )
+                db_path = str(Path(temp_dir) / f"news-{index}.db")
+                with mock.patch.object(
+                    module.GoogleNewsUrlResolver,
+                    "_utc_now",
+                    return_value=fixed_now,
+                ):
+                    resolver = module.GoogleNewsUrlResolver(
+                        session=session,
+                        db_path=db_path,
+                        min_interval_seconds=0,
+                    )
+                    resolver.resolve(
+                        f"https://news.google.com/rss/articles/CBMiRetry{index}?oc=5"
+                    )
+
+                with sqlite3.connect(db_path) as connection:
+                    blocked_until = connection.execute(
+                        "SELECT blocked_until FROM google_news_resolver_state"
+                    ).fetchone()[0]
+
+                self.assertEqual(
+                    fixed_now + timedelta(seconds=expected_seconds),
+                    datetime.fromisoformat(blocked_until),
+                )
+
+    def test_http_403_opens_the_persistent_circuit(self):
+        module = load_resolver_module()
+        source_url = "https://news.google.com/rss/articles/CBMiForbidden?oc=5"
+        fixed_now = datetime(2026, 8, 31, 3, 0, tzinfo=timezone.utc)
+        session = QueueSession(get_responses=[FakeResponse(status_code=403)])
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            module.GoogleNewsUrlResolver,
+            "_utc_now",
+            return_value=fixed_now,
+        ):
+            resolver = module.GoogleNewsUrlResolver(
+                session=session,
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+            stats = resolver.get_stats()
+
+        self.assertEqual("fallback", result.status)
+        self.assertEqual("http_403", result.error_code)
+        self.assertEqual(1, stats["circuit_opened"])
+        self.assertEqual(1, stats["fallbacks"])
+
+    def test_stats_snapshot_contains_only_sanitized_counts_and_timestamp(self):
+        module = load_resolver_module()
+        source_url = (
+            "https://news.google.com/rss/articles/CBMiNoLeak"
+            "?secret_query=must-not-appear"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resolver = module.GoogleNewsUrlResolver(
+                session=UnexpectedSession(),
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            resolver.resolve_related(source_url)
+            stats = resolver.get_stats()
+
+        serialized = json.dumps(stats, sort_keys=True)
+        self.assertNotIn(source_url, serialized)
+        self.assertNotIn("secret_query", serialized)
+        self.assertEqual(
+            {
+                "budget_exhausted",
+                "cache_hits",
+                "circuit_blocked_until",
+                "circuit_opened",
+                "circuit_skipped",
+                "fallbacks",
+                "legacy",
+                "network_resolution_attempts",
+                "related_network_skipped",
+                "resolution_calls",
+                "resolved",
+            },
+            set(stats),
+        )
 
     def test_failed_resolution_is_deferred_in_sqlite_cache(self):
         module = load_resolver_module()
