@@ -182,6 +182,23 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     "Google News", post.call_args.kwargs["json"]["username"]
                 )
 
+    def test_validation_mode_never_calls_discord(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                module.VALIDATE_ONLY = True
+                with mock.patch.object(
+                    module.requests,
+                    "post",
+                    side_effect=AssertionError("validation must not call Discord"),
+                ) as post:
+                    message_id = module.send_discord_message(
+                        "validation-only", "safe message", username="Google News"
+                    )
+
+                self.assertEqual("0", message_id)
+                post.assert_not_called()
+
     def test_all_scripts_use_shared_resolver_for_related_news(self):
         description = """
             <ul>

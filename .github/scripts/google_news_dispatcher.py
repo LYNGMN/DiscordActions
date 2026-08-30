@@ -74,6 +74,7 @@ class ProfileRunResult:
 class DispatchSummary:
     status: str
     manual_test: bool
+    validate_only: bool
     error_code: Optional[str]
     started_at: str
     finished_at: str
@@ -83,6 +84,7 @@ class DispatchSummary:
         return {
             "status": self.status,
             "manual_test": self.manual_test,
+            "validate_only": self.validate_only,
             "error_code": self.error_code,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
@@ -136,6 +138,7 @@ def run_profiles(
     env: Mapping[str, str],
     state_dir: str,
     manual_test: bool,
+    validate_only: bool = False,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
 ) -> DispatchSummary:
@@ -153,8 +156,11 @@ def run_profiles(
                 continue
 
             try:
+                profile_env = dict(env)
+                if validate_only:
+                    profile_env[profile.webhook_env] = "validation-only"
                 child_env = build_handler_environment(
-                    profile, env, state_dir, resolver_db, manual_test
+                    profile, profile_env, state_dir, resolver_db, manual_test
                 )
             except ValueError:
                 results.append(ProfileRunResult.failed(profile.profile_id, "invalid_environment"))
@@ -165,6 +171,7 @@ def run_profiles(
                     "GOOGLE_NEWS_RESULT_PATH": result_path,
                     "GOOGLE_NEWS_MAX_ITEMS": "3",
                     "GOOGLE_NEWS_MAX_AGE_MINUTES": "120",
+                    "GOOGLE_NEWS_VALIDATE_ONLY": "true" if validate_only else "false",
                 }
             )
             try:
@@ -190,6 +197,7 @@ def run_profiles(
     summary = DispatchSummary(
         status=status,
         manual_test=bool(manual_test),
+        validate_only=bool(validate_only),
         error_code=None,
         started_at=started_at,
         finished_at=_utc_timestamp(),
@@ -204,16 +212,19 @@ def run_dispatch(
     env: Mapping[str, str],
     state_dir: str,
     manual_test: bool,
+    validate_only: bool = False,
     session: Optional[requests.Session] = None,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
 ) -> DispatchSummary:
-    validate_webhooks(profiles, env, session or requests.Session())
+    if not validate_only:
+        validate_webhooks(profiles, env, session or requests.Session())
     return run_profiles(
         profiles,
         env,
         state_dir,
         manual_test,
+        validate_only=validate_only,
         subprocess_runner=subprocess_runner,
         sleep=sleep,
     )
@@ -289,6 +300,7 @@ def main(argv=None) -> int:
     parser.add_argument("--profiles", default=str(DEFAULT_PROFILES_PATH))
     parser.add_argument("--state-dir", default=".google-news-state")
     parser.add_argument("--manual-test", action="store_true")
+    parser.add_argument("--validate-only", action="store_true")
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     try:
@@ -298,6 +310,7 @@ def main(argv=None) -> int:
             os.environ,
             arguments.state_dir,
             arguments.manual_test,
+            validate_only=arguments.validate_only,
         )
     except (OSError, ValueError, RuntimeError) as error:
         error_code = str(error)
@@ -308,6 +321,7 @@ def main(argv=None) -> int:
         failed_summary = DispatchSummary(
             status="failed",
             manual_test=bool(arguments.manual_test),
+            validate_only=bool(arguments.validate_only),
             error_code=error_code,
             started_at=_utc_timestamp(),
             finished_at=_utc_timestamp(),

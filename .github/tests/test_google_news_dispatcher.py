@@ -193,6 +193,28 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             }
             self.assertTrue(other_secret_names.isdisjoint(child_env))
 
+    def test_validation_mode_skips_webhook_preflight_and_marks_child_environments(self):
+        calls = []
+        session = QueueSession([])
+        env = {"PATH": self.env["PATH"]}
+        summary = self.dispatcher.run_dispatch(
+            self.profiles[:2],
+            env,
+            self.state_dir,
+            manual_test=True,
+            validate_only=True,
+            session=session,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual([], session.calls)
+        self.assertTrue(summary.validate_only)
+        self.assertEqual(2, len(calls))
+        self.assertTrue(
+            all(call[1]["GOOGLE_NEWS_VALIDATE_ONLY"] == "true" for call in calls)
+        )
+
     def test_local_profile_failure_does_not_stop_later_profiles(self):
         profiles = self.profiles[:2]
         call_count = 0

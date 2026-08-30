@@ -46,6 +46,7 @@ TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
 RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
 PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
 RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
+VALIDATE_ONLY = os.environ.get('GOOGLE_NEWS_VALIDATE_ONLY', 'false').lower() == 'true'
 MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '5'))
 MAX_ITEMS = int(os.environ.get('GOOGLE_NEWS_MAX_ITEMS', '3'))
 MAX_AGE_MINUTES = int(os.environ.get('GOOGLE_NEWS_MAX_AGE_MINUTES', '120'))
@@ -380,6 +381,9 @@ def format_discord_message(news_item, discord_source, timezone, date_format):
 
 def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅 전송 결과의 메시지 ID를 반환합니다."""
+    if VALIDATE_ONLY:
+        logging.info("검증 모드: Discord 전송을 생략합니다.")
+        return "0"
     payload = {"content": message}
     
     if avatar_url and avatar_url.strip():
