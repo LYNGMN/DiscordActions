@@ -124,7 +124,7 @@
 
   Expected: all focused tests pass.
 
-### Task 4: Staggered workflow schedules
+### Task 4: Staggered and non-overlapping workflow schedules
 
 **Files:**
 - Modify: `.github/tests/test_google_news_manual_workflows.py`
@@ -134,6 +134,7 @@
 
 **Interfaces:**
 - Produces: Top `2,32 * * * *`, Keyword `12,42 * * * *`, Topic `22,52 * * * *`
+- Produces: workflow-level `concurrency` keyed by `${{ github.workflow }}` with `cancel-in-progress: false`
 
 - [ ] **Step 1: Write a failing exact-schedule test**
 
@@ -147,7 +148,7 @@
 
 - [ ] **Step 3: Change only the cron expressions and comments**
 
-  Preserve `workflow_dispatch`, environment variables, permissions, jobs, and message execution steps.
+  Add the exact workflow-level concurrency policy and preserve `workflow_dispatch`, environment variables, permissions, jobs, and message execution steps.
 
 - [ ] **Step 4: Run the workflow test**
 

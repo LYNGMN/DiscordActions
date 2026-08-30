@@ -2,7 +2,7 @@ name: Google News (Keyword) RSS to Discord
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 30분마다 실행
+    - cron: '12,42 * * * *'  # UTC 기준 매시 12분과 42분에 실행
   workflow_dispatch:
     inputs:
       manual_test:
@@ -10,6 +10,10 @@ on:
         required: true
         default: true
         type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 env:
   MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}

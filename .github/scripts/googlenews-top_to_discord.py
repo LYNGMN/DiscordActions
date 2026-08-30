@@ -168,12 +168,17 @@ def fetch_rss_feed(url, max_retries=3, retry_delay=5):
             response.raise_for_status()  # 4xx, 5xx 상태 코드에 대해 예외를 발생시킵니다.
             return response.content
         except RequestException as e:
-            logging.warning(f"RSS 피드 가져오기 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+            logging.warning(
+                "RSS 피드 가져오기 실패 (시도 %s/%s, 오류 유형: %s)",
+                attempt + 1,
+                max_retries,
+                type(e).__name__,
+            )
             if attempt + 1 < max_retries:
                 time.sleep(retry_delay)
             else:
-                logging.error(f"RSS 피드를 가져오는데 실패했습니다: {url}")
-                raise
+                logging.error("RSS 피드를 가져오는데 실패했습니다.")
+                raise RuntimeError("rss_fetch_failed") from None
 
 def parse_rss_feed(rss_data):
     """RSS 피드를 파싱합니다."""
@@ -323,7 +328,7 @@ def parse_html_description(html_desc, resolver):
         press_match = item.find('font', color="#6f6f6f")
         if title_match and press_match:
             google_link = title_match['href']
-            link = resolver.resolve(google_link).url
+            link = resolver.resolve_related(google_link).url
             title_text = replace_brackets(title_match.text)
             press_name = press_match.text
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
@@ -384,11 +389,19 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None, m
             return  # 성공적으로 전송되면 함수 종료
         except requests.RequestException as e:
             if attempt < max_retries - 1:
-                logging.warning(f"Discord 메시지 전송 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+                logging.warning(
+                    "Discord 메시지 전송 실패 (시도 %s/%s, 오류 유형: %s)",
+                    attempt + 1,
+                    max_retries,
+                    type(e).__name__,
+                )
                 time.sleep(retry_delay)
             else:
-                logging.error(f"Discord 메시지 전송 최종 실패: {e}")
-                raise  # 모든 재시도가 실패하면 예외를 발생시킵니다.
+                logging.error(
+                    "Discord 메시지 전송 최종 실패 (오류 유형: %s)",
+                    type(e).__name__,
+                )
+                raise RuntimeError("discord_delivery_failed") from None
 
     time.sleep(3)  # 성공적인 전송 후 3초 대기
 
@@ -401,7 +414,7 @@ def extract_news_items(description, resolver):
         if a_tag:
             title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
-            link = resolver.resolve(google_link).url
+            link = resolver.resolve_related(google_link).url
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -528,7 +541,7 @@ def main():
     try:
         rss_url, discord_source, timezone, date_format = get_rss_url()
         
-        logging.info(f"RSS 피드 URL: {rss_url}")
+        logging.info("Google News RSS 피드를 가져옵니다.")
         logging.debug(f"ORIGIN_LINK_TOP 값: {ORIGIN_LINK_TOP}")
 
         rss_data = fetch_rss_feed(rss_url)
@@ -566,6 +579,9 @@ def main():
 
         if not news_items:
             logging.info("처리할 새로운 뉴스 항목이 없습니다.")
+            logging.info(
+                "Google News URL 변환 요약: %s", resolver.get_stats()
+            )
             return
 
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
@@ -611,6 +627,7 @@ def main():
             MANUAL_TEST_MODE, manual_test_expected_count, processed_count
         )
         logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
+        logging.info("Google News URL 변환 요약: %s", resolver.get_stats())
 
     except Exception as e:
         logging.error(f"프로그램 실행 중 오류 발생: {e}", exc_info=True)
