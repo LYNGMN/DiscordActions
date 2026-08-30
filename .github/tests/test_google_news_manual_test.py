@@ -94,6 +94,16 @@ class GoogleNewsManualTestTests(unittest.TestCase):
             self.fetch_rows(),
         )
 
+    def test_shared_item_preparation_returns_parsed_date_and_baseline_row(self):
+        module = load_manual_test_module()
+        item = make_item("shared", "Sun, 30 Aug 2026 12:00:00 GMT")
+
+        parsed_date, row = module.prepare_baseline_item(item)
+
+        self.assertEqual("shared", row[1])
+        self.assertEqual("[]", row[4])
+        self.assertIsNotNone(parsed_date.tzinfo)
+
     def test_disabled_mode_preserves_items_without_writing_database(self):
         module = load_manual_test_module()
         items = [
