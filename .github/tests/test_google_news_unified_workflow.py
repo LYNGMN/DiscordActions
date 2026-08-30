@@ -57,6 +57,17 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             re.compile(r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/"),
         )
 
+    def test_webhook_secrets_are_scoped_only_to_the_dispatcher_step(self):
+        source = self.source()
+        dispatcher_index = source.index("- name: Run unified Google News dispatcher")
+        summary_index = source.index("- name: Write safe run summary")
+        before_dispatcher = source[:dispatcher_index]
+        dispatcher_section = source[dispatcher_index:summary_index]
+
+        self.assertNotIn("secrets.DISCORD_WEBHOOK_GN_", before_dispatcher)
+        for secret_name in EXPECTED_WEBHOOK_SECRETS:
+            self.assertIn("secrets.{}".format(secret_name), dispatcher_section)
+
     def test_dispatcher_is_the_only_google_news_execution_command(self):
         source = self.source()
         self.assertEqual(1, source.count(".github/scripts/google_news_dispatcher.py"))
@@ -73,6 +84,18 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("actions/download-artifact@v4", source)
         self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
+
+    def test_restore_search_is_bounded_to_one_page_of_recent_runs(self):
+        source = self.source()
+        self.assertIn(
+            "const { data: runPage } = await github.rest.actions.listWorkflowRuns",
+            source,
+        )
+        self.assertIn("const runs = runPage.workflow_runs;", source)
+        self.assertNotIn(
+            "github.paginate(\n              github.rest.actions.listWorkflowRuns",
+            source,
+        )
 
     def test_state_is_uploaded_even_after_failure(self):
         source = self.source()

@@ -33,7 +33,7 @@ def prepare_scheduled_items(
 
     cutoff = normalized_now - timedelta(minutes=max_age_minutes)
     recent = sorted(
-        (entry for entry in prepared if entry[0] >= cutoff),
+        (entry for entry in prepared if cutoff <= entry[0] <= normalized_now),
         key=lambda entry: (entry[0], entry[1]),
     )
     selected = recent[-max_items:] if max_items else []

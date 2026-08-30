@@ -132,6 +132,21 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertEqual([], selected)
         self.assertEqual(["one"], [row[0] for row in self.rows()])
 
+    def test_future_items_are_not_selected_as_recent(self):
+        items = [
+            make_item("recent", "Sun, 30 Aug 2026 11:40:00 GMT"),
+            make_item("future", "Mon, 31 Aug 2026 12:00:00 GMT"),
+        ]
+
+        selected = self.module.prepare_scheduled_items(
+            items,
+            self.db_path,
+            datetime(2026, 8, 30, 12, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(["recent"], item_guids(selected))
+        self.assertEqual(["future"], [row[0] for row in self.rows()])
+
     def test_reserve_is_atomic_and_pending_is_already_known(self):
         self.assertTrue(self.module.reserve_delivery(self.db_path, "guid-1"))
         self.assertFalse(self.module.reserve_delivery(self.db_path, "guid-1"))

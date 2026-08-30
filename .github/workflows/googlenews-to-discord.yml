@@ -24,19 +24,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || vars.GOOGLE_NEWS_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
-      DISCORD_WEBHOOK_GN_TOP_US: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_US }}
-      DISCORD_WEBHOOK_GN_TOP_KR: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_KR }}
-      DISCORD_WEBHOOK_GN_TOP_JP: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_JP }}
-      DISCORD_WEBHOOK_GN_TOP_CN: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_CN }}
-      DISCORD_WEBHOOK_GN_TOPIC_KOREA: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_KOREA }}
-      DISCORD_WEBHOOK_GN_TOPIC_SEOUL: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SEOUL }}
-      DISCORD_WEBHOOK_GN_TOPIC_ENT: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_ENT }}
-      DISCORD_WEBHOOK_GN_TOPIC_TECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_TECH }}
-      DISCORD_WEBHOOK_GN_TOPIC_SCITECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SCITECH }}
-      DISCORD_WEBHOOK_GN_KEYWORD_NOCODE: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_NOCODE }}
-      DISCORD_WEBHOOK_GN_KEYWORD_IU: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_IU }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -53,24 +40,25 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const runs = await github.paginate(
-              github.rest.actions.listWorkflowRuns,
-              {
-                owner,
-                repo,
-                workflow_id: 'googlenews-to-discord.yml',
-                status: 'completed',
-                per_page: 100,
-              }
-            );
+            const { data: runPage } = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'googlenews-to-discord.yml',
+              status: 'completed',
+              per_page: 100,
+            });
+            const runs = runPage.workflow_runs;
             let artifactId = '';
             let sourceRunId = '';
             for (const run of runs) {
               if (run.id === context.runId) continue;
-              const artifacts = await github.paginate(
-                github.rest.actions.listWorkflowRunArtifacts,
-                { owner, repo, run_id: run.id, per_page: 100 }
-              );
+              const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner,
+                repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const artifacts = artifactPage.artifacts;
               const state = artifacts.find(
                 artifact => artifact.name === 'google-news-state' && !artifact.expired
               );
@@ -104,6 +92,19 @@ jobs:
         run: pip install -r .github/requirements.txt
 
       - name: Run unified Google News dispatcher
+        env:
+          MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
+          DISCORD_WEBHOOK_GN_TOP_US: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_US }}
+          DISCORD_WEBHOOK_GN_TOP_KR: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_KR }}
+          DISCORD_WEBHOOK_GN_TOP_JP: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_JP }}
+          DISCORD_WEBHOOK_GN_TOP_CN: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_CN }}
+          DISCORD_WEBHOOK_GN_TOPIC_KOREA: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_KOREA }}
+          DISCORD_WEBHOOK_GN_TOPIC_SEOUL: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SEOUL }}
+          DISCORD_WEBHOOK_GN_TOPIC_ENT: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_ENT }}
+          DISCORD_WEBHOOK_GN_TOPIC_TECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_TECH }}
+          DISCORD_WEBHOOK_GN_TOPIC_SCITECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SCITECH }}
+          DISCORD_WEBHOOK_GN_KEYWORD_NOCODE: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_NOCODE }}
+          DISCORD_WEBHOOK_GN_KEYWORD_IU: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_IU }}
         run: |
           manual_test_arg=()
           if [[ "$MANUAL_TEST_MODE" == "true" ]]; then
