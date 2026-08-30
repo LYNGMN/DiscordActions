@@ -18,6 +18,15 @@ from google_news_manual_test import (
     prepare_manual_test_items,
     validate_manual_test_result,
 )
+from google_news_delivery_state import (
+    count_pending_deliveries,
+    mark_delivery_sent,
+    prepare_scheduled_items,
+    reserve_delivery,
+)
+from google_news_discord_delivery import send_webhook_message
+from google_news_profile_result import write_profile_result
+from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
 
 # 로깅 설정
@@ -42,9 +51,16 @@ MANUAL_TEST_MODE = os.environ.get('MANUAL_TEST_MODE', 'false').lower() == 'true'
 KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
 KEYWORD = os.environ.get('KEYWORD', '')
 RSS_URL_KEYWORD = os.environ.get('RSS_URL_KEYWORD', '')
+PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
+RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
+VALIDATE_ONLY = os.environ.get('GOOGLE_NEWS_VALIDATE_ONLY', 'false').lower() == 'true'
+MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '5'))
+MAX_ITEMS = int(os.environ.get('GOOGLE_NEWS_MAX_ITEMS', '3'))
+MAX_AGE_MINUTES = int(os.environ.get('GOOGLE_NEWS_MAX_AGE_MINUTES', '120'))
 
 # DB 설정
-DB_PATH = 'google_news_keyword.db'
+DB_PATH = os.environ.get('GOOGLE_NEWS_DB_PATH', 'google_news_keyword.db')
+RESOLVER_DB_PATH = os.environ.get('GOOGLE_NEWS_RESOLVER_DB_PATH', DB_PATH)
 
 country_configs = {
     # 동아시아
@@ -261,25 +277,20 @@ def save_news_item(pub_date, guid, title, link, related_news):
         
         logging.info(f"뉴스 항목 저장/업데이트: {guid}")
 
-def fetch_rss_feed(url, max_retries=3, retry_delay=5):
+def fetch_rss_feed(url, request_guard):
     """RSS 피드를 가져옵니다."""
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            return response.content
-        except requests.RequestException as e:
-            logging.warning(
-                "RSS 피드 가져오기 실패 (시도 %s/%s, 오류 유형: %s)",
-                attempt + 1,
-                max_retries,
-                type(e).__name__,
-            )
-            if attempt + 1 < max_retries:
-                time.sleep(retry_delay)
-            else:
-                logging.error("RSS 피드를 가져오는데 실패했습니다.")
-                raise RuntimeError("rss_fetch_failed") from None
+    try:
+        response = request_guard.request(
+            "get",
+            url,
+            headers={"User-Agent": GoogleNewsUrlResolver.USER_AGENT},
+        )
+        return response.content
+    except BlockedRequestError:
+        raise
+    except requests.RequestException as error:
+        logging.warning("RSS 피드 가져오기 실패 (오류 유형: %s)", type(error).__name__)
+        raise RuntimeError("rss_fetch_failed") from None
 
 def parse_rss_feed(rss_data):
     """RSS 피드를 파싱합니다."""
@@ -289,32 +300,6 @@ def parse_rss_feed(rss_data):
     except ET.ParseError as e:
         logging.error(f"RSS 데이터 파싱 중 오류 발생: {e}")
         raise
-
-def get_rss_url():
-    rss_base_url = "https://news.google.com/rss/search"
-    
-    if KEYWORD_MODE:
-        encoded_keyword = requests.utils.quote(KEYWORD)
-        query_params = [f"q={encoded_keyword}"]
-        
-        if WHEN:
-            query_params[-1] += f"+when:{WHEN}"
-        elif AFTER_DATE or BEFORE_DATE:
-            if AFTER_DATE:
-                query_params[-1] += f"+after:{AFTER_DATE}"
-            if BEFORE_DATE:
-                query_params[-1] += f"+before:{BEFORE_DATE}"
-        
-        query_string = "+".join(query_params)
-        
-        if HL and GL and CEID:
-            rss_url = f"{rss_base_url}?{query_string}&hl={HL}&gl={GL}&ceid={CEID}"
-        else:
-            rss_url = f"{rss_base_url}?{query_string}&hl=ko&gl=KR&ceid=KR:ko"
-        
-        return rss_url, KEYWORD
-    else:
-        return RSS_URL_KEYWORD, None
 
 def extract_rss_feed_keyword(title):
     """RSS 피드 제목에서 키워드를 추출합니다."""
@@ -350,8 +335,11 @@ def convert_to_local_time(pub_date, country_code):
 def parse_rss_date(pub_date, country_code='KR'):
     return convert_to_local_time(pub_date, country_code)
 
-def send_discord_message(webhook_url, message, avatar_url=None, username=None, max_retries=3, retry_delay=5):
-    """Discord 웹훅을 사용하여 메시지를 전송합니다. 실패 시 재시도합니다."""
+def send_discord_message(webhook_url, message, avatar_url=None, username=None):
+    """Discord 웹훅 전송 결과의 메시지 ID를 반환합니다."""
+    if VALIDATE_ONLY:
+        logging.info("검증 모드: Discord 전송을 생략합니다.")
+        return "0"
     payload = {"content": message}
     
     if avatar_url and avatar_url.strip():
@@ -360,31 +348,26 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None, m
     if username and username.strip():
         payload["username"] = username
     
-    headers = {"Content-Type": "application/json"}
+    try:
+        message_id = send_webhook_message(webhook_url, payload)
+        logging.info("Discord에 메시지 게시 완료")
+        return message_id
+    except (requests.RequestException, TypeError, ValueError) as error:
+        logging.error("Discord 메시지 전송 실패 (오류 유형: %s)", type(error).__name__)
+        raise RuntimeError("discord_delivery_failed") from None
 
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(webhook_url, json=payload, headers=headers)
-            response.raise_for_status()
-            logging.info("Discord에 메시지 게시 완료")
-            return
-        except requests.RequestException as e:
-            if attempt < max_retries - 1:
-                logging.warning(
-                    "Discord 메시지 전송 실패 (시도 %s/%s, 오류 유형: %s)",
-                    attempt + 1,
-                    max_retries,
-                    type(e).__name__,
-                )
-                time.sleep(retry_delay)
-            else:
-                logging.error(
-                    "Discord 메시지 전송 최종 실패 (오류 유형: %s)",
-                    type(e).__name__,
-                )
-                raise RuntimeError("discord_delivery_failed") from None
 
-    time.sleep(3)  # 성공적인 전송 후 3초 대기
+def record_profile_result(status, processed_count, error_code=None):
+    if not RESULT_PATH:
+        return
+    write_profile_result(
+        RESULT_PATH,
+        PROFILE_ID,
+        status,
+        processed_count,
+        count_pending_deliveries(DB_PATH),
+        error_code,
+    )
 
 def extract_news_items(description, resolver):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
@@ -530,26 +513,32 @@ def get_rss_url():
         return os.getenv('RSS_URL_KEYWORD'), None, 'KR'
 
 def main():
+    processed_count = 0
     try:
         rss_url, keyword, country_code = get_rss_url()
-        
-        logging.info("Google News RSS 피드를 가져옵니다.")
-        logging.debug(f"ORIGIN_LINK_KEYWORD 값: {ORIGIN_LINK_KEYWORD}")
-
-        rss_data = fetch_rss_feed(rss_url)
-        news_items = parse_rss_feed(rss_data)
-        
-        total_items = len(news_items)
-        logging.info(f"총 {total_items}개의 뉴스 항목을 가져왔습니다.")
 
         init_db(reset=INITIALIZE_KEYWORD)
 
         session = requests.Session()
+        request_guard = GoogleNewsRequestGuard(session, RESOLVER_DB_PATH)
         resolver = GoogleNewsUrlResolver(
             session=session,
-            db_path=DB_PATH,
+            db_path=RESOLVER_DB_PATH,
             enabled=ORIGIN_LINK_KEYWORD,
+            max_network_resolutions=MAX_NETWORK_RESOLUTIONS,
+            request_guard=request_guard,
         )
+        if request_guard.get_open_circuit() is not None:
+            record_profile_result("skipped", 0, "circuit_open")
+            return 75
+
+        logging.info("Google News RSS 피드를 가져옵니다.")
+        logging.debug(f"ORIGIN_LINK_KEYWORD 값: {ORIGIN_LINK_KEYWORD}")
+        rss_data = fetch_rss_feed(rss_url, request_guard)
+        news_items = parse_rss_feed(rss_data)
+
+        total_items = len(news_items)
+        logging.info(f"총 {total_items}개의 뉴스 항목을 가져왔습니다.")
         
         if INITIALIZE_KEYWORD:
             news_items = sorted(news_items, key=lambda item: parser.parse(item.find('pubDate').text))
@@ -560,9 +549,16 @@ def main():
             news_items = new_items
             logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
 
-        news_items = prepare_manual_test_items(
-            news_items, DB_PATH, MANUAL_TEST_MODE
-        )
+        if MANUAL_TEST_MODE:
+            news_items = prepare_manual_test_items(news_items, DB_PATH, True)
+        else:
+            news_items = prepare_scheduled_items(
+                news_items,
+                DB_PATH,
+                datetime.now(pytz.UTC),
+                max_items=MAX_ITEMS,
+                max_age_minutes=MAX_AGE_MINUTES,
+            )
         manual_test_expected_count = len(news_items)
         if MANUAL_TEST_MODE:
             logging.info(
@@ -574,14 +570,15 @@ def main():
             logging.info(
                 "Google News URL 변환 요약: %s", resolver.get_stats()
             )
-            return
+            record_profile_result("success", 0)
+            return 0
 
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
         logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
 
         hl, ceid, google_news, country_name, country_name_en, flag, timezone, date_format = country_configs.get(country_code, country_configs['US'])
 
-        processed_count = 0
+        profile_failed = False
         for item in news_items:
             try:
                 guid = item.find('guid').text
@@ -610,7 +607,9 @@ def main():
                     discord_message += f"\n{description}"
                 discord_message += f"\n\n📅 {formatted_date}"
 
-                send_discord_message(
+                if not reserve_delivery(DB_PATH, guid):
+                    continue
+                message_id = send_discord_message(
                     DISCORD_WEBHOOK_KEYWORD,
                     discord_message,
                     avatar_url=DISCORD_AVATAR_KEYWORD,
@@ -618,30 +617,44 @@ def main():
                 )
 
                 save_news_item(pub_date, guid, title, link, json.dumps(related_news, ensure_ascii=False))
+                mark_delivery_sent(DB_PATH, guid, message_id)
 
                 processed_count += 1
                 logging.info(f"뉴스 항목 처리 완료: {title}")
 
-            except Exception as e:
-                logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
+            except Exception as error:
+                profile_failed = True
+                logging.error("뉴스 항목 처리 실패 (오류 유형: %s)", type(error).__name__)
                 continue
 
         validate_manual_test_result(
             MANUAL_TEST_MODE, manual_test_expected_count, processed_count
         )
+        if profile_failed:
+            raise RuntimeError("profile_run_failed")
         logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
         logging.info("Google News URL 변환 요약: %s", resolver.get_stats())
+        record_profile_result("success", processed_count)
+        return 0
 
-    except Exception as e:
-        logging.error(f"프로그램 실행 중 오류 발생: {e}", exc_info=True)
-        sys.exit(1)
+    except BlockedRequestError as error:
+        logging.error("Google News 요청이 차단되었습니다 (코드: %s)", error.error_code)
+        record_profile_result("failed", processed_count, error.error_code)
+        return 1
+    except Exception as error:
+        logging.error("프로필 실행 실패 (오류 유형: %s)", type(error).__name__)
+        record_profile_result("failed", processed_count, "profile_run_failed")
+        return 1
 
 if __name__ == "__main__":
     try:
         check_env_variables()
-        main()
-    except Exception as e:
-        logging.error(f"오류 발생: {e}", exc_info=True)
-        sys.exit(1)  # 오류 발생 시 비정상 종료
+        exit_code = main()
+    except Exception as error:
+        logging.error("실행 준비 실패 (오류 유형: %s)", type(error).__name__)
+        exit_code = 1
     else:
-        logging.info("프로그램 정상 종료")
+        if exit_code == 0:
+            logging.info("프로그램 정상 종료")
+    if exit_code:
+        sys.exit(exit_code)

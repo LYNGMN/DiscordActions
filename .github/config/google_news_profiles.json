@@ -1,0 +1,147 @@
+[
+  {
+    "id": "top_us",
+    "handler": "top",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOP_US",
+    "expected_webhook_name": "Google News - TOP - US",
+    "state_db": "top_us.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOP_MODE": "true",
+      "TOP_COUNTRY": "US"
+    }
+  },
+  {
+    "id": "top_kr",
+    "handler": "top",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOP_KR",
+    "expected_webhook_name": "Google News - TOP - KR",
+    "state_db": "top_kr.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOP_MODE": "true",
+      "TOP_COUNTRY": "KR"
+    }
+  },
+  {
+    "id": "top_jp",
+    "handler": "top",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOP_JP",
+    "expected_webhook_name": "Google News - TOP - JP",
+    "state_db": "top_jp.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOP_MODE": "true",
+      "TOP_COUNTRY": "JP"
+    }
+  },
+  {
+    "id": "top_cn",
+    "handler": "top",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOP_CN",
+    "expected_webhook_name": "Google News - TOP - CN",
+    "state_db": "top_cn.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOP_MODE": "true",
+      "TOP_COUNTRY": "CN"
+    }
+  },
+  {
+    "id": "topic_korea",
+    "handler": "topic",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOPIC_KOREA",
+    "expected_webhook_name": "Google News - TOPIC - KOREA",
+    "state_db": "topic_korea.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOPIC_MODE": "true",
+      "TOPIC_KEYWORD": "korea",
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+    }
+  },
+  {
+    "id": "topic_seoul",
+    "handler": "keyword",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOPIC_SEOUL",
+    "expected_webhook_name": "Google News - TOPIC - SEOUL",
+    "state_db": "topic_seoul.db",
+    "visible_username": "Google News",
+    "environment": {
+      "KEYWORD_MODE": "true",
+      "KEYWORD": "서울",
+      "HL": "ko",
+      "GL": "KR",
+      "CEID": "KR:ko"
+    }
+  },
+  {
+    "id": "topic_ent",
+    "handler": "topic",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOPIC_ENT",
+    "expected_webhook_name": "Google News - TOPIC - ENT",
+    "state_db": "topic_ent.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOPIC_MODE": "true",
+      "TOPIC_KEYWORD": "entertainment",
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+    }
+  },
+  {
+    "id": "topic_tech",
+    "handler": "topic",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOPIC_TECH",
+    "expected_webhook_name": "Google News - TOPIC - TECH",
+    "state_db": "topic_tech.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOPIC_MODE": "true",
+      "TOPIC_KEYWORD": "technology",
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+    }
+  },
+  {
+    "id": "topic_scitech",
+    "handler": "topic",
+    "webhook_env": "DISCORD_WEBHOOK_GN_TOPIC_SCITECH",
+    "expected_webhook_name": "Google News - TOPIC - SCITECH",
+    "state_db": "topic_scitech.db",
+    "visible_username": "Google News",
+    "environment": {
+      "TOPIC_MODE": "true",
+      "TOPIC_KEYWORD": "science_technology",
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+    }
+  },
+  {
+    "id": "keyword_nocode",
+    "handler": "keyword",
+    "webhook_env": "DISCORD_WEBHOOK_GN_KEYWORD_NOCODE",
+    "expected_webhook_name": "Google News - KEYWORD - NOCODE",
+    "state_db": "keyword_nocode.db",
+    "visible_username": "Google News",
+    "environment": {
+      "KEYWORD_MODE": "true",
+      "KEYWORD": "노코드 OR \"no-code\" OR nocode",
+      "HL": "ko",
+      "GL": "KR",
+      "CEID": "KR:ko"
+    }
+  },
+  {
+    "id": "keyword_iu",
+    "handler": "keyword",
+    "webhook_env": "DISCORD_WEBHOOK_GN_KEYWORD_IU",
+    "expected_webhook_name": "Google News - KEYWORD - IU",
+    "state_db": "keyword_iu.db",
+    "visible_username": "Google News",
+    "environment": {
+      "KEYWORD_MODE": "true",
+      "KEYWORD": "아이유 OR \"IU 가수\"",
+      "HL": "ko",
+      "GL": "KR",
+      "CEID": "KR:ko"
+    }
+  }
+]

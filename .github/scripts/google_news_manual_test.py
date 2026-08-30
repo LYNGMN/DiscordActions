@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import List, Sequence, Tuple
 from xml.etree.ElementTree import Element
@@ -15,7 +15,7 @@ def prepare_manual_test_items(
     if not enabled or not item_list:
         return item_list
 
-    prepared_items = [_prepare_item(item) for item in item_list]
+    prepared_items = [prepare_baseline_item(item) for item in item_list]
     latest_index = max(
         range(len(prepared_items)),
         key=lambda index: prepared_items[index][0],
@@ -49,7 +49,7 @@ def validate_manual_test_result(
         )
 
 
-def _prepare_item(item: Element) -> Tuple[datetime, BaselineRow]:
+def prepare_baseline_item(item: Element) -> Tuple[datetime, BaselineRow]:
     pub_date = _required_text(item, "pubDate")
     guid = _required_text(item, "guid")
     title = _required_text(item, "title")
@@ -58,6 +58,8 @@ def _prepare_item(item: Element) -> Tuple[datetime, BaselineRow]:
         parsed_date = parsedate_to_datetime(pub_date)
     except (TypeError, ValueError) as error:
         raise ValueError("invalid required field: pubDate") from error
+    if parsed_date.tzinfo is None:
+        parsed_date = parsed_date.replace(tzinfo=timezone.utc)
     return parsed_date, (pub_date, guid, title, link, "[]")
 
 

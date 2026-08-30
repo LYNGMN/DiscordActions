@@ -75,6 +75,23 @@ class QueueSession:
         return response
 
 
+class RecordingRequestGuard:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def get_open_circuit(self):
+        return None
+
+    def clear_circuit(self):
+        return None
+
+    def request(self, method, url, **kwargs):
+        self.calls.append({"method": method, "url": url, "kwargs": kwargs})
+        if not self.responses:
+            raise AssertionError("unexpected guarded request")
+        return self.responses.pop(0)
+
 class GoogleNewsUrlResolverTests(unittest.TestCase):
     @staticmethod
     def _successful_responses(original_url):
@@ -171,6 +188,28 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
         self.assertEqual(article_id, inner_payload[2])
         self.assertEqual(1725891265, inner_payload[3])
         self.assertEqual("signature-value", inner_payload[4])
+
+    def test_injected_request_guard_handles_parameter_and_rpc_requests(self):
+        module = load_resolver_module()
+        article_id = "CBMiInjectedGuard"
+        source_url = "https://news.google.com/rss/articles/{}?oc=5".format(article_id)
+        original_url = "https://publisher.example/guarded"
+        get_response, post_response = self._successful_responses(original_url)
+        guard = RecordingRequestGuard([get_response, post_response])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resolver = module.GoogleNewsUrlResolver(
+                session=UnexpectedSession(),
+                db_path=str(Path(temp_dir) / "news.db"),
+                request_guard=guard,
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+
+        self.assertEqual("resolved", result.status)
+        self.assertEqual(["get", "post"], [call["method"] for call in guard.calls])
+        self.assertTrue(guard.calls[0]["url"].endswith(article_id))
+        self.assertEqual(module.GoogleNewsUrlResolver.BATCH_EXECUTE_URL, guard.calls[1]["url"])
 
     def test_missing_parameters_on_articles_path_falls_back_to_rss_path(self):
         module = load_resolver_module()
