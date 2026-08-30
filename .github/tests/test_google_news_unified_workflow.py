@@ -105,6 +105,7 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", upload_section)
         self.assertIn("retention-days: 90", upload_section)
         self.assertIn("path: .google-news-state/", upload_section)
+        self.assertIn("include-hidden-files: true", upload_section)
 
     def test_ci_compiles_every_new_runtime_module_on_python_38(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")

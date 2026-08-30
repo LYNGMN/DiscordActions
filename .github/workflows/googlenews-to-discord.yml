@@ -137,4 +137,5 @@ jobs:
           name: google-news-state
           path: .google-news-state/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 90
