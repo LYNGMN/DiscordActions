@@ -86,6 +86,13 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
 
+    def test_restore_downloads_from_the_run_that_owns_the_artifact(self):
+        source = self.source()
+        self.assertIn(
+            "run-id: ${{ steps.previous_state.outputs.source-run-id }}",
+            source,
+        )
+
     def test_restore_search_is_bounded_to_one_page_of_recent_runs(self):
         source = self.source()
         self.assertIn(
