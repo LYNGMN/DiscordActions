@@ -64,4 +64,3 @@ def _non_negative_count(value: int, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError("{} must be a non-negative integer".format(name))
     return value
-

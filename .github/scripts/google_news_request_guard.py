@@ -177,4 +177,3 @@ class GoogleNewsRequestGuard:
         if current.tzinfo is None:
             return current.replace(tzinfo=timezone.utc)
         return current
-
