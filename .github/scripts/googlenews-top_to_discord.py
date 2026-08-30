@@ -14,6 +14,10 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
+from google_news_manual_test import (
+    prepare_manual_test_items,
+    validate_manual_test_result,
+)
 from google_news_url_resolver import GoogleNewsUrlResolver
 
 # 로깅 설정
@@ -28,6 +32,7 @@ ADVANCED_FILTER_TOP = os.environ.get('ADVANCED_FILTER_TOP', '')
 DATE_FILTER_TOP = os.environ.get('DATE_FILTER_TOP', '')
 ORIGIN_LINK_TOP = os.getenv('ORIGIN_LINK_TOP', '').lower()
 ORIGIN_LINK_TOP = ORIGIN_LINK_TOP not in ['false', 'f', '0', 'no', 'n']
+MANUAL_TEST_MODE = os.environ.get('MANUAL_TEST_MODE', 'false').lower() == 'true'
 TOP_MODE = os.environ.get('TOP_MODE', 'false').lower() == 'true'
 TOP_COUNTRY = os.environ.get('TOP_COUNTRY')
 RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
@@ -550,6 +555,15 @@ def main():
             news_items = new_items
             logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
 
+        news_items = prepare_manual_test_items(
+            news_items, DB_PATH, MANUAL_TEST_MODE
+        )
+        manual_test_expected_count = len(news_items)
+        if MANUAL_TEST_MODE:
+            logging.info(
+                f"수동 테스트 모드: {manual_test_expected_count}개의 최신 항목을 처리합니다."
+            )
+
         if not news_items:
             logging.info("처리할 새로운 뉴스 항목이 없습니다.")
             return
@@ -593,6 +607,9 @@ def main():
                 logging.error(f"뉴스 항목 '{item.find('title').text if item.find('title') is not None else 'Unknown'}' 처리 중 오류 발생: {e}", exc_info=True)
                 continue
 
+        validate_manual_test_result(
+            MANUAL_TEST_MODE, manual_test_expected_count, processed_count
+        )
         logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
 
     except Exception as e:

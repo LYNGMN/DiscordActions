@@ -31,5 +31,6 @@ jobs:
       - name: Compile Google News Scripts
         run: >-
           python -m py_compile
+          .github/scripts/google_news_manual_test.py
           .github/scripts/google_news_url_resolver.py
           .github/scripts/googlenews-*_to_discord.py
