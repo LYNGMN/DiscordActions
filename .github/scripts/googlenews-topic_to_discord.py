@@ -6,16 +6,16 @@ import time
 import random
 import logging
 import json
-import base64
 import sqlite3
 import sys
 import pytz
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode, unquote, quote
+from urllib.parse import urlparse
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
+from google_news_url_resolver import GoogleNewsUrlResolver
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -910,174 +910,6 @@ def save_news_item(pub_date, guid, title, link, topic, related_news):
         
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
-def fetch_decoded_batch_execute(id):
-    s = (
-        '[[["Fbv4je","[\\"garturlreq\\",[[\\"en-US\\",\\"US\\",[\\"FINANCE_TOP_INDICES\\",\\"WEB_TEST_1_0_0\\"],'
-        'null,null,1,1,\\"US:en\\",null,180,null,null,null,null,null,0,null,null,[1608992183,723341000]],'
-        '\\"en-US\\",\\"US\\",1,[2,3,4,8],1,0,\\"655000234\\",0,0,null,0],\\"' +
-        id +
-        '\\"]",null,"generic"]]]'
-    )
-
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-        "Referer": "https://news.google.com/"
-    }
-
-    response = requests.post(
-        "https://news.google.com/_/DotsSplashUi/data/batchexecute?rpcids=Fbv4je",
-        headers=headers,
-        data={"f.req": s}
-    )
-
-    if response.status_code != 200:
-        raise Exception("Failed to fetch data from Google.")
-
-    text = response.text
-    header = '[\\"garturlres\\",\\"'
-    footer = '\\",'
-    if header not in text:
-        raise Exception(f"Header not found in response: {text}")
-    start = text.split(header, 1)[1]
-    if footer not in start:
-        raise Exception("Footer not found in response.")
-    url = start.split(footer, 1)[0]
-    return url
-
-def decode_base64_url_part(encoded_str):
-    base64_str = encoded_str.replace("-", "+").replace("_", "/")
-    base64_str += "=" * ((4 - len(base64_str) % 4) % 4)
-    try:
-        decoded_bytes = base64.urlsafe_b64decode(base64_str)
-        decoded_str = decoded_bytes.decode('latin1')
-        return decoded_str
-    except Exception as e:
-        return f"디코딩 중 오류 발생: {e}"
-
-def extract_youtube_id(decoded_str):
-    pattern = r'\x08 "\x0b([\w-]{11})\x98\x01\x01'
-    match = re.search(pattern, decoded_str)
-    if match:
-        return match.group(1)
-    return None
-
-def extract_regular_url(decoded_str):
-    """디코딩된 문자열에서 일반 URL 추출"""
-    parts = re.split(r'[^\x20-\x7E]+', decoded_str)
-    url_pattern = r'(https?://[^\s]+)'
-    for part in parts:
-        match = re.search(url_pattern, part)
-        if match:
-            return match.group(0)
-    return None
-
-def unescape_unicode(text):
-    """유니코드 이스케이프 시퀀스를 실제 문자로 변환합니다."""
-    return re.sub(
-        r'\\u([0-9a-fA-F]{4})',
-        lambda m: chr(int(m.group(1), 16)),
-        text
-    )
-
-def clean_url(url):
-    """URL을 정리하고 유니코드 문자를 처리하는 함수"""
-    # 유니코드 이스케이프 시퀀스 처리
-    url = unescape_unicode(url)
-    
-    # 백슬래시를 정리
-    url = url.replace('\\', '')
-    
-    # URL 디코딩 (예: %2F -> /, %40 -> @ 등)
-    url = unquote(url)
-
-    parsed_url = urlparse(url)
-    
-    # MSN 링크 특별 처리: HTTPS로 변환 및 불필요한 쿼리 파라미터 제거
-    if parsed_url.netloc.endswith('msn.com'):
-        parsed_url = parsed_url._replace(scheme='https')
-        query_params = parse_qs(parsed_url.query)
-        cleaned_params = {k: v[0] for k, v in query_params.items() if k in ['id', 'article']}
-        cleaned_query = urlencode(cleaned_params)
-        parsed_url = parsed_url._replace(query=cleaned_query)
-    
-    # 공백 등 비정상적인 문자 처리
-    # safe 파라미터에 특수 문자들을 포함하여 인코딩되지 않도록 설정
-    safe_chars = "/:@&=+$,?#"
-    cleaned_path = quote(parsed_url.path, safe=safe_chars)
-    cleaned_query = quote(parsed_url.query, safe=safe_chars)
-    
-    # URL 재구성
-    cleaned_url = urlunparse(parsed_url._replace(path=cleaned_path, query=cleaned_query))
-    
-    return cleaned_url
-
-def decode_google_news_url(source_url):
-    url = urlparse(source_url)
-    path = url.path.split("/")
-    if url.hostname == "news.google.com" and len(path) > 1 and path[-2] == "articles":
-        base64_str = path[-1]
-        
-        # 먼저 새로운 방식 시도
-        try:
-            decoded_bytes = base64.urlsafe_b64decode(base64_str + '==')
-            decoded_str = decoded_bytes.decode('latin1')
-
-            prefix = b'\x08\x13\x22'.decode('latin1')
-            if decoded_str.startswith(prefix):
-                decoded_str = decoded_str[len(prefix):]
-
-            suffix = b'\xd2\x01\x00'.decode('latin1')
-            if decoded_str.endswith(suffix):
-                decoded_str = decoded_str[:-len(suffix)]
-
-            bytes_array = bytearray(decoded_str, 'latin1')
-            length = bytes_array[0]
-            if length >= 0x80:
-                decoded_str = decoded_str[2:length+1]
-            else:
-                decoded_str = decoded_str[1:length+1]
-
-            if decoded_str.startswith("AU_yqL"):
-                return clean_url(fetch_decoded_batch_execute(base64_str))
-
-            regular_url = extract_regular_url(decoded_str)
-            if regular_url:
-                return clean_url(regular_url)
-        except Exception:
-            pass  # 새로운 방식이 실패하면 기존 방식 시도
-
-		# 기존 방식 시도 (유튜브 링크 포함)
-        decoded_str = decode_base64_url_part(base64_str)
-        youtube_id = extract_youtube_id(decoded_str)
-        if youtube_id:
-            return f"https://www.youtube.com/watch?v={youtube_id}"
-
-        regular_url = extract_regular_url(decoded_str)
-        if regular_url:
-            return clean_url(regular_url)
-
-    return clean_url(source_url)  # 디코딩 실패 시 원본 URL 정리 후 반환
-
-def get_original_url(google_link, session, max_retries=5):
-    # ORIGIN_LINK_TOPIC 설정과 상관없이 항상 원본 링크를 시도
-    original_url = decode_google_news_url(google_link)
-    if original_url != google_link:
-        return original_url
-
-    # 디코딩 실패 시 requests 방식 시도
-    retries = 0
-    while retries < max_retries:
-        try:
-            response = session.get(google_link, allow_redirects=True)
-            if response.status_code == 200:
-                return clean_url(response.url)
-        except requests.RequestException as e:
-            logging.error(f"Failed to get original URL: {e}")
-        retries += 1
-
-    logging.warning(f"오리지널 링크 추출 실패, 원 링크 사용: {google_link}")
-    return clean_url(google_link)
-
 def fetch_rss_feed(url, max_retries=3, retry_delay=5):
     """RSS 피드를 가져옵니다."""
     for attempt in range(max_retries):
@@ -1127,7 +959,7 @@ def replace_brackets(text):
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
 
-def parse_html_description(html_desc, session):
+def parse_html_description(html_desc, resolver):
     """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(html_desc, 'html.parser')
     items = soup.find_all('li')
@@ -1145,7 +977,7 @@ def parse_html_description(html_desc, session):
         press_match = item.find('font', color="#6f6f6f")
         if title_match and press_match:
             google_link = title_match['href']
-            link = get_original_url(google_link, session)
+            link = resolver.resolve(google_link).url
             title_text = replace_brackets(title_match.text)
             press_name = press_match.text
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
@@ -1230,7 +1062,7 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None, m
 
     time.sleep(3)  # 성공적인 전송 후 3초 대기
 
-def extract_news_items(description, session):
+def extract_news_items(description, resolver):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
@@ -1239,7 +1071,7 @@ def extract_news_items(description, session):
         if a_tag:
             title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
-            link = get_original_url(google_link, session)
+            link = resolver.resolve(google_link).url
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -1352,6 +1184,11 @@ def main():
         init_db(reset=INITIALIZE_TOPIC)
 
         session = requests.Session()
+        resolver = GoogleNewsUrlResolver(
+            session=session,
+            db_path=DB_PATH,
+            enabled=ORIGIN_LINK_TOPIC,
+        )
         
         if INITIALIZE_TOPIC:
             news_items = sorted(news_items, key=lambda item: parse_pub_date(item.find('pubDate').text))
@@ -1385,13 +1222,13 @@ def main():
 
                 title = replace_brackets(item.find('title').text)
                 google_link = item.find('link').text
-                link = get_original_url(google_link, session)
+                link = resolver.resolve(google_link).url
                 description_html = item.find('description').text
 
-                related_news = extract_news_items(description_html, session)
+                related_news = extract_news_items(description_html, resolver)
                 related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-                description = parse_html_description(description_html, session)
+                description = parse_html_description(description_html, resolver)
 
                 if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
                     logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
