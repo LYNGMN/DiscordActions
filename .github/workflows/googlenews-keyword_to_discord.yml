@@ -4,8 +4,15 @@ on:
   schedule:
     - cron: '*/30 * * * *'  # 30분마다 실행
   workflow_dispatch:
+    inputs:
+      manual_test:
+        description: '최신 기사 1개만 전송하고 나머지는 기준선으로 저장'
+        required: true
+        default: true
+        type: boolean
 
 env:
+  MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
   INITIALIZE_MODE_KEYWORD: ${{ secrets.INITIALIZE_MODE_GOOGLENEWS_KEYWORD }}
   DISCORD_WEBHOOK_KEYWORD: ${{ secrets.DISCORD_WEBHOOK_GOOGLENEWS_KEYWORD }}
   DISCORD_AVATAR_KEYWORD: ${{ secrets.DISCORD_AVATAR_GOOGLENEWS_KEYWORD }}

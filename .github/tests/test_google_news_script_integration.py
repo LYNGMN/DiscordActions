@@ -68,6 +68,18 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     items[0]["link"],
                 )
 
+    def test_all_scripts_wire_safe_manual_test_mode(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                source = script_path.read_text(encoding="utf-8")
+
+                self.assertFalse(module.MANUAL_TEST_MODE)
+                self.assertTrue(callable(module.prepare_manual_test_items))
+                self.assertTrue(callable(module.validate_manual_test_result))
+                self.assertIn("prepare_manual_test_items(", source)
+                self.assertIn("validate_manual_test_result(", source)
+
 
 if __name__ == "__main__":
     unittest.main()
