@@ -8,6 +8,50 @@ import requests
 
 
 MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
+MAX_DISCORD_CONTENT_CHARACTERS = 2000
+TRUNCATION_MARKER = "\n…"
+DATE_MARKER = "\n📅 "
+
+
+def _discord_character_count(content: str) -> int:
+    return sum(2 if ord(character) > 0xFFFF else 1 for character in content)
+
+
+def _truncate_to_character_limit(content: str, limit: int) -> str:
+    used = 0
+    end = 0
+    for character in content:
+        width = 2 if ord(character) > 0xFFFF else 1
+        if used + width > limit:
+            break
+        used += width
+        end += 1
+    return content[:end]
+
+
+def _limit_content(content: str) -> str:
+    if _discord_character_count(content) <= MAX_DISCORD_CONTENT_CHARACTERS:
+        return content
+
+    date_start = content.rfind(DATE_MARKER)
+    if date_start > 0:
+        suffix = content[date_start:]
+        prefix_budget = (
+            MAX_DISCORD_CONTENT_CHARACTERS
+            - _discord_character_count(TRUNCATION_MARKER)
+            - _discord_character_count(suffix)
+        )
+        if prefix_budget > 0:
+            prefix = _truncate_to_character_limit(
+                content[:date_start], prefix_budget
+            ).rstrip()
+            line_break = prefix.rfind("\n")
+            if line_break >= len(prefix) // 2:
+                prefix = prefix[:line_break].rstrip()
+            return prefix + TRUNCATION_MARKER + suffix
+
+    marker_budget = MAX_DISCORD_CONTENT_CHARACTERS - _discord_character_count("…")
+    return _truncate_to_character_limit(content, marker_budget).rstrip() + "…"
 
 
 def send_webhook_message(
@@ -17,10 +61,15 @@ def send_webhook_message(
     max_rate_limit_wait_seconds: float = MAX_RATE_LIMIT_WAIT_SECONDS,
 ) -> str:
     """Post once, or retry one HTTP 429 after Discord's bounded delay."""
+    safe_payload = dict(payload)
+    content = safe_payload.get("content")
+    if isinstance(content, str):
+        safe_payload["content"] = _limit_content(content)
+
     for attempt in range(2):
         response = requests.post(
             webhook_url,
-            json=payload,
+            json=safe_payload,
             headers={"Content-Type": "application/json"},
             params={"wait": "true"},
             timeout=(5.0, 15.0),
