@@ -142,6 +142,74 @@ class YouTubeDeliveryStateTests(unittest.TestCase):
             self.assertEqual(("legacy", "Legacy", "sent"), row)
             self.assertEqual("ok", integrity)
 
+    def test_filtered_video_is_rechecked_only_when_filter_fingerprint_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "youtube.db")
+            with sqlite3.connect(db_path) as connection:
+                create_full_videos_table(connection)
+
+            self.module.record_filtered_youtube_video(
+                db_path,
+                full_video("filtered-video"),
+                "fingerprint-a",
+            )
+
+            self.assertTrue(
+                self.module.is_youtube_item_handled(
+                    db_path, "filtered-video", "fingerprint-a"
+                )
+            )
+            self.assertFalse(
+                self.module.is_youtube_item_handled(
+                    db_path, "filtered-video", "fingerprint-b"
+                )
+            )
+
+    def test_filtered_video_can_be_reserved_after_filter_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "youtube.db")
+            with sqlite3.connect(db_path) as connection:
+                create_full_videos_table(connection)
+
+            video_data = full_video("filtered-video")
+            self.module.record_filtered_youtube_video(
+                db_path,
+                video_data,
+                "fingerprint-a",
+            )
+            self.module.queue_youtube_delivery(
+                db_path,
+                "filtered-video",
+                [("primary", {"content": "now matched"})],
+                video_data=video_data,
+            )
+
+            with sqlite3.connect(db_path) as connection:
+                row = connection.execute(
+                    "SELECT delivery_status, filter_fingerprint "
+                    "FROM videos WHERE video_id = ?",
+                    ("filtered-video",),
+                ).fetchone()
+            self.assertEqual(("pending", None), row)
+
+    def test_switching_between_rss_and_api_does_not_resend_the_same_video_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "youtube.db")
+            with sqlite3.connect(db_path) as connection:
+                create_full_videos_table(connection)
+
+            rss_video = full_video("shared-video")
+            rss_video["source"] = "rss:channels"
+            self.module.save_youtube_video(db_path, rss_video, delivery_status="sent")
+
+            self.assertTrue(
+                self.module.is_youtube_item_handled(
+                    db_path,
+                    "shared-video",
+                    "new-filter-fingerprint",
+                )
+            )
+
     def test_delivery_targets_resume_at_exact_unsent_target(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = str(Path(directory) / "youtube.db")
