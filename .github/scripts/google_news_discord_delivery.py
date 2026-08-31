@@ -9,6 +9,10 @@ import requests
 
 MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
 MAX_DISCORD_CONTENT_CHARACTERS = 2000
+GOOGLE_NEWS_USERNAME = "Google News"
+GOOGLE_NEWS_AVATAR_URL = (
+    "https://discordactions.github.io/logo/media/original/news/googlenews.png"
+)
 TRUNCATION_MARKER = "\n…"
 DATE_MARKER = "\n📅 "
 
@@ -62,6 +66,8 @@ def send_webhook_message(
 ) -> str:
     """Post once, or retry one HTTP 429 after Discord's bounded delay."""
     safe_payload = dict(payload)
+    safe_payload["username"] = GOOGLE_NEWS_USERNAME
+    safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
     content = safe_payload.get("content")
     if isinstance(content, str):
         safe_payload["content"] = _limit_content(content)
