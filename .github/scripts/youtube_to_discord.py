@@ -1,5 +1,4 @@
 import os
-import requests
 import html
 import time
 import sqlite3
@@ -10,8 +9,26 @@ import logging
 import re
 import json
 import sys
-from youtube_delivery_state import partition_youtube_items
+from delivery_admin_alert import notify_admin
+from youtube_delivery_state import (
+    finalize_youtube_delivery,
+    get_search_published_after,
+    initialize_delivery_state,
+    mark_search_checkpoint,
+    mark_youtube_target_failed,
+    mark_youtube_target_sent,
+    partition_youtube_items,
+    pending_youtube_targets,
+    pending_youtube_video_ids,
+    queue_youtube_delivery,
+    save_youtube_video,
+    youtube_delivery_metrics,
+)
 from youtube_discord_delivery import YOUTUBE_AVATAR_URL, send_youtube_webhook
+from youtube_video_source import (
+    fetch_source_videos,
+    fetch_video_details as fetch_source_video_details,
+)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,25 +38,26 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 YOUTUBE_MODE = os.getenv('YOUTUBE_MODE', 'channels').lower()
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_PLAYLIST_ID = os.getenv('YOUTUBE_PLAYLIST_ID')
-YOUTUBE_PLAYLIST_SORT = os.getenv('YOUTUBE_PLAYLIST_SORT', 'default').lower()
 YOUTUBE_SEARCH_KEYWORD = os.getenv('YOUTUBE_SEARCH_KEYWORD')
-INIT_MAX_RESULTS = int(os.getenv('YOUTUBE_INIT_MAX_RESULTS') or '100')
-MAX_RESULTS = int(os.getenv('YOUTUBE_MAX_RESULTS') or '10')
-IS_FIRST_RUN = os.getenv('IS_FIRST_RUN', 'false').lower() == 'true'
 INITIALIZE_MODE_YOUTUBE = os.getenv('INITIALIZE_MODE_YOUTUBE', 'false').lower() == 'true'
 ADVANCED_FILTER_YOUTUBE = os.getenv('ADVANCED_FILTER_YOUTUBE', '')
 DATE_FILTER_YOUTUBE = os.getenv('DATE_FILTER_YOUTUBE', '')
 DISCORD_WEBHOOK_YOUTUBE = os.getenv('DISCORD_WEBHOOK_YOUTUBE')
 DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW = os.getenv('DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW')
-DISCORD_AVATAR_YOUTUBE = os.getenv('DISCORD_AVATAR_YOUTUBE', '').strip()
-DISCORD_USERNAME_YOUTUBE = os.getenv('DISCORD_USERNAME_YOUTUBE', '').strip()
+DISCORD_WEBHOOK_ADMIN = os.getenv('DISCORD_WEBHOOK_ADMIN', '')
 LANGUAGE_YOUTUBE = os.getenv('LANGUAGE_YOUTUBE', 'English')
 YOUTUBE_DETAILVIEW = os.getenv('YOUTUBE_DETAILVIEW', 'false').lower() == 'true'
 YOUTUBE_BASELINE_ONLY = os.getenv('YOUTUBE_BASELINE_ONLY', 'false').lower() == 'true'
 YOUTUBE_MANUAL_TEST_MODE = os.getenv('YOUTUBE_MANUAL_TEST_MODE', 'false').lower() == 'true'
+YOUTUBE_DELIVERY_ORDER = os.getenv(
+    'YOUTUBE_DELIVERY_ORDER', 'feed_oldest_first'
+).lower()
+YOUTUBE_RUN_SUMMARY_PATH = os.getenv(
+    'YOUTUBE_RUN_SUMMARY_PATH', 'youtube-run-summary.json'
+)
 
 # DB 설정
-DB_PATH = 'youtube_videos.db'
+DB_PATH = os.getenv('YOUTUBE_DB_PATH', 'youtube_videos.db')
 
 def check_env_variables():
     required_vars = ['YOUTUBE_API_KEY', 'YOUTUBE_MODE', 'DISCORD_WEBHOOK_YOUTUBE']
@@ -65,6 +83,8 @@ def init_db(reset=False):
     c = conn.cursor()
     if reset:
         c.execute("DROP TABLE IF EXISTS videos")
+        c.execute("DROP TABLE IF EXISTS youtube_delivery_targets")
+        c.execute("DROP TABLE IF EXISTS youtube_source_state")
         logging.info("기존 videos 테이블 삭제됨")
     c.execute('''CREATE TABLE IF NOT EXISTS videos
                  (published_at TEXT,
@@ -82,50 +102,17 @@ def init_db(reset=False):
                   live_broadcast_content TEXT,
                   scheduled_start_time TEXT,
                   caption TEXT,
-                  source TEXT)''')
+                  source TEXT,
+                  delivery_status TEXT NOT NULL DEFAULT 'sent',
+                  delivery_sequence INTEGER)''')
     conn.commit()
     conn.close()
+    initialize_delivery_state(DB_PATH)
     logging.info("데이터베이스 초기화 완료")
 
-def save_video(video_data):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO videos 
-                 (published_at, channel_title, channel_id, title, video_id, video_url, description, 
-                 category_id, category_name, duration, thumbnail_url, tags, live_broadcast_content, 
-                 scheduled_start_time, caption, source) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-              (video_data['published_at'], video_data['channel_title'], video_data['channel_id'], 
-               video_data['title'], video_data['video_id'], video_data['video_url'], 
-               video_data['description'], video_data['category_id'], video_data['category_name'], 
-               video_data['duration'], video_data['thumbnail_url'], video_data['tags'], 
-               video_data['live_broadcast_content'], video_data['scheduled_start_time'], 
-               video_data['caption'], video_data['source']))
-    conn.commit()
-    conn.close()
+def save_video(video_data, delivery_status='sent'):
+    save_youtube_video(DB_PATH, video_data, delivery_status)
     logging.info(f"새 비디오 저장됨: {video_data['video_id']}")
-
-def load_videos():
-    if not os.path.exists(DB_PATH):
-        logging.info("데이터베이스 파일이 존재하지 않습니다. 새로 생성합니다.")
-        init_db()
-        return []
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    try:
-        c.execute("SELECT * FROM videos ORDER BY published_at DESC")
-        rows = c.fetchall()
-    except sqlite3.OperationalError:
-        logging.info("테이블이 존재하지 않습니다. 새로 생성합니다.")
-        conn.close()
-        init_db()
-        return []
-    finally:
-        conn.close()
-    
-    logging.info(f"저장된 비디오 수: {len(rows)}")
-    return rows
 
 def get_channel_thumbnail(youtube, channel_id):
     try:
@@ -200,17 +187,85 @@ def create_embed_message(video, youtube):
         "attachments": []
     }
 
-def post_to_discord(message, is_embed=False, is_detail=False):
-    if is_embed:
-        payload = message
-    else:
-        payload = {"content": message}
-    
-    webhook_url = DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW if is_detail and DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW else DISCORD_WEBHOOK_YOUTUBE
+def deliver_queued_video(video_id):
+    for target, payload in pending_youtube_targets(DB_PATH, video_id):
+        webhook_url = (
+            DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW
+            if target == 'detail' and DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW
+            else DISCORD_WEBHOOK_YOUTUBE
+        )
+        try:
+            result = send_youtube_webhook(webhook_url, payload)
+        except Exception as error:
+            error_code = getattr(error, 'error_code', 'final_failure')
+            mark_youtube_target_failed(
+                DB_PATH,
+                video_id,
+                target,
+                error_code,
+                attempt_count=getattr(error, 'attempt_count', 1),
+            )
+            print("::warning title=YouTube delivery failed::A queued delivery remains pending")
+            notify_admin(
+                DISCORD_WEBHOOK_ADMIN,
+                'YouTube',
+                YOUTUBE_MODE,
+                video_id,
+                error_code,
+            )
+            raise
+        error_code = 'ambiguous_retry' if result.ambiguous_retry else None
+        if error_code:
+            logging.warning(
+                "Discord 응답 불명 재전송 완료: video_id=%s target=%s",
+                video_id,
+                target,
+            )
+            print("::warning title=YouTube ambiguous retry::A response-unknown delivery was retried")
+            notify_admin(
+                DISCORD_WEBHOOK_ADMIN,
+                'YouTube',
+                YOUTUBE_MODE,
+                video_id,
+                error_code,
+            )
+        mark_youtube_target_sent(
+            DB_PATH,
+            video_id,
+            target,
+            result.message_id,
+            last_error_code=error_code,
+            attempt_count=result.attempt_count,
+        )
+        logging.info("Discord 전송 완료: video_id=%s target=%s", video_id, target)
+        time.sleep(2)
+    if not finalize_youtube_delivery(DB_PATH, video_id):
+        raise RuntimeError("youtube_delivery_not_complete")
 
-    send_youtube_webhook(webhook_url, payload)
-    logging.info(f"Discord에 메시지 게시 완료 ({'상세' if is_detail else '기본'} 웹훅)")
-    time.sleep(2)  # 속도 제한
+
+def resume_pending_deliveries():
+    pending_ids = pending_youtube_video_ids(DB_PATH)
+    if pending_ids:
+        logging.info("미완료 YouTube 전송 재개: %s개", len(pending_ids))
+    for video_id in pending_ids:
+        deliver_queued_video(video_id)
+
+
+def write_run_summary(status):
+    metrics = {
+        'pending_count': 0,
+        'ambiguous_retry_count': 0,
+    }
+    if os.path.exists(DB_PATH):
+        metrics = youtube_delivery_metrics(DB_PATH)
+    payload = {
+        'status': status,
+        'pending_count': metrics['pending_count'],
+        'ambiguous_retry_count': metrics['ambiguous_retry_count'],
+    }
+    with open(YOUTUBE_RUN_SUMMARY_PATH, 'w', encoding='utf-8') as handle:
+        json.dump(payload, handle, sort_keys=True)
+        handle.write('\n')
 
 def parse_duration(duration):
     parsed_duration = isodate.parse_duration(duration)
@@ -336,96 +391,68 @@ def fetch_playlist_info(youtube, playlist_id):
         }
     return None
 
-def fetch_videos(youtube, mode, channel_id, playlist_id, search_keyword):
-    if mode == 'channels':
-        response = youtube.search().list(
-            channelId=channel_id,
-            order='date',
-            type='video',
-            part='snippet,id',
-            maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN or INITIALIZE_MODE_YOUTUBE else MAX_RESULTS
-        ).execute()
-        return [(item['id']['videoId'], item['snippet']) for item in response.get('items', [])]
-    elif mode == 'playlists':
-        playlist_items = []
-        next_page_token = None
-
-        while True:
-            playlist_request = youtube.playlistItems().list(
-                part="snippet",
-                playlistId=playlist_id,
-                maxResults=50,
-                pageToken=next_page_token
-            )
-            playlist_response = playlist_request.execute()
-            
-            playlist_items.extend(playlist_response['items'])
-            
-            next_page_token = playlist_response.get('nextPageToken')
-            if not next_page_token or (not IS_FIRST_RUN and not INITIALIZE_MODE_YOUTUBE and len(playlist_items) >= MAX_RESULTS):
-                break
-
-        if not IS_FIRST_RUN and not INITIALIZE_MODE_YOUTUBE:
-            playlist_items = playlist_items[:MAX_RESULTS]
-        
-        # 항상 position으로 정렬
-        playlist_items.sort(key=lambda x: x['snippet']['position'])
-        
-        # 정렬 옵션 적용
-        if YOUTUBE_PLAYLIST_SORT == 'reverse':
-            playlist_items.reverse()
-        elif YOUTUBE_PLAYLIST_SORT == 'date_newest':
-            playlist_items.sort(key=lambda x: x['snippet']['publishedAt'], reverse=True)
-        elif YOUTUBE_PLAYLIST_SORT == 'date_oldest':
-            playlist_items.sort(key=lambda x: x['snippet']['publishedAt'])
-        # 'default'인 경우 이미 position으로 정렬되어 있으므로 추가 작업 불필요
-        
-        return [(item['snippet']['resourceId']['videoId'], item['snippet']) for item in playlist_items]
-    elif mode == 'search':
-        response = youtube.search().list(
-            q=search_keyword,
-            order='date',
-            type='video',
-            part='snippet,id',
-            maxResults=INIT_MAX_RESULTS if IS_FIRST_RUN or INITIALIZE_MODE_YOUTUBE else MAX_RESULTS
-        ).execute()
-        return [(item['id']['videoId'], item['snippet']) for item in response.get('items', [])]
-    else:
-        raise ValueError("잘못된 모드입니다.")
+def fetch_videos(
+    youtube,
+    mode,
+    channel_id,
+    playlist_id,
+    search_keyword,
+    known_video_ids=None,
+):
+    published_after = (
+        get_search_published_after(DB_PATH) if mode == 'search' else None
+    )
+    try:
+        return fetch_source_videos(
+            youtube,
+            mode,
+            channel_id=channel_id,
+            playlist_id=playlist_id,
+            search_keyword=search_keyword,
+            published_after=published_after,
+            known_video_ids=known_video_ids,
+        )
+    except Exception as error:
+        logging.error("YouTube 목록 조회 실패 (오류 유형: %s)", type(error).__name__)
+        raise RuntimeError("youtube_source_fetch_failed") from None
 
 def fetch_video_details(youtube, video_ids):
-    video_details = []
-    chunk_size = 50
-    for i in range(0, len(video_ids), chunk_size):
-        chunk = video_ids[i:i+chunk_size]
-        try:
-            video_details_response = youtube.videos().list(
-                part="snippet,contentDetails,liveStreamingDetails",
-                id=','.join(chunk)
-            ).execute()
-            video_details.extend(video_details_response.get('items', []))
-        except Exception as error:
-            logging.error("비디오 세부 정보 조회 실패 (오류 유형: %s)", type(error).__name__)
-            raise RuntimeError("youtube_video_details_failed") from None
-    return video_details
+    try:
+        return fetch_source_video_details(youtube, video_ids)
+    except Exception as error:
+        logging.error("비디오 세부 정보 조회 실패 (오류 유형: %s)", type(error).__name__)
+        raise RuntimeError("youtube_video_details_failed") from None
 
 def fetch_and_post_videos(youtube):
     logging.info(f"fetch_and_post_videos 함수 시작")
     logging.info(f"YOUTUBE_DETAILVIEW 설정: {YOUTUBE_DETAILVIEW}")
-    logging.info(f"YOUTUBE_PLAYLIST_SORT 설정: {YOUTUBE_PLAYLIST_SORT}")
+    logging.info(f"YOUTUBE_DELIVERY_ORDER 설정: {YOUTUBE_DELIVERY_ORDER}")
 
     if not os.path.exists(DB_PATH):
         init_db()
+    else:
+        initialize_delivery_state(DB_PATH)
+
+    # 저장된 payload를 먼저 처리하므로 피드에서 사라진 항목도 누락되지 않습니다.
+    resume_pending_deliveries()
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT video_id FROM videos")
+    c.execute("SELECT video_id FROM videos WHERE delivery_status = 'sent'")
     existing_video_ids = set(row[0] for row in c.fetchall())
     conn.close()
 
     since_date, until_date, past_date = parse_date_filter(DATE_FILTER_YOUTUBE)
 
-    videos = fetch_videos(youtube, YOUTUBE_MODE, YOUTUBE_CHANNEL_ID, YOUTUBE_PLAYLIST_ID, YOUTUBE_SEARCH_KEYWORD)
+    scan_checkpoint = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    videos = fetch_videos(
+        youtube,
+        YOUTUBE_MODE,
+        YOUTUBE_CHANNEL_ID,
+        YOUTUBE_PLAYLIST_ID,
+        YOUTUBE_SEARCH_KEYWORD,
+        known_video_ids=existing_video_ids,
+    )
     video_ids = [video[0] for video in videos]
 
     video_details = fetch_video_details(youtube, video_ids)
@@ -502,6 +529,7 @@ def fetch_and_post_videos(youtube):
         new_videos,
         baseline_only=YOUTUBE_BASELINE_ONLY,
         manual_test=YOUTUBE_MANUAL_TEST_MODE,
+        delivery_order=YOUTUBE_DELIVERY_ORDER,
     )
     logging.info(
         "새 비디오 선별 완료: 전송 %s개, 기준선 %s개",
@@ -514,6 +542,7 @@ def fetch_and_post_videos(youtube):
     if baseline_videos:
         logging.info("안전 기준선 저장 완료: %s개", len(baseline_videos))
 
+    queued_videos = []
     for video in delivery_videos:
         formatted_published_at = convert_to_local_time(video['published_at'])
         video_url = f"https://youtu.be/{video['video_id']}"
@@ -569,27 +598,35 @@ def fetch_and_post_videos(youtube):
                 formatted_start_time = convert_to_local_time(video['scheduled_start_time'])
                 message += f"\n\n🔴 Scheduled Live Start Time: `{formatted_start_time}`"
 
-        post_to_discord(message)
-        
+        targets = [('primary', {'content': message})]
         if YOUTUBE_DETAILVIEW:
             logging.info(f"YOUTUBE_DETAILVIEW가 True입니다. 임베드 메시지 생성 및 전송 시도")
-            try:
-                embed_message = create_embed_message(video, youtube)
-                logging.info(f"임베드 메시지 생성 완료: {video['title']}")
-                time.sleep(1)  # Discord 웹훅 속도 제한 방지를 위한 대기
-                post_to_discord(embed_message, is_embed=True, is_detail=True)
-                logging.info(f"임베드 메시지 전송 완료: {video['title']}")
-            except Exception as error:
-                logging.error("임베드 메시지 처리 실패 (오류 유형: %s)", type(error).__name__)
+            embed_message = create_embed_message(video, youtube)
+            targets.append(('detail', embed_message))
+            logging.info(f"임베드 메시지 생성 완료: {video['title']}")
         else:
             logging.info("YOUTUBE_DETAILVIEW가 False이므로 임베드 메시지를 전송하지 않습니다.")
-        
-        save_video(video)
-        logging.info(f"비디오 정보 저장 완료: {video['title']}")
 
+        # 첫 Discord 요청 전에 영상과 모든 대상 payload를 원자적으로 준비합니다.
+        queue_youtube_delivery(
+            DB_PATH,
+            video['video_id'],
+            targets,
+            video_data=video,
+        )
+        queued_videos.append((video['video_id'], video['title']))
+        logging.info(f"비디오 대기열 저장 완료: {video['title']}")
+
+    for video_id, video_title in queued_videos:
+        deliver_queued_video(video_id)
+        logging.info(f"비디오 전송 완료: {video_title}")
+
+    if YOUTUBE_MODE == 'search':
+        mark_search_checkpoint(DB_PATH, scan_checkpoint)
     logging.info("fetch_and_post_videos 함수 종료")
 
 if __name__ == "__main__":
+    run_status = 'failed'
     try:
         check_env_variables()
         if INITIALIZE_MODE_YOUTUBE:
@@ -602,7 +639,6 @@ if __name__ == "__main__":
         
         logging.info(f"YOUTUBE_MODE: {YOUTUBE_MODE}")
         logging.info(f"INITIALIZE_MODE_YOUTUBE: {INITIALIZE_MODE_YOUTUBE}")
-        logging.info(f"IS_FIRST_RUN: {IS_FIRST_RUN}")
         logging.info(f"YOUTUBE_DETAILVIEW: {YOUTUBE_DETAILVIEW}")
         logging.info(f"데이터베이스 파일 크기: {os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else '파일 없음'}")
         
@@ -612,9 +648,14 @@ if __name__ == "__main__":
         count = c.fetchone()[0]
         logging.info(f"데이터베이스의 비디오 수: {count}")
         conn.close()
+        run_status = 'success'
         
     except Exception as error:
         logging.error("실행 실패 (오류 유형: %s)", type(error).__name__)
         sys.exit(1)
     finally:
+        try:
+            write_run_summary(run_status)
+        except Exception as error:
+            logging.error("실행 요약 저장 실패 (오류 유형: %s)", type(error).__name__)
         logging.info("스크립트 실행 완료")
