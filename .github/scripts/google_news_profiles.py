@@ -202,7 +202,7 @@ def build_handler_environment(
             "GOOGLE_NEWS_PROFILE_ID": profile.profile_id,
             "GOOGLE_NEWS_DB_PATH": os.path.join(state_dir, profile.state_db),
             "GOOGLE_NEWS_RESOLVER_DB_PATH": resolver_db,
-            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "1",
+            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "2",
             "MANUAL_TEST_MODE": "true" if manual_test else "false",
         }
     )

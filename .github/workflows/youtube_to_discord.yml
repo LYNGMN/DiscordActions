@@ -2,8 +2,22 @@ name: YouTube to Discord Notification
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 매시간 실행
-  workflow_dispatch:  # 수동 실행 옵션
+    - cron: '11,26,41,56 * * * *'
+  workflow_dispatch:
+    inputs:
+      manual_test:
+        description: '최신 영상 1개만 전송하고 나머지는 기준선으로 저장'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: youtube-to-discord
+  cancel-in-progress: false
 
 env:
   INITIALIZE_MODE_YOUTUBE: ${{ secrets.INITIALIZE_MODE_YOUTUBE }}
@@ -11,94 +25,104 @@ env:
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.8'
+      - name: Find latest completed database artifact
+        id: previous_state
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const { data: runPage } = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'youtube_to_discord.yml',
+              status: 'completed',
+              per_page: 100,
+            });
+            let artifactId = '';
+            let sourceRunId = '';
+            for (const run of runPage.workflow_runs) {
+              if (run.id === context.runId) continue;
+              const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner,
+                repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const artifact = artifactPage.artifacts.find(
+                artifact => artifact.name === 'youtube_database' && !artifact.expired
+              );
+              if (artifact) {
+                artifactId = String(artifact.id);
+                sourceRunId = String(run.id);
+                break;
+              }
+            }
+            core.setOutput('artifact-id', artifactId);
+            core.setOutput('source-run-id', sourceRunId);
 
-    - name: Install Dependencies
-      run: |
-        pip install --upgrade google-api-python-client requests isodate
+      - name: Restore previous database
+        if: env.INITIALIZE_MODE_YOUTUBE != 'true' && steps.previous_state.outputs.artifact-id != ''
+        uses: actions/download-artifact@v5
+        with:
+          artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
+          path: .
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.previous_state.outputs.source-run-id }}
 
-    - name: Get latest successful run ID
-      id: get_latest_run
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        result-encoding: string
-        script: |
-          const workflow = await github.rest.actions.listWorkflowRuns({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            workflow_id: 'youtube_to_discord.yml',
-            status: 'success'
-          });
-          return workflow.data.workflow_runs[0]?.id.toString() || '';
+      - name: Inspect restored database
+        id: state
+        shell: bash
+        run: |
+          if [[ "$INITIALIZE_MODE_YOUTUBE" != "true" && -f youtube_videos.db ]]; then
+            echo "restored=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "restored=false" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: Download previous database
-      if: env.INITIALIZE_MODE_YOUTUBE != 'true' && steps.get_latest_run.outputs.result != ''
-      uses: actions/download-artifact@v4
-      with:
-        name: youtube_database
-        run-id: ${{ steps.get_latest_run.outputs.result }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.8'
 
-    - name: Check if database exists or initialize
-      id: check_db
-      run: |
-        if [ "${{ env.INITIALIZE_MODE_YOUTUBE }}" == "true" ] || [ ! -f youtube_videos.db ]; then
-          echo "exists=false" >> $GITHUB_OUTPUT
-          echo "Initializing or creating new database"
-          rm -f youtube_videos.db
-          touch youtube_videos.db
-        else
-          echo "exists=true" >> $GITHUB_OUTPUT
-        fi
+      - name: Install Dependencies
+        run: pip install --upgrade google-api-python-client requests isodate
 
-    - name: Notify Discord of New YouTube Videos
-      env:
-        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        YOUTUBE_MODE: ${{ secrets.YOUTUBE_MODE }}
-        YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-        YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
-        YOUTUBE_PLAYLIST_SORT: ${{ secrets.YOUTUBE_PLAYLIST_SORT }}
-        YOUTUBE_SEARCH_KEYWORD: ${{ secrets.YOUTUBE_SEARCH_KEYWORD }}
-        YOUTUBE_INIT_MAX_RESULTS: ${{ secrets.YOUTUBE_INIT_MAX_RESULTS }}
-        YOUTUBE_MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
-        IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}
-        INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
-        ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
-        DATE_FILTER_YOUTUBE: ${{ secrets.DATE_FILTER_YOUTUBE }}
-        LANGUAGE_YOUTUBE: ${{ secrets.LANGUAGE_YOUTUBE }}
-        DISCORD_WEBHOOK_YOUTUBE: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE }}
-        DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW }}
-        DISCORD_AVATAR_YOUTUBE: ${{ secrets.DISCORD_AVATAR_YOUTUBE }}
-        DISCORD_USERNAME_YOUTUBE: ${{ secrets.DISCORD_USERNAME_YOUTUBE }}
-        YOUTUBE_DETAILVIEW: ${{ secrets.YOUTUBE_DETAILVIEW }}
-      run: |
-        python .github/scripts/youtube_to_discord.py
+      - name: Notify Discord of New YouTube Videos
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_MODE: ${{ secrets.YOUTUBE_MODE }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
+          YOUTUBE_PLAYLIST_SORT: ${{ secrets.YOUTUBE_PLAYLIST_SORT }}
+          YOUTUBE_SEARCH_KEYWORD: ${{ secrets.YOUTUBE_SEARCH_KEYWORD }}
+          YOUTUBE_INIT_MAX_RESULTS: ${{ secrets.YOUTUBE_INIT_MAX_RESULTS }}
+          YOUTUBE_MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
+          IS_FIRST_RUN: ${{ steps.state.outputs.restored != 'true' }}
+          INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
+          YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}
+          YOUTUBE_MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
+          ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
+          DATE_FILTER_YOUTUBE: ${{ secrets.DATE_FILTER_YOUTUBE }}
+          LANGUAGE_YOUTUBE: ${{ secrets.LANGUAGE_YOUTUBE }}
+          DISCORD_WEBHOOK_YOUTUBE: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE }}
+          DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW }}
+          DISCORD_AVATAR_YOUTUBE: ${{ secrets.DISCORD_AVATAR_YOUTUBE }}
+          DISCORD_USERNAME_YOUTUBE: ${{ secrets.DISCORD_USERNAME_YOUTUBE }}
+          YOUTUBE_DETAILVIEW: ${{ secrets.YOUTUBE_DETAILVIEW }}
+        run: python .github/scripts/youtube_to_discord.py
 
-    - name: Upload updated database
-      uses: actions/upload-artifact@v4
-      with:
-        name: youtube_database
-        path: youtube_videos.db
-        retention-days: 90
-
-    - name: Debug Information
-      if: always()
-      run: |
-        echo "Latest successful run ID: ${{ steps.get_latest_run.outputs.result }}"
-        echo "IS_FIRST_RUN: ${{ steps.get_latest_run.outputs.result == '' }}"
-        echo "INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}"
-        echo "Workspace contents:"
-        ls -la
-        echo "Database file size:"
-        ls -lh youtube_videos.db || echo "Database file not found"
-        echo "Database contents (if exists):"
-        sqlite3 youtube_videos.db "SELECT COUNT(*) FROM videos;" || echo "Unable to query database"
+      - name: Upload updated database
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: youtube_database
+          path: youtube_videos.db
+          if-no-files-found: error
+          retention-days: 90

@@ -27,6 +27,7 @@ from google_news_delivery_state import (
 )
 from google_news_discord_delivery import send_webhook_message
 from google_news_profile_result import write_profile_result
+from google_news_related_links import MAX_RELATED_ITEMS, resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
 
@@ -988,6 +989,8 @@ def parse_html_description(html_desc, resolver):
     news_items = []
     full_content_link = ""
     for item in items:
+        if len(news_items) >= MAX_RELATED_ITEMS:
+            break
         if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text or 'View Full Coverage on Google News' in item.text:
             full_content_link_match = item.find('a')
             if full_content_link_match:
@@ -998,7 +1001,9 @@ def parse_html_description(html_desc, resolver):
         press_match = item.find('font', color="#6f6f6f")
         if title_match and press_match:
             google_link = title_match['href']
-            link = resolver.resolve_related(google_link).url
+            link = resolve_related_url(resolver, google_link)
+            if link is None:
+                continue
             title_text = replace_brackets(title_match.text)
             press_name = press_match.text
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
@@ -1094,11 +1099,15 @@ def extract_news_items(description, resolver):
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
     for li in soup.find_all('li'):
+        if len(news_items) >= MAX_RELATED_ITEMS:
+            break
         a_tag = li.find('a')
         if a_tag:
             title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
-            link = resolver.resolve_related(google_link).url
+            link = resolve_related_url(resolver, google_link)
+            if link is None:
+                continue
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -1303,7 +1312,7 @@ def main():
                     country_emoji,
                     country_code
                 )
-                if not reserve_delivery(DB_PATH, guid):
+                if not reserve_delivery(DB_PATH, guid, title, link):
                     continue
                 message_id = send_discord_message(
                     DISCORD_WEBHOOK_TOPIC,

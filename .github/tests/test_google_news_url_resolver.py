@@ -492,23 +492,31 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
         self.assertEqual("cache_hit", result.status)
         self.assertEqual(original_url, result.url)
 
-    def test_related_uncached_modern_url_skips_network(self):
+    def test_related_uncached_modern_url_uses_one_bounded_network_resolution(self):
         module = load_resolver_module()
         source_url = "https://news.google.com/rss/articles/CBMiRelatedUncached?oc=5"
+        original_url = "https://publisher.example/related-uncached"
+        get_response, post_response = self._successful_responses(original_url)
+        session = QueueSession(
+            get_responses=[get_response],
+            post_responses=[post_response],
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             resolver = module.GoogleNewsUrlResolver(
-                session=UnexpectedSession(),
+                session=session,
                 db_path=str(Path(temp_dir) / "news.db"),
                 min_interval_seconds=0,
+                max_network_resolutions=1,
             )
             result = resolver.resolve_related(source_url)
             stats = resolver.get_stats()
 
-        self.assertEqual("fallback", result.status)
-        self.assertEqual("related_network_skipped", result.error_code)
-        self.assertEqual(1, stats["related_network_skipped"])
-        self.assertEqual(0, stats["network_resolution_attempts"])
+        self.assertEqual("resolved", result.status)
+        self.assertEqual(original_url, result.url)
+        self.assertEqual(1, len(session.get_calls))
+        self.assertEqual(1, len(session.post_calls))
+        self.assertEqual(1, stats["network_resolution_attempts"])
 
     def test_rate_limit_circuit_is_reused_by_a_new_resolver(self):
         module = load_resolver_module()
@@ -643,6 +651,7 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
                 session=UnexpectedSession(),
                 db_path=str(Path(temp_dir) / "news.db"),
                 min_interval_seconds=0,
+                max_network_resolutions=0,
             )
             resolver.resolve_related(source_url)
             stats = resolver.get_stats()

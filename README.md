@@ -28,8 +28,7 @@ Click the [`New repository secret`](https://github.com/LYNGMN/DiscordActions/set
 4. Go to [`Actions`](https://github.com/LYNGMN/DiscordActions/actions) and click on the workflow for the platform you want to use.  
    (e.g., [YouTube to Discord Notification](https://github.com/LYNGMN/DiscordActions/actions/workflows/youtube_to_discord.yml))  
 6. Manually press the `[Run workflow]` button to check if it's working properly.
-7. The setup is complete. The GitHub Actions workflow will operate periodically at the set time  
-   (default: every 30 minutes).
+7. The setup is complete. The GitHub Actions workflow will operate periodically at the configured time. Google News and YouTube check every 15 minutes on staggered schedules.
 
 ## Contributing
 

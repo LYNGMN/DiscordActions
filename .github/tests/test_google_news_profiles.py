@@ -43,10 +43,11 @@ def valid_registry():
             "visible_username": "Google News",
             "environment": {
                 "KEYWORD_MODE": "true",
-                "KEYWORD": '아이유 OR "IU 가수"',
+                "KEYWORD": "아이유",
                 "HL": "ko",
                 "GL": "KR",
                 "CEID": "KR:ko",
+                "WHEN": "3d",
             },
         },
     ]
@@ -138,9 +139,10 @@ class GoogleNewsProfileTests(unittest.TestCase):
             profiles["keyword_nocode"].environment["KEYWORD"],
         )
         self.assertEqual(
-            '아이유 OR "IU 가수"',
+            "아이유",
             profiles["keyword_iu"].environment["KEYWORD"],
         )
+        self.assertEqual("3d", profiles["keyword_iu"].environment["WHEN"])
 
     def test_duplicate_routing_fields_are_rejected(self):
         for field in ("id", "webhook_env", "expected_webhook_name", "state_db"):
@@ -211,7 +213,7 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual("/state/top_us.db", environment["GOOGLE_NEWS_DB_PATH"])
         self.assertEqual("/state/resolver.db", environment["GOOGLE_NEWS_RESOLVER_DB_PATH"])
         self.assertEqual("true", environment["MANUAL_TEST_MODE"])
-        self.assertEqual("1", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
+        self.assertEqual("2", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
         self.assertNotIn("DISCORD_WEBHOOK_GN_KEYWORD_IU", environment)
         self.assertNotIn("UNRELATED_SECRET", environment)
 

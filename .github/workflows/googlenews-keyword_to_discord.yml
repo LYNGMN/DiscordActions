@@ -1,8 +1,6 @@
 name: Google News (Keyword) RSS to Discord
 
 on:
-  schedule:
-    - cron: '12,42 * * * *'  # UTC 기준 매시 12분과 42분에 실행
   workflow_dispatch:
     inputs:
       manual_test:
@@ -39,10 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.8'
 
@@ -51,7 +49,7 @@ jobs:
 
       - name: Get workflow ID and latest successful run ID
         id: get_workflow_info
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -70,7 +68,7 @@ jobs:
 
       - name: Download previous database
         if: env.INITIALIZE_MODE_KEYWORD != 'true' && fromJson(steps.get_workflow_info.outputs.result).latestRunId != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: googlenews_keyword_database
           run-id: ${{ fromJson(steps.get_workflow_info.outputs.result).latestRunId }}
@@ -80,7 +78,7 @@ jobs:
         run: python .github/scripts/googlenews-keyword_to_discord.py
 
       - name: Upload updated database
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: googlenews_keyword_database
           path: google_news_keyword.db

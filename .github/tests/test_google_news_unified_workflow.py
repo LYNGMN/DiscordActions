@@ -26,8 +26,12 @@ NEW_MODULES = (
     "google_news_manual_test.py",
     "google_news_profile_result.py",
     "google_news_profiles.py",
+    "google_news_related_links.py",
     "google_news_request_guard.py",
     "google_news_url_resolver.py",
+    "youtube_delivery_state.py",
+    "youtube_discord_delivery.py",
+    "youtube_to_discord.py",
 )
 
 
@@ -37,7 +41,8 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
 
     def test_schedule_manual_input_and_concurrency_are_safe(self):
         source = self.source()
-        self.assertIn("cron: '7,37 * * * *'", source)
+        self.assertIn("cron: '7,22,37,52 * * * *'", source)
+        self.assertNotIn("cron: '7,37 * * * *'", source)
         self.assertIn("manual_test:", source)
         self.assertIn("type: boolean", source)
         self.assertIn("default: true", source)
@@ -82,7 +87,7 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("status: 'completed'", source)
         self.assertIn("google-news-state", source)
         self.assertIn("artifact-id", source)
-        self.assertIn("actions/download-artifact@v4", source)
+        self.assertIn("actions/download-artifact@v5", source)
         self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
 

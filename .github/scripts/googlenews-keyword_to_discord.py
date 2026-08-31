@@ -26,6 +26,7 @@ from google_news_delivery_state import (
 )
 from google_news_discord_delivery import send_webhook_message
 from google_news_profile_result import write_profile_result
+from google_news_related_links import MAX_RELATED_ITEMS, resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
 
@@ -374,11 +375,15 @@ def extract_news_items(description, resolver):
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
     for li in soup.find_all('li'):
+        if len(news_items) >= MAX_RELATED_ITEMS:
+            break
         a_tag = li.find('a')
         if a_tag:
             title = replace_brackets(a_tag.text)
             google_link = a_tag['href']
-            link = resolver.resolve_related(google_link).url
+            link = resolve_related_url(resolver, google_link)
+            if link is None:
+                continue
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
@@ -396,6 +401,20 @@ def parse_html_description(html_desc, resolver, main_title, main_link):
     else:
         news_string = '\n'.join([f"> - [{item['title']}]({item['link']}) | {item['press']}" for item in news_items])
         return news_string, news_items
+
+
+def format_discord_message(news_item, keyword, country_code):
+    """Format one keyword notification using the selected locale."""
+    config = country_configs.get(country_code, country_configs['US'])
+    _, _, google_news, country_name, _, flag, _, _ = config
+    formatted_date = convert_to_local_time(news_item['pub_date'], country_code)
+    message = (
+        f"`{google_news} - {keyword} - {country_name} {flag}`\n"
+        f"**{news_item['title']}**\n{news_item['link']}"
+    )
+    if news_item['description']:
+        message += f"\n{news_item['description']}"
+    return f"{message}\n\n📅 {formatted_date}"
 
 def apply_advanced_filter(title, description, advanced_filter):
     """고급 검색 필터를 적용하여 게시물을 전송할지 결정합니다."""
@@ -576,8 +595,6 @@ def main():
         since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
         logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
 
-        hl, ceid, google_news, country_name, country_name_en, flag, timezone, date_format = country_configs.get(country_code, country_configs['US'])
-
         profile_failed = False
         for item in news_items:
             try:
@@ -600,14 +617,18 @@ def main():
                     logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
                     continue
 
-                formatted_date = convert_to_local_time(pub_date, country_code)
+                discord_message = format_discord_message(
+                    {
+                        "title": title,
+                        "link": link,
+                        "description": description,
+                        "pub_date": pub_date,
+                    },
+                    keyword,
+                    country_code,
+                )
 
-                discord_message = f"`{google_news} - {keyword} - {country_name} {flag}`\n**{title}**\n{link}"
-                if description:
-                    discord_message += f"\n{description}"
-                discord_message += f"\n\n📅 {formatted_date}"
-
-                if not reserve_delivery(DB_PATH, guid):
+                if not reserve_delivery(DB_PATH, guid, title, link):
                     continue
                 message_id = send_discord_message(
                     DISCORD_WEBHOOK_KEYWORD,

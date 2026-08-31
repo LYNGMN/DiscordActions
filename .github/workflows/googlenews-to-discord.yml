@@ -2,7 +2,7 @@ name: Google News to Discord
 
 on:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
       manual_test:
@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare state directory
         run: |
@@ -35,7 +35,7 @@ jobs:
 
       - name: Find latest completed state artifact
         id: previous_state
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -73,7 +73,7 @@ jobs:
 
       - name: Restore previous state
         if: steps.previous_state.outputs.artifact-id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .google-news-state
@@ -83,7 +83,7 @@ jobs:
           run-id: ${{ steps.previous_state.outputs.source-run-id }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.8'
           cache: pip
@@ -115,7 +115,7 @@ jobs:
 
       - name: Write safe run summary
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -133,7 +133,7 @@ jobs:
 
       - name: Upload updated state
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: google-news-state
           path: .google-news-state/

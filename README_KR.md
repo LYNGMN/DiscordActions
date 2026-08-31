@@ -27,7 +27,7 @@ Discord Actions는 다음 플랫폼에 대한 지원을 활발하게 개발 중�
 3. [`Actions`](https://github.com/LYNGMN/DiscordActions/actions)로 이동하여 사용할 플랫폼의 워크플로우를 클릭합니다.  
 (예: [YouTube to Discord Notification](https://github.com/LYNGMN/DiscordActions/actions/workflows/youtube_to_discord.yml))  
 4. 제대로 작동하는지 수동으로 `[Run workflow]` 버튼을 눌러 작동하여 확인합니다.  
-5. 설정이 완료되었습니다. 설정한 작동시간 (기본값: 30분마다) GitHub Actions 워크플로우가 주기적으로 작동합니다.
+5. 설정이 완료되었습니다. GitHub Actions 워크플로우가 설정된 시간에 주기적으로 작동합니다. Google News와 YouTube는 서로 겹치지 않도록 나누어 15분마다 확인합니다.
 
 ## 기여
 

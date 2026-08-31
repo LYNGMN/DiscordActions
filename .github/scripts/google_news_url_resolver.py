@@ -98,7 +98,7 @@ class GoogleNewsUrlResolver:
         return self._resolve(source_url, allow_network=True)
 
     def resolve_related(self, source_url: str) -> UrlResolution:
-        return self._resolve(source_url, allow_network=False)
+        return self._resolve(source_url, allow_network=True)
 
     def get_stats(self) -> Dict[str, object]:
         return dict(self._stats)

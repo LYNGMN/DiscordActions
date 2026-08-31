@@ -138,10 +138,11 @@
     "visible_username": "Google News",
     "environment": {
       "KEYWORD_MODE": "true",
-      "KEYWORD": "아이유 OR \"IU 가수\"",
+      "KEYWORD": "아이유",
       "HL": "ko",
       "GL": "KR",
-      "CEID": "KR:ko"
+      "CEID": "KR:ko",
+      "WHEN": "3d"
     }
   }
 ]
