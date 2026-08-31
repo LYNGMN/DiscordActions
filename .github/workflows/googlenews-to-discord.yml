@@ -2,8 +2,7 @@ name: Google News to Discord
 
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'
-      timezone: 'Asia/Seoul'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       manual_test:
@@ -22,7 +21,6 @@ concurrency:
 
 jobs:
   deliver:
-    if: github.event_name == 'workflow_dispatch' || vars.GOOGLE_NEWS_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
