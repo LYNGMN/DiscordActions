@@ -119,6 +119,16 @@ Repository Variable `YOUTUBE_SOURCE`를 `rss` 또는 `api`로 설정합니다. �
 | 현재 피드에서 사라진 과거 항목 | 복구 불가 | 채널·재생목록 페이지를 계속 조회 가능 |
 | 할당량 | YouTube API 할당량 없음 | YouTube Data API 할당량 사용 |
 
+RSS와 API의 메시지 형식이 다른 이유는 YouTube가 실제로 제공하는 필드가
+다르기 때문입니다. [공식 Atom 알림 형식](https://developers.google.com/youtube/v3/guides/push_notifications)은
+영상·채널 ID, 제목, 작성자, 게시 시각 정보를 제공하지만 API 전용 재생시간과
+카테고리 필드는 포함하지 않습니다. API 방식에서는
+[video 리소스](https://developers.google.com/youtube/v3/docs/videos)의
+`contentDetails.duration`으로 재생시간, `snippet.categoryId`로 카테고리 ID를 가져오고,
+[`videoCategories.list`](https://developers.google.com/youtube/v3/docs/videoCategories/list)로
+현지화된 카테고리명을 조회합니다. 따라서 RSS 알림에 재생시간·카테고리가 없는
+것은 오류가 아닙니다. 해당 정보가 필요하면 API 방식을 사용하세요.
+
 RSS와 API는 같은 영상 ID와 SQLite 상태를 사용하므로 방식을 바꿔도 이미 처리한 영상을 다시 보내지 않습니다. RSS에는 다음 페이지가 없으므로, 실행 전에 영상이 현재 피드에서 사라지면 복구할 수 없습니다.
 
 RSS에는 `YOUTUBE_DETAILVIEW`에 필요한 상세 필드가 없으므로 `YOUTUBE_SOURCE=rss`일 때는 이 설정을 꺼 두세요.
@@ -199,6 +209,7 @@ https://www.youtube.com/feeds/videos.xml?playlist_id=PL7zZDePsdYwPNu51o8b9MKQ_eG
 **원이 근황**
 https://youtu.be/EsKmhBMmqIM
 
+👤 채널명: [안녕하세요원이입니다잘부탁드립니다](https://www.youtube.com/channel/UCWpY0eSJtyO-qNAPbKFRSSg)
 📅 게시일자: `2026년 8월 28일`
 🖼️ [썸네일](https://i2.ytimg.com/vi/EsKmhBMmqIM/hqdefault.jpg)
 ```
@@ -241,7 +252,13 @@ https://youtu.be/VIDEO_ID
 🖼️ [썸네일](https://i.ytimg.com/vi/VIDEO_ID/hqdefault.jpg)
 ```
 
-RSS 메시지는 재생시간과 카테고리를 생략합니다. 재생목록은 첫 줄 다음에 항상 한 줄을 비웁니다. `channel`은 `` `📃 재생목록명 by. 채널명 - YouTube 재생목록` ``, `curated`는 `` `📃 재생목록명 - YouTube 재생목록 by. 소유자` `` 형식입니다. `auto`는 단일 채널 목록을 `channel`, 혼합 채널 목록을 `curated`로 자동 선택합니다.
+RSS 채널 메시지는 게시일자와 썸네일을 표시합니다. RSS 재생목록 메시지는
+여러 채널이 섞인 목록에서 영상 소유자를 확인할 수 있도록 채널명 링크도
+표시합니다. Atom은 재생시간과 카테고리를 제공하지 않으므로 RSS 메시지에서는 두
+항목을 생략합니다. 재생목록은 첫 줄 다음에 항상 한 줄을 비웁니다. `channel`은
+`` `📃 재생목록명 by. 채널명 - YouTube 재생목록` ``, `curated`는
+`` `📃 재생목록명 - YouTube 재생목록 by. 소유자` `` 형식입니다. `auto`는 단일 채널
+목록을 `channel`, 혼합 채널 목록을 `curated`로 자동 선택합니다.
 
 ## 표시 언어
 

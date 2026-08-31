@@ -70,6 +70,37 @@ class YouTubeRssDocumentationTests(unittest.TestCase):
             korean,
         )
 
+    def test_playlist_examples_link_the_video_channel(self):
+        english, korean = self.readmes()
+        channel_url = (
+            "https://www.youtube.com/channel/UCWpY0eSJtyO-qNAPbKFRSSg"
+        )
+
+        self.assertIn(
+            "👤 Channel: [안녕하세요원이입니다잘부탁드립니다]({})".format(
+                channel_url
+            ),
+            english,
+        )
+        self.assertIn(
+            "👤 채널명: [안녕하세요원이입니다잘부탁드립니다]({})".format(
+                channel_url
+            ),
+            korean,
+        )
+
+    def test_rss_and_api_field_sources_are_explicit(self):
+        for source in self.readmes():
+            with self.subTest(readme="ko" if "빠른 설정" in source else "en"):
+                self.assertIn("contentDetails.duration", source)
+                self.assertIn("snippet.categoryId", source)
+                self.assertIn("videoCategories.list", source)
+                self.assertIn(
+                    "https://developers.google.com/youtube/v3/guides/push_notifications",
+                    source,
+                )
+                self.assertNotIn("view-source:", source)
+
     def test_branding_explains_discord_bot_identity_and_links_icons(self):
         english, korean = self.readmes()
 
