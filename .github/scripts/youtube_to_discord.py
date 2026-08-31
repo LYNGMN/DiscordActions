@@ -406,6 +406,7 @@ def fetch_video_details(youtube, video_ids):
             video_details.extend(video_details_response.get('items', []))
         except Exception as error:
             logging.error("비디오 세부 정보 조회 실패 (오류 유형: %s)", type(error).__name__)
+            raise RuntimeError("youtube_video_details_failed") from None
     return video_details
 
 def fetch_and_post_videos(youtube):

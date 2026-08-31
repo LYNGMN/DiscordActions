@@ -106,7 +106,7 @@ jobs:
           YOUTUBE_MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
           IS_FIRST_RUN: ${{ steps.state.outputs.restored != 'true' }}
           INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
-          YOUTUBE_BASELINE_ONLY: ${{ github.event_name == 'schedule' && steps.state.outputs.restored != 'true' }}
+          YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}
           YOUTUBE_MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
           ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
           DATE_FILTER_YOUTUBE: ${{ secrets.DATE_FILTER_YOUTUBE }}

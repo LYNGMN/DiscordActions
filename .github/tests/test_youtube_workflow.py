@@ -1,11 +1,56 @@
+import importlib
+import sys
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "workflows" / "youtube_to_discord.yml"
 CI_WORKFLOW = ROOT / "workflows" / "test.yml"
 SCRIPT = ROOT / "scripts" / "youtube_to_discord.py"
+
+
+def load_youtube_script():
+    google_api = ModuleType("googleapiclient")
+    discovery = ModuleType("googleapiclient.discovery")
+    discovery.build = lambda *args, **kwargs: None
+    google_api.discovery = discovery
+    isodate = ModuleType("isodate")
+    isodate.parse_duration = lambda value: None
+    stubs = {
+        "googleapiclient": google_api,
+        "googleapiclient.discovery": discovery,
+        "isodate": isodate,
+    }
+    previous = {name: sys.modules.get(name) for name in stubs}
+    sys.path.insert(0, str(SCRIPT.parent))
+    try:
+        sys.modules.update(stubs)
+        sys.modules.pop("youtube_to_discord", None)
+        return importlib.import_module("youtube_to_discord")
+    finally:
+        sys.path.pop(0)
+        for name, module in previous.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+class FailingRequest:
+    def execute(self):
+        raise OSError("redacted API failure")
+
+
+class FailingVideosResource:
+    def list(self, **kwargs):
+        return FailingRequest()
+
+
+class FailingYouTubeClient:
+    def videos(self):
+        return FailingVideosResource()
 
 
 class YouTubeWorkflowTests(unittest.TestCase):
@@ -35,12 +80,11 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("run-id: ${{ steps.previous_state.outputs.source-run-id }}", source)
         self.assertNotIn("status: 'success'", source)
 
-    def test_missing_scheduled_state_baselines_and_manual_mode_is_one_item(self):
+    def test_missing_state_always_baselines_and_manual_mode_is_one_item(self):
         source = self.source()
 
         self.assertIn(
-            "YOUTUBE_BASELINE_ONLY: ${{ github.event_name == 'schedule' "
-            "&& steps.state.outputs.restored != 'true' }}",
+            "YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}",
             source,
         )
         self.assertIn(
@@ -69,6 +113,12 @@ class YouTubeWorkflowTests(unittest.TestCase):
             source.index("for video in delivery_videos:"),
         )
         self.assertIn("sys.exit(1)", source)
+
+    def test_video_detail_api_failure_is_not_reported_as_an_empty_success(self):
+        module = load_youtube_script()
+
+        with self.assertRaisesRegex(RuntimeError, "youtube_video_details_failed"):
+            module.fetch_video_details(FailingYouTubeClient(), ["video-id"])
 
     def test_ci_compiles_youtube_runtime_modules(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
