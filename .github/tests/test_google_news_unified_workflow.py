@@ -87,7 +87,7 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("status: 'completed'", source)
         self.assertIn("google-news-state", source)
         self.assertIn("artifact-id", source)
-        self.assertIn("actions/download-artifact@v4", source)
+        self.assertIn("actions/download-artifact@v5", source)
         self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
 

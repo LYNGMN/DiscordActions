@@ -34,10 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.8'
 
@@ -48,7 +48,7 @@ jobs:
 
       - name: Get workflow ID
         id: get_workflow_id
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           result-encoding: string
@@ -63,7 +63,7 @@ jobs:
 
       - name: Get latest successful run ID
         id: get_latest_run
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           result-encoding: string
@@ -79,7 +79,7 @@ jobs:
 
       - name: Download previous database
         if: env.INITIALIZE_MODE_TOPIC != 'true' && steps.get_latest_run.outputs.result != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: googlenews_topic_database
           run-id: ${{ steps.get_latest_run.outputs.result }}
@@ -90,7 +90,7 @@ jobs:
         run: python .github/scripts/googlenews-topic_to_discord.py
 
       - name: Upload updated database
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: googlenews_topic_database
           path: google_news_topic.db
