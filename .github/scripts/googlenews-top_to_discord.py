@@ -328,14 +328,10 @@ def parse_html_description(html_desc, resolver):
     items = soup.find_all('li')
 
     news_items = []
-    full_content_link = ""
     for item in items:
         if len(news_items) >= MAX_RELATED_ITEMS:
             break
         if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text:
-            full_content_link_match = item.find('a')
-            if full_content_link_match:
-                full_content_link = full_content_link_match['href']
             continue
 
         title_match = item.find('a')
@@ -350,11 +346,7 @@ def parse_html_description(html_desc, resolver):
             news_item = f"- [{title_text}](<{link}>) | {press_name}"
             news_items.append(news_item)
 
-    news_string = '\n'.join(news_items)
-    if full_content_link:
-        news_string += f"\n\n▶️ [Google 뉴스에서 전체 콘텐츠 보기](<{full_content_link}>)"
-
-    return news_string
+    return '\n'.join(news_items)
 
 def parse_pub_date(pub_date_str):
     """문자열 형태의 발행일을 datetime 객체로 파싱합니다."""
