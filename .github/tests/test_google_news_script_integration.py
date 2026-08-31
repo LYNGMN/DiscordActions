@@ -435,6 +435,46 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     all("news.google.com" not in item["link"] for item in items)
                 )
 
+    def test_related_descriptions_omit_every_unresolved_google_news_link(self):
+        description = """
+            <ul>
+              <li>
+                <a href="https://news.google.com/rss/articles/unresolved">
+                  Unresolved related story
+                </a>
+                <font color="#6f6f6f">Publisher</font>
+              </li>
+              <li>
+                <a href="https://news.google.com/fullcoverage/unresolved">
+                  Google 뉴스에서 전체 콘텐츠 보기
+                </a>
+              </li>
+            </ul>
+        """
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                resolver = SequenceResolver(
+                    [
+                        "https://news.google.com/rss/articles/unresolved",
+                        "https://news.google.com/fullcoverage/unresolved",
+                    ]
+                )
+
+                if "keyword_" in script_path.name:
+                    rendered, _ = module.parse_html_description(
+                        description,
+                        resolver,
+                        "Main story",
+                        "https://publisher.example/main",
+                    )
+                else:
+                    rendered = module.parse_html_description(description, resolver)
+
+                self.assertNotIn("news.google.com", rendered)
+                self.assertNotIn("전체 콘텐츠 보기", rendered)
+
     def test_keyword_and_science_technology_source_titles_are_exact(self):
         keyword = load_script(SCRIPT_PATHS[0])
         topic = load_script(SCRIPT_PATHS[2])
