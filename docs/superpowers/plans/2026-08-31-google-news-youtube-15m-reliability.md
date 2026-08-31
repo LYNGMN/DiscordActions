@@ -13,7 +13,8 @@
 - Google News sender is exactly `Google News` with `https://discordactions.github.io/logo/media/original/news/googlenews.png`.
 - YouTube sender is exactly `YouTube` with `https://discordactions.github.io/logo/media/original/youtube/youtube_social_circle_red.png`.
 - Google News runs at `07,22,37,52`; YouTube runs at `11,26,41,56`.
-- Legacy Google News Top, Topic, and Keyword workflows remain disabled.
+- Legacy Google News Top, Topic, and Keyword workflows are manual-only and have no
+  schedule trigger.
 - No new external package, proxy, browser automation, secret, or URL-decoding service.
 - Display at most four related articles and never display a `news.google.com` related link.
 - Google News network decoding remains sequential, uses one-second spacing, and is capped at two new decodes per profile per run.
@@ -202,12 +203,16 @@ git commit -m "fix: resolve and deduplicate Google News article links"
 
 **Files:**
 - Modify: `.github/workflows/googlenews-to-discord.yml`
+- Modify: `.github/workflows/googlenews-top_to_discord.yml`
+- Modify: `.github/workflows/googlenews-topic_to_discord.yml`
+- Modify: `.github/workflows/googlenews-keyword_to_discord.yml`
 - Test: `.github/tests/test_google_news_unified_workflow.py`
 - Test: `.github/tests/test_google_news_manual_workflows.py`
 
 **Interfaces:**
 - Preserves: `GOOGLE_NEWS_SCHEDULE_ENABLED == 'true'` activation gate.
 - Produces: cron `7,22,37,52 * * * *`.
+- Produces: manual-only legacy workflows with no `schedule` or `cron` entry.
 
 - [ ] **Step 1: Change the workflow test expectation first**
 
@@ -235,7 +240,8 @@ on:
     - cron: '7,22,37,52 * * * *'
 ```
 
-Do not enable or alter the three legacy schedules.
+Remove the schedule triggers from the three legacy workflows so only the unified
+workflow can run automatically.
 
 - [ ] **Step 4: Run and observe GREEN**
 
@@ -244,7 +250,10 @@ Run the command from Step 2. Expected: PASS.
 - [ ] **Step 5: Commit the schedule contract**
 
 ```bash
-git add .github/workflows/googlenews-to-discord.yml .github/tests/test_google_news_unified_workflow.py .github/tests/test_google_news_manual_workflows.py
+git add .github/workflows/googlenews-to-discord.yml \
+  .github/workflows/googlenews-*_to_discord.yml \
+  .github/tests/test_google_news_unified_workflow.py \
+  .github/tests/test_google_news_manual_workflows.py
 git commit -m "feat: check Google News every 15 minutes"
 ```
 

@@ -41,8 +41,10 @@ Google News runs at minutes `07`, `22`, `37`, and `52` of every hour. YouTube ru
 at minutes `11`, `26`, `41`, and `56`. Both intervals are 15 minutes, while the
 four-minute offset prevents the two network-heavy workflows from starting together.
 
-The unified Google News workflow remains the only enabled Google News schedule. The
-legacy Top, Topic, and Keyword schedules remain disabled to prevent duplicates.
+The unified Google News workflow is the only Google News workflow with a schedule.
+The legacy Top, Topic, and Keyword workflows are manual-only and contain no schedule
+trigger, preventing accidental duplicate delivery even if their GitHub workflow state
+is later enabled.
 
 ## Google News Article Identity
 

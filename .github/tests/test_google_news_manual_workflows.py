@@ -8,11 +8,6 @@ WORKFLOW_PATHS = (
     WORKFLOWS_DIR / "googlenews-top_to_discord.yml",
     WORKFLOWS_DIR / "googlenews-topic_to_discord.yml",
 )
-EXPECTED_SCHEDULES = {
-    "googlenews-top_to_discord.yml": "2,32 * * * *",
-    "googlenews-keyword_to_discord.yml": "12,42 * * * *",
-    "googlenews-topic_to_discord.yml": "22,52 * * * *",
-}
 MANUAL_TEST_EXPRESSION = (
     "${{ github.event_name == 'workflow_dispatch' "
     "&& inputs.manual_test == true }}"
@@ -41,16 +36,14 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             source,
         )
 
-    def test_google_news_workflows_use_staggered_thirty_minute_schedules(self):
+    def test_legacy_google_news_workflows_are_manual_only(self):
         for workflow_path in WORKFLOW_PATHS:
             with self.subTest(workflow=workflow_path.name):
                 source = workflow_path.read_text(encoding="utf-8")
 
-                self.assertIn(
-                    f"cron: '{EXPECTED_SCHEDULES[workflow_path.name]}'",
-                    source,
-                )
-                self.assertNotIn("cron: '*/30 * * * *'", source)
+                self.assertIn("workflow_dispatch:", source)
+                self.assertNotIn("schedule:", source)
+                self.assertNotIn("cron:", source)
 
     def test_google_news_workflows_prevent_overlapping_runs(self):
         concurrency_policy = (

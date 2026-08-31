@@ -1,8 +1,6 @@
 name: Google News (Top) RSS to Discord
 
 on:
-  schedule:
-    - cron: '2,32 * * * *'  # UTC 기준 매시 02분과 32분에 실행
   workflow_dispatch:
     inputs:
       manual_test:
