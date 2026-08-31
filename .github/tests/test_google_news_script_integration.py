@@ -72,6 +72,22 @@ class RuntimeResolver(StubResolver):
         super().__init__()
 
 
+class SequenceResolver(StubResolver):
+    def __init__(self, urls):
+        super().__init__()
+        self.urls = iter(urls)
+
+    def resolve_related(self, source_url):
+        self.related_calls.append(source_url)
+        url = next(self.urls)
+        return SimpleNamespace(
+            url=url,
+            status="resolved",
+            article_id="article-id",
+            error_code=None,
+        )
+
+
 class GoogleNewsScriptIntegrationTests(unittest.TestCase):
     def test_each_handler_completes_one_crash_safe_manual_delivery(self):
         published_at = format_datetime(datetime.now(timezone.utc), usegmt=True)
@@ -133,7 +149,11 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                         "SELECT delivery_status, discord_message_id "
                         "FROM news_items WHERE guid = 'runtime-guid'"
                     ).fetchone()
+                    identity_count = connection.execute(
+                        "SELECT COUNT(*) FROM google_news_article_identity"
+                    ).fetchone()[0]
                 self.assertEqual(("sent", "123456789012345678"), delivery)
+                self.assertEqual(2, identity_count)
 
     def test_all_handlers_use_the_shared_bounded_runtime_contract(self):
         for script_path in SCRIPT_PATHS:
@@ -317,6 +337,62 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     "https://publisher.example/resolved-story",
                     items[0]["link"],
                 )
+
+    def test_all_scripts_omit_unresolved_related_links_and_stop_after_four(self):
+        description = "<ul>{}</ul>".format(
+            "".join(
+                '<li><a href="https://news.google.com/rss/articles/{}">Story {}</a>'
+                '<font color="#6f6f6f">Publisher</font></li>'.format(index, index)
+                for index in range(6)
+            )
+        )
+        urls = [
+            "https://news.google.com/rss/articles/unresolved",
+            "https://publisher.example/1",
+            "https://publisher.example/2",
+            "https://publisher.example/3",
+            "https://publisher.example/4",
+            "https://publisher.example/5",
+        ]
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                resolver = SequenceResolver(urls)
+
+                items = module.extract_news_items(description, resolver)
+
+                self.assertEqual(4, len(items))
+                self.assertEqual(5, len(resolver.related_calls))
+                self.assertTrue(
+                    all("news.google.com" not in item["link"] for item in items)
+                )
+
+    def test_keyword_and_science_technology_source_titles_are_exact(self):
+        keyword = load_script(SCRIPT_PATHS[0])
+        topic = load_script(SCRIPT_PATHS[2])
+        item = {
+            "title": "테스트 기사",
+            "link": "https://publisher.example/story",
+            "description": "",
+            "pub_date": "Sun, 30 Aug 2026 12:00:00 GMT",
+        }
+
+        keyword_message = keyword.format_discord_message(item, "아이유", "KR")
+        topic_message = topic.format_discord_message(
+            item,
+            "Google 뉴스",
+            "기술 뉴스",
+            "과학/기술",
+            "🇰🇷",
+            "KR",
+        )
+
+        self.assertIn("`Google 뉴스 - 아이유 - 한국 🇰🇷`", keyword_message)
+        self.assertIn(
+            "`Google 뉴스 - 기술 뉴스 - 과학/기술 🇰🇷`",
+            topic_message,
+        )
 
     def test_all_scripts_wire_safe_manual_test_mode(self):
         for script_path in SCRIPT_PATHS:

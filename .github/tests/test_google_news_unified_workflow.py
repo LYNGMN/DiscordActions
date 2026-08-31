@@ -26,6 +26,7 @@ NEW_MODULES = (
     "google_news_manual_test.py",
     "google_news_profile_result.py",
     "google_news_profiles.py",
+    "google_news_related_links.py",
     "google_news_request_guard.py",
     "google_news_url_resolver.py",
 )

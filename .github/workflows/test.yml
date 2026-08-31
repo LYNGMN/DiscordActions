@@ -37,6 +37,7 @@ jobs:
           .github/scripts/google_news_manual_test.py
           .github/scripts/google_news_profile_result.py
           .github/scripts/google_news_profiles.py
+          .github/scripts/google_news_related_links.py
           .github/scripts/google_news_request_guard.py
           .github/scripts/google_news_url_resolver.py
           .github/scripts/googlenews-*_to_discord.py
