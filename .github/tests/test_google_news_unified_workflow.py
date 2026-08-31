@@ -29,6 +29,9 @@ NEW_MODULES = (
     "google_news_related_links.py",
     "google_news_request_guard.py",
     "google_news_url_resolver.py",
+    "youtube_delivery_state.py",
+    "youtube_discord_delivery.py",
+    "youtube_to_discord.py",
 )
 
 
