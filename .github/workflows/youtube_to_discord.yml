@@ -2,8 +2,7 @@ name: YouTube to Discord Notification
 
 on:
   schedule:
-    - cron: '11,26,41,56 * * * *'
-      timezone: 'Asia/Seoul'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       manual_test:

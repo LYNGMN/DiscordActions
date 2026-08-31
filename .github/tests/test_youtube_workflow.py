@@ -60,8 +60,8 @@ class YouTubeWorkflowTests(unittest.TestCase):
     def test_schedule_manual_input_and_concurrency_are_safe(self):
         source = self.source()
 
-        self.assertIn("cron: '11,26,41,56 * * * *'", source)
-        self.assertIn("timezone: 'Asia/Seoul'", source)
+        self.assertIn("cron: '*/15 * * * *'", source)
+        self.assertNotIn("timezone:", source)
         self.assertIn("YOUTUBE_DELIVERY_ORDER", source)
         self.assertNotIn("cron: '0 * * * *'", source)
         self.assertIn("manual_test:", source)

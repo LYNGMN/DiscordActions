@@ -44,20 +44,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
 
     def test_schedule_manual_input_and_concurrency_are_safe(self):
         source = self.source()
-        self.assertIn("cron: '7,22,37,52 * * * *'", source)
-        self.assertIn("timezone: 'Asia/Seoul'", source)
+        self.assertIn("cron: '*/15 * * * *'", source)
+        self.assertNotIn("timezone:", source)
         self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
-        self.assertNotIn("cron: '7,37 * * * *'", source)
         self.assertIn("manual_test:", source)
         self.assertIn("type: boolean", source)
         self.assertIn("default: true", source)
         self.assertIn("group: google-news-to-discord", source)
         self.assertIn("cancel-in-progress: false", source)
-        self.assertIn(
-            "if: github.event_name == 'workflow_dispatch' || "
-            "vars.GOOGLE_NEWS_SCHEDULE_ENABLED == 'true'",
-            source,
-        )
+        self.assertNotIn("GOOGLE_NEWS_SCHEDULE_ENABLED", source)
 
     def test_unified_workflow_maps_all_webhook_secrets(self):
         source = self.source()
