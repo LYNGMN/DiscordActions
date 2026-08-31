@@ -40,6 +40,7 @@ RESULT_FIELDS = {
     "status",
     "processed_count",
     "pending_count",
+    "ambiguous_retry_count",
     "error_code",
 }
 
@@ -50,15 +51,16 @@ class ProfileRunResult:
     status: str
     processed_count: int
     pending_count: int
+    ambiguous_retry_count: int
     error_code: Optional[str]
 
     @classmethod
     def skipped(cls, profile_id: str, error_code: str) -> "ProfileRunResult":
-        return cls(profile_id, "skipped", 0, 0, error_code)
+        return cls(profile_id, "skipped", 0, 0, 0, error_code)
 
     @classmethod
     def failed(cls, profile_id: str, error_code: str) -> "ProfileRunResult":
-        return cls(profile_id, "failed", 0, 0, error_code)
+        return cls(profile_id, "failed", 0, 0, 0, error_code)
 
     def to_dict(self):
         return {
@@ -66,6 +68,7 @@ class ProfileRunResult:
             "status": self.status,
             "processed_count": self.processed_count,
             "pending_count": self.pending_count,
+            "ambiguous_retry_count": self.ambiguous_retry_count,
             "error_code": self.error_code,
         }
 
@@ -197,8 +200,6 @@ def run_profiles(
             child_env.update(
                 {
                     "GOOGLE_NEWS_RESULT_PATH": result_path,
-                    "GOOGLE_NEWS_MAX_ITEMS": "3",
-                    "GOOGLE_NEWS_MAX_AGE_MINUTES": "120",
                     "GOOGLE_NEWS_VALIDATE_ONLY": "true" if validate_only else "false",
                 }
             )
@@ -274,6 +275,7 @@ def _read_profile_result(
     error_code = payload.get("error_code")
     processed_count = payload.get("processed_count")
     pending_count = payload.get("pending_count")
+    ambiguous_retry_count = payload.get("ambiguous_retry_count")
     if (
         status not in STATUSES
         or isinstance(processed_count, bool)
@@ -282,6 +284,9 @@ def _read_profile_result(
         or isinstance(pending_count, bool)
         or not isinstance(pending_count, int)
         or pending_count < 0
+        or isinstance(ambiguous_retry_count, bool)
+        or not isinstance(ambiguous_retry_count, int)
+        or ambiguous_retry_count < 0
         or (
             error_code is not None
             and (not isinstance(error_code, str) or not ERROR_CODE.fullmatch(error_code))
@@ -295,6 +300,7 @@ def _read_profile_result(
         status,
         processed_count,
         pending_count,
+        ambiguous_retry_count,
         error_code,
     )
 

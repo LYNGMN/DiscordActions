@@ -135,6 +135,7 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                         "status": "failed",
                         "processed_count": 0,
                         "pending_count": 0,
+                        "ambiguous_retry_count": 0,
                         "error_code": 123,
                     }
                 ),
@@ -221,8 +222,11 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             self.assertFalse(check)
             self.assertEqual(profile.profile_id, child_env["GOOGLE_NEWS_PROFILE_ID"])
             self.assertEqual("true", child_env["MANUAL_TEST_MODE"])
-            self.assertEqual("3", child_env["GOOGLE_NEWS_MAX_ITEMS"])
-            self.assertEqual("120", child_env["GOOGLE_NEWS_MAX_AGE_MINUTES"])
+            self.assertEqual(
+                "feed_oldest_first", child_env["GOOGLE_NEWS_DELIVERY_ORDER"]
+            )
+            self.assertNotIn("GOOGLE_NEWS_MAX_ITEMS", child_env)
+            self.assertNotIn("GOOGLE_NEWS_MAX_AGE_MINUTES", child_env)
             other_secret_names = {item.webhook_env for item in self.profiles} - {
                 profile.webhook_env
             }
