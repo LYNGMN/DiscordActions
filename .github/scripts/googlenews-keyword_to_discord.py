@@ -533,6 +533,7 @@ def get_rss_url():
 
 def main():
     processed_count = 0
+    already_known_count = 0
     try:
         rss_url, keyword, country_code = get_rss_url()
 
@@ -629,6 +630,7 @@ def main():
                 )
 
                 if not reserve_delivery(DB_PATH, guid, title, link):
+                    already_known_count += 1
                     continue
                 message_id = send_discord_message(
                     DISCORD_WEBHOOK_KEYWORD,
@@ -649,7 +651,10 @@ def main():
                 continue
 
         validate_manual_test_result(
-            MANUAL_TEST_MODE, manual_test_expected_count, processed_count
+            MANUAL_TEST_MODE,
+            manual_test_expected_count,
+            processed_count,
+            already_known_count,
         )
         if profile_failed:
             raise RuntimeError("profile_run_failed")

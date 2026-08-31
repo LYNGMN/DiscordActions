@@ -155,6 +155,73 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertEqual(("sent", "123456789012345678"), delivery)
                 self.assertEqual(2, identity_count)
 
+    def test_each_handler_accepts_a_stable_duplicate_in_manual_mode(self):
+        published_at = format_datetime(datetime.now(timezone.utc), usegmt=True)
+        rss = (
+            "<rss><channel><item>"
+            "<guid>new-google-guid</guid>"
+            "<title>Repeated publisher story</title>"
+            "<link>https://news.google.com/rss/articles/new-wrapper</link>"
+            "<pubDate>{}</pubDate>"
+            "<description>&lt;ul&gt;&lt;/ul&gt;</description>"
+            "</item></channel></rss>"
+        ).format(published_at).encode("utf-8")
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as temp_dir:
+                module = load_script(script_path)
+                profile_id = script_path.name.split("-")[1].split("_")[0] + "_duplicate"
+                module.DB_PATH = str(Path(temp_dir) / "articles.db")
+                module.RESOLVER_DB_PATH = str(Path(temp_dir) / "resolver.db")
+                module.RESULT_PATH = str(Path(temp_dir) / "result.json")
+                module.PROFILE_ID = profile_id
+                module.MANUAL_TEST_MODE = True
+                module.MAX_NETWORK_RESOLUTIONS = 1
+                module.GoogleNewsRequestGuard = OpenCircuitGuard
+                module.GoogleNewsUrlResolver = RuntimeResolver
+
+                if "top_" in script_path.name:
+                    module.INITIALIZE_TOP = False
+                    module.DISCORD_WEBHOOK_TOP = "redacted"
+                    module.DISCORD_USERNAME_TOP = "Google News"
+                    rss_metadata = ("redacted-rss", None, "UTC", "%Y-%m-%d %H:%M:%S")
+                elif "topic_" in script_path.name:
+                    module.INITIALIZE_TOPIC = False
+                    module.DISCORD_WEBHOOK_TOPIC = "redacted"
+                    module.DISCORD_USERNAME_TOPIC = "Google News"
+                    rss_metadata = ("redacted-rss", "Topic", "ko")
+                else:
+                    module.INITIALIZE_KEYWORD = False
+                    module.DISCORD_WEBHOOK_KEYWORD = "redacted"
+                    module.DISCORD_USERNAME_KEYWORD = "Google News"
+                    rss_metadata = ("redacted-rss", "Keyword", "KR")
+
+                module.init_db(reset=False)
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    connection.execute(
+                        "INSERT INTO news_items "
+                        "(pub_date, guid, title, link, related_news) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (
+                            published_at,
+                            "existing-guid",
+                            "Repeated publisher story",
+                            "https://publisher.example/resolved-story",
+                            "[]",
+                        ),
+                    )
+
+                with mock.patch.object(module, "get_rss_url", return_value=rss_metadata), mock.patch.object(
+                    module, "fetch_rss_feed", return_value=rss
+                ), mock.patch.object(module, "send_discord_message") as send:
+                    exit_code = module.main()
+
+                self.assertEqual(0, exit_code)
+                send.assert_not_called()
+                result = json.loads(Path(module.RESULT_PATH).read_text(encoding="utf-8"))
+                self.assertEqual("success", result["status"])
+                self.assertEqual(0, result["processed_count"])
+
     def test_all_handlers_use_the_shared_bounded_runtime_contract(self):
         for script_path in SCRIPT_PATHS:
             with self.subTest(script=script_path.name):

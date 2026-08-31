@@ -199,6 +199,11 @@ class GoogleNewsManualTestTests(unittest.TestCase):
         module.validate_manual_test_result(True, 0, 0)
         module.validate_manual_test_result(True, 1, 1)
 
+    def test_result_validation_counts_a_stable_duplicate_as_handled(self):
+        module = load_manual_test_module()
+
+        module.validate_manual_test_result(True, 1, 0, already_known_count=1)
+
 
 if __name__ == "__main__":
     unittest.main()
