@@ -38,7 +38,8 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
 
     def test_schedule_manual_input_and_concurrency_are_safe(self):
         source = self.source()
-        self.assertIn("cron: '7,37 * * * *'", source)
+        self.assertIn("cron: '7,22,37,52 * * * *'", source)
+        self.assertNotIn("cron: '7,37 * * * *'", source)
         self.assertIn("manual_test:", source)
         self.assertIn("type: boolean", source)
         self.assertIn("default: true", source)
