@@ -105,6 +105,26 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
 
         runner.assert_not_called()
 
+    def test_invalid_common_feed_settings_stop_before_webhook_network(self):
+        env = dict(self.env)
+        env["FEED_DATE_FILTER"] = "calendar:yesterday"
+        session = QueueSession([])
+        runner = mock.Mock()
+
+        with self.assertRaisesRegex(ValueError, "invalid common feed settings"):
+            self.dispatcher.run_dispatch(
+                self.profiles,
+                env,
+                self.state_dir,
+                manual_test=True,
+                session=session,
+                subprocess_runner=runner,
+                sleep=lambda _: None,
+            )
+
+        self.assertEqual([], session.calls)
+        runner.assert_not_called()
+
     def test_preflight_rejects_missing_or_non_https_secrets_before_network(self):
         cases = (
             (None, "missing_webhook"),

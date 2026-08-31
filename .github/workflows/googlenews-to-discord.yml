@@ -95,6 +95,12 @@ jobs:
         env:
           MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
+          FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
+          FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
+          FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
+          FEED_TIMEZONE: ${{ vars.FEED_TIMEZONE }}
+          FEED_COUNTRY: ${{ vars.FEED_COUNTRY }}
+          DISPLAY_LANGUAGE: ${{ vars.DISPLAY_LANGUAGE }}
           DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
           DISCORD_WEBHOOK_GN_TOP_US: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_US }}
           DISCORD_WEBHOOK_GN_TOP_KR: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_KR }}

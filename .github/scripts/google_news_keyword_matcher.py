@@ -111,6 +111,26 @@ def keyword_filter_fingerprint(
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def google_news_filter_inputs(title: str, description_html: str) -> Tuple[str, str]:
+    """Return only article-title text that is safe for common keyword matching."""
+
+    main_title, article_titles = google_news_article_titles(title, description_html)
+    related_titles = "\n".join(article_titles)
+    return main_title, related_titles
+
+
+def google_news_article_titles(
+    title: str,
+    description_html: str,
+) -> Tuple[str, Tuple[str, ...]]:
+    """Return the main headline and each related headline as separate articles."""
+
+    return (
+        _article_title_without_publisher(title),
+        _description_article_titles(description_html),
+    )
+
+
 def _article_title_without_publisher(value: str) -> str:
     if not isinstance(value, str):
         return ""

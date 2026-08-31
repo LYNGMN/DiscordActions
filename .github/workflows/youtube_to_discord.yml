@@ -93,15 +93,19 @@ jobs:
           python-version: '3.8'
 
       - name: Install Dependencies
-        run: pip install --upgrade google-api-python-client requests isodate
+        run: pip install --upgrade -r .github/requirements.txt google-api-python-client isodate
 
       - name: Notify Discord of New YouTube Videos
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_SOURCE: ${{ vars.YOUTUBE_SOURCE || 'api' }}
           YOUTUBE_MODE: ${{ secrets.YOUTUBE_MODE }}
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
           YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
           YOUTUBE_SEARCH_KEYWORD: ${{ secrets.YOUTUBE_SEARCH_KEYWORD }}
+          YOUTUBE_PLAYLIST_LAYOUT: ${{ vars.YOUTUBE_PLAYLIST_LAYOUT || 'auto' }}
+          YOUTUBE_REGION_CODE: ${{ vars.YOUTUBE_REGION_CODE }}
+          YOUTUBE_SERVICE_TIMEZONE: ${{ vars.YOUTUBE_SERVICE_TIMEZONE }}
           YOUTUBE_DELIVERY_ORDER: ${{ vars.YOUTUBE_DELIVERY_ORDER || 'feed_oldest_first' }}
           YOUTUBE_RUN_SUMMARY_PATH: youtube-run-summary.json
           INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
@@ -110,6 +114,12 @@ jobs:
           ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
           DATE_FILTER_YOUTUBE: ${{ secrets.DATE_FILTER_YOUTUBE }}
           LANGUAGE_YOUTUBE: ${{ secrets.LANGUAGE_YOUTUBE }}
+          FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
+          FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
+          FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
+          FEED_TIMEZONE: ${{ vars.FEED_TIMEZONE }}
+          FEED_COUNTRY: ${{ vars.FEED_COUNTRY }}
+          DISPLAY_LANGUAGE: ${{ vars.DISPLAY_LANGUAGE || 'en' }}
           DISCORD_WEBHOOK_YOUTUBE: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE }}
           DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW }}
           DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}

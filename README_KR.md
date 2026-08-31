@@ -4,8 +4,8 @@ Google News와 YouTube의 새 항목을 GitHub Actions로 확인하고 Discord �
 
 ## 주요 동작
 
-- Google News 이름은 `Google News`, 아이콘은 프로젝트의 Google News 아이콘으로 고정됩니다.
-- YouTube 이름은 `YouTube`, 아이콘은 프로젝트의 YouTube 아이콘으로 고정됩니다.
+- Discord 메시지 작성자로 표시되는 Google News 봇은 표시 이름을 `Google News`로, 프로필 아이콘을 [Google News 아이콘](https://discordactions.github.io/logo/media/original/news/googlenews.png)으로 항상 사용합니다.
+- Discord 메시지 작성자로 표시되는 YouTube 봇은 표시 이름을 `YouTube`로, 프로필 아이콘을 [YouTube 아이콘](https://discordactions.github.io/logo/media/original/youtube/youtube_social_circle_red.png)으로 항상 사용합니다.
 - 새 항목은 게시일을 다시 정렬하지 않고 RSS/API 목록의 위치를 기준으로 처리합니다. 기본값은 피드의 오래된 위치부터 최신 위치 순서입니다.
 - 한 번에 여러 항목이 발견되면 일부만 자르지 않고 모두 순차 전송합니다.
 - 첫 YouTube 실행은 현재 영상을 기준선으로만 저장하여 과거 영상이 한꺼번에 전송되는 일을 막습니다.
@@ -18,6 +18,48 @@ Google News와 YouTube의 새 항목을 GitHub Actions로 확인하고 Discord �
 3. 아래의 Secret과 Variable을 사용하려는 기능에 맞게 등록합니다. 값은 README, 이슈, Actions 로그에 붙여 넣지 마세요.
 4. **Actions**에서 해당 워크플로를 선택하고 **Run workflow**로 먼저 시험합니다. `manual_test=true`이면 채널별 최신 항목 1개만 전송하고 나머지는 기준선으로 저장합니다.
 5. 수동 시험 후에는 워크플로를 활성 상태로 두세요. 별도 활성화 변수 없이 예약 실행이 자동으로 이어집니다.
+
+## 공통 날짜·키워드 필터
+
+Google News와 YouTube는 같은 선택 Repository Variable을 사용합니다. Google News 프로필의 `.github/config/google_news_profiles.json` 값이 있으면 저장소 공통 값보다 우선합니다.
+
+| 설정 | 기본값 | 용도 |
+| --- | --- | --- |
+| `FEED_DATE_FILTER` | 비움 | 상대 기간 또는 고정 날짜 범위의 항목만 전송 |
+| `FEED_KEYWORD_FILTER` | 비움 | 불리언 키워드 식을 통과한 항목만 전송 |
+| `FEED_KEYWORD_SCOPE` | `title` | `title` 또는 `title_or_description` |
+| `FEED_TIMEZONE` | 자동 | 달력 필터와 표시 날짜에 사용할 시간대 |
+| `FEED_COUNTRY` | 서비스 설정 | 명시적 시간대가 없을 때 시간대를 선택할 국가 |
+| `DISPLAY_LANGUAGE` | 서비스 설정 또는 `en` | 고정 문구와 날짜의 표시 언어 |
+
+날짜 필터의 시작·종료 경계는 모두 포함합니다. 날짜는 전송 여부만 판정하며 피드 순서를 바꾸지 않습니다.
+
+| 예시 | 의미 |
+| --- | --- |
+| `calendar:1d` | 결정된 시간대의 오늘 0시부터 |
+| `calendar:7d` | 오늘과 지난 6개 현지 날짜 |
+| `calendar:1mo` | 현지 달력의 한 달 전 같은 날부터. 말일은 자동 보정 |
+| `rolling:24h` | 현재로부터 정확히 지난 24시간 |
+| `rolling:7d` | 정확히 지난 168시간 |
+| `rolling:30d` | 정확히 지난 30일 |
+| `from:2026-06-01 to:2026-08-15` | 6월 1일부터 8월 15일까지, 양쪽 현지 날짜 전체 포함 |
+| `from:2026-06-01` | 6월 1일 이후 |
+| `to:2026-08-15` | 8월 15일 이전 |
+
+`calendar:7d`는 현지 달력 날짜 경계를 따르고, `rolling:7d`는 항상 정확히 168시간을 의미합니다. 시간대는 `FEED_TIMEZONE` → 서비스가 제공한 시간대 → `FEED_COUNTRY`/서비스 국가 → `UTC` 순으로 결정합니다. 표시 언어로 국가를 추측하지 않습니다. 일본 달력 기준이면 `FEED_TIMEZONE=Asia/Tokyo` 또는 `FEED_COUNTRY=JP`를 사용하세요.
+
+미국처럼 여러 시간대를 사용하는 국가는 `FEED_COUNTRY`에만 의존하지 말고 대상 사용자 지역에 맞는 `FEED_TIMEZONE`을 직접 지정하세요.
+
+키워드는 `OR`/`|`, `AND`/`&`/띄어쓰기, `NOT`/`!`/`-`, 괄호, `"Lee Ji-eun"`같은 정확한 구문을 지원합니다. 날짜와 키워드를 모두 설정하면 두 조건을 모두 통과해야 합니다.
+
+```text
+FEED_KEYWORD_FILTER=(AI OR "artificial intelligence") NOT 루머
+FEED_KEYWORD_SCOPE=title
+FEED_DATE_FILTER=calendar:7d
+FEED_TIMEZONE=Asia/Seoul
+```
+
+`title_or_description`에서 Google News는 메인 제목과 연관뉴스 링크 제목을, YouTube는 영상 제목과 실제 설명을 검사합니다. 언론사명, URL, HTML 속성은 검사하지 않습니다. 잘못된 필터·언어·시간대 설정은 RSS/API 요청과 Discord 전송 전에 실패합니다.
 
 ## Google News 설정
 
@@ -65,13 +107,116 @@ DISCORD_WEBHOOK_GN_KEYWORD_IU
 
 ## YouTube 설정
 
-필수 Secret은 `YOUTUBE_API_KEY`, `YOUTUBE_MODE`, `DISCORD_WEBHOOK_YOUTUBE`입니다. 모드에 따라 다음 중 하나도 필요합니다.
+Repository Variable `YOUTUBE_SOURCE`를 `rss` 또는 `api`로 설정합니다. 설정하지 않은 기존 사용자는 계속 `api`를 사용합니다.
+
+| 항목 | RSS (`YOUTUBE_SOURCE=rss`) | API (`YOUTUBE_SOURCE=api`) |
+| --- | --- | --- |
+| 설정 난이도 | 가장 쉬움. API 키 불필요 | YouTube Data API 키 필요 |
+| 채널 업로드 | 현재 Atom 피드에서 가능 | 업로드 재생목록의 전체 페이지 조회 |
+| 재생목록 | 현재 Atom 피드에서 가능 | 모든 재생목록 페이지 조회 |
+| 검색 결과 | 불가 | 저장된 검색 기준 이후의 반환 페이지 전체 처리 |
+| 재생시간·카테고리 | 피드가 제공하지 않아 생략 | YouTube가 제공하면 표시 |
+| 현재 피드에서 사라진 과거 항목 | 복구 불가 | 채널·재생목록 페이지를 계속 조회 가능 |
+| 할당량 | YouTube API 할당량 없음 | YouTube Data API 할당량 사용 |
+
+RSS와 API는 같은 영상 ID와 SQLite 상태를 사용하므로 방식을 바꿔도 이미 처리한 영상을 다시 보내지 않습니다. RSS에는 다음 페이지가 없으므로, 실행 전에 영상이 현재 피드에서 사라지면 복구할 수 없습니다.
+
+RSS에는 `YOUTUBE_DETAILVIEW`에 필요한 상세 필드가 없으므로 `YOUTUBE_SOURCE=rss`일 때는 이 설정을 꺼 두세요.
+
+필수 설정은 `YOUTUBE_MODE`, `DISCORD_WEBHOOK_YOUTUBE`와 모드별 값입니다.
 
 - `channels`: `YOUTUBE_CHANNEL_ID`
 - `playlists`: `YOUTUBE_PLAYLIST_ID`
-- `search`: `YOUTUBE_SEARCH_KEYWORD`
+- `search`: `YOUTUBE_SEARCH_KEYWORD` (API 전용)
 
-선택 Secret은 `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, `LANGUAGE_YOUTUBE`입니다. Repository Variable `YOUTUBE_DELIVERY_ORDER`는 Google News와 같은 `feed_oldest_first` 또는 `feed_newest_first` 값을 사용합니다.
+API 방식은 `YOUTUBE_API_KEY` Secret도 필요합니다. 선택 Secret은 `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, `LANGUAGE_YOUTUBE`입니다. Repository Variable `YOUTUBE_DELIVERY_ORDER`는 `feed_oldest_first|feed_newest_first`, `YOUTUBE_PLAYLIST_LAYOUT`은 `auto|channel|curated`를 사용합니다.
+
+### 리센느로 따라 하는 YouTube RSS 빠른 설정
+
+RSS 방식은 한 채널의 새 영상이나 공개 재생목록의 새 영상을 간단히 받고 싶을 때 적합합니다. YouTube API 키가 필요하지 않습니다. 현재 워크플로에는 `YOUTUBE_MODE`가 하나이므로 채널 예시와 재생목록 예시 중 하나를 선택해 사용하세요. 한 번의 실행에서 둘을 동시에 확인하지는 않습니다.
+
+먼저 **Settings → Secrets and variables → Actions → Variables**에서 다음 값을 등록합니다.
+
+| 이름 | 값 | 용도 |
+| --- | --- | --- |
+| `YOUTUBE_SOURCE` | `rss` | API 키가 필요 없는 Atom 피드 사용 |
+| `DISPLAY_LANGUAGE` | `ko` | 고정 문구와 날짜를 한국어로 표시 |
+| `FEED_TIMEZONE` | `Asia/Seoul` 또는 대상 사용자의 시간대, 선택 | 필터와 표시 날짜의 현지 기준 설정 |
+
+아래의 `이름=값` 표기는 완성된 설정을 한눈에 확인하기 위한 것입니다. GitHub 화면에서는 이름과 값을 서로 다른 입력칸에 넣으세요.
+
+#### 예시 A: RESCENE 채널
+
+채널 페이지: https://www.youtube.com/channel/UCtKtCiaWRz-d3EZn2xd1mdA
+
+`/channel/` 뒤의 값이 채널 ID인 `UCtKtCiaWRz-d3EZn2xd1mdA`입니다. 워크플로가 다음 RSS 주소를 자동으로 만들기 때문에 RSS URL을 별도 설정으로 저장할 필요는 없습니다.
+
+https://www.youtube.com/feeds/videos.xml?channel_id=UCtKtCiaWRz-d3EZn2xd1mdA
+
+**Actions → Secrets**에서 다음 값을 등록하거나 바꿉니다.
+
+| 완성된 설정 | 용도 |
+| --- | --- |
+| `YOUTUBE_MODE=channels` | 채널 업로드 피드 사용 |
+| `YOUTUBE_CHANNEL_ID=UCtKtCiaWRz-d3EZn2xd1mdA` | RESCENE 채널 선택 |
+| `DISCORD_WEBHOOK_YOUTUBE=기존 Discord 웹훅` | 알림을 받을 Discord 채널 선택 |
+
+RSS 설정에는 `YOUTUBE_API_KEY`를 추가하지 않습니다. Atom 피드는 API 전용 상세 필드를 제공하지 않으므로 `YOUTUBE_DETAILVIEW`는 등록하지 않거나 `false`로 설정하세요.
+
+`DISPLAY_LANGUAGE=ko`일 때 채널 알림은 다음과 같은 형식입니다. 아래 내용은 2026년 9월 1일 실제 피드로 확인한 예시이며, 이후 영상 제목과 날짜는 달라집니다.
+
+```text
+`RESCENE - YouTube`
+**Let’s go**
+https://youtu.be/JPAKX4X_9WU
+
+📅 게시일자: `2026년 8월 31일`
+🖼️ [썸네일](https://i3.ytimg.com/vi/JPAKX4X_9WU/hqdefault.jpg)
+```
+
+#### 예시 B: RESCENE Archive 재생목록
+
+재생목록 페이지: https://www.youtube.com/playlist?list=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt
+
+`list=` 뒤의 값이 재생목록 ID인 `PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt`입니다. 워크플로가 다음 RSS 주소를 자동으로 만듭니다.
+
+https://www.youtube.com/feeds/videos.xml?playlist_id=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt
+
+**Actions → Secrets**에서 다음 값을 등록하거나 바꿉니다.
+
+| 완성된 설정 | 용도 |
+| --- | --- |
+| `YOUTUBE_MODE=playlists` | 공개 재생목록 피드 사용 |
+| `YOUTUBE_PLAYLIST_ID=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt` | RESCENE Archive 재생목록 선택 |
+| `DISCORD_WEBHOOK_YOUTUBE=기존 Discord 웹훅` | 알림을 받을 Discord 채널 선택 |
+
+**Actions → Variables**에는 `YOUTUBE_PLAYLIST_LAYOUT=curated`도 등록합니다. `RESCENE Archive`에는 여러 채널의 영상이 들어 있으므로 소유자를 표시하는 혼합 재생목록 제목을 항상 유지할 수 있습니다. 기본값 `auto`도 현재 피드를 검사하면 같은 형식을 선택합니다.
+
+```text
+`📃 RESCENE Archive - YouTube 재생목록 by. RESCENE`
+
+`안녕하세요원이입니다잘부탁드립니다 - YouTube`
+**원이 근황**
+https://youtu.be/EsKmhBMmqIM
+
+📅 게시일자: `2026년 8월 28일`
+🖼️ [썸네일](https://i2.ytimg.com/vi/EsKmhBMmqIM/hqdefault.jpg)
+```
+
+#### RSS 설정 실행 및 확인
+
+1. **Actions → YouTube to Discord Notification → Run workflow**를 엽니다.
+2. 첫 실행은 `manual_test=true`를 유지합니다. 조건에 맞는 최신 항목을 최대 1개만 보내고 나머지 현재 항목은 기준선으로 저장하므로 과거 영상이 한꺼번에 전송되지 않습니다.
+3. 실행이 성공하고 Discord에 시험 알림이 최대 1개만 왔는지 확인합니다. 워크플로는 활성 상태로 두세요. 이후 예약 실행은 15분마다 새 항목을 확인하고, 기본값에서는 RSS의 오래된 위치부터 새 위치 순서로 발견된 영상을 모두 전송합니다.
+
+다음 오류는 잘못된 설정을 조기에 알려주는 정상적인 안전장치입니다.
+
+- `YOUTUBE_API_KEY is required`: Variables 탭의 `YOUTUBE_SOURCE`가 빠졌거나 정확히 `rss`가 아닙니다.
+- `YouTube RSS does not support search mode`: RSS와 `YOUTUBE_MODE=search`를 함께 사용했습니다. 검색은 API 방식을 사용하세요.
+- `YouTube RSS does not support YOUTUBE_DETAILVIEW`: API 전용 상세 보기가 아직 켜져 있습니다.
+- 피드가 유효하지 않다는 오류: 채널·재생목록 ID를 잘못 복사했거나 대상이 비공개·삭제 상태일 수 있습니다. 위에 적힌 완성 RSS 주소를 브라우저에서 열어 확인하세요.
+
+RSS는 현재 Atom 피드에 들어 있는 한정된 항목만 볼 수 있고 다음 페이지가 없습니다. 예약 실행이 보기 전에 피드에서 사라진 영상은 RSS 방식으로 복구할 수 없습니다. 과거 항목 복구, 검색, 재생시간·카테고리, 전체 페이지 조회가 필요하면 API 방식을 사용하세요.
 
 두 서비스 모두 선택 Secret `DISCORD_WEBHOOK_ADMIN`을 등록하면 응답 불명 재전송이나 최종 전송 실패를 관리자 채널에 알립니다. 알림에는 서비스, 프로필, 해시 처리된 항목 식별자, Actions 실행 링크만 포함됩니다.
 
@@ -82,6 +227,25 @@ DISCORD_WEBHOOK_GN_KEYWORD_IU
 - `YOUTUBE_MAX_RESULTS`와 날짜 기반 `YOUTUBE_PLAYLIST_SORT`는 채널·재생목록 예약 실행의 수집 개수나 순서를 제한하지 않습니다.
 
 주간·월간 실행에서도 API에서 발견한 신규 영상은 모두 같은 실행 대기열에 들어갑니다.
+
+API 메시지 형식은 다음과 같습니다.
+
+```text
+`BBC News 코리아 - YouTube`
+**영상 제목**
+https://youtu.be/VIDEO_ID
+
+⏳ 재생시간: `07:13`
+📅 게시일자: `2026년 6월 29일`
+📁 카테고리: `뉴스 및 정치`
+🖼️ [썸네일](https://i.ytimg.com/vi/VIDEO_ID/hqdefault.jpg)
+```
+
+RSS 메시지는 재생시간과 카테고리를 생략합니다. 재생목록은 첫 줄 다음에 항상 한 줄을 비웁니다. `channel`은 `` `📃 재생목록명 by. 채널명 - YouTube 재생목록` ``, `curated`는 `` `📃 재생목록명 - YouTube 재생목록 by. 소유자` `` 형식입니다. `auto`는 단일 채널 목록을 `channel`, 혼합 채널 목록을 `curated`로 자동 선택합니다.
+
+## 표시 언어
+
+`DISPLAY_LANGUAGE`는 고정 문구와 날짜만 바꾸며 기사·영상·채널·재생목록의 고유 제목은 번역하지 않습니다. 지원 값은 `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `es`, `pt-BR`, `fr`, `de`, `id`입니다. YouTube API 카테고리는 선택 언어로 요청하고, 얻지 못하면 그 줄을 생략합니다. 기존 `LANGUAGE_YOUTUBE`도 호환되지만 `DISPLAY_LANGUAGE`가 우선합니다.
 
 ## 실행 간격 바꾸기
 

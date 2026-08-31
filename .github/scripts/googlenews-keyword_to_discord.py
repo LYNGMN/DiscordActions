@@ -30,11 +30,15 @@ from google_news_delivery_state import (
     reserve_delivery_with_messages,
 )
 from google_news_discord_delivery import send_webhook_message, split_discord_content
+from google_news_feed_filter import compile_google_news_feed_filter
+from feed_localization import (
+    format_feed_datetime,
+    labels_for,
+    localized_country_name,
+    resolve_display_language,
+)
 from google_news_keyword_matcher import (
-    compile_keyword_match,
     extract_keyword_query,
-    keyword_filter_fingerprint,
-    match_google_news_item,
 )
 from google_news_profile_result import write_profile_result
 from google_news_related_links import resolve_related_url
@@ -73,6 +77,12 @@ DELIVERY_ORDER = os.environ.get(
 ).lower()
 KEYWORD_MATCH_MODE = os.environ.get('KEYWORD_MATCH_MODE', 'title').lower()
 KEYWORD_MATCH_ALIASES = os.environ.get('KEYWORD_MATCH_ALIASES', '')
+FEED_DATE_FILTER = os.environ.get('FEED_DATE_FILTER', '')
+FEED_KEYWORD_FILTER = os.environ.get('FEED_KEYWORD_FILTER', '')
+FEED_KEYWORD_SCOPE = os.environ.get('FEED_KEYWORD_SCOPE', 'title').lower()
+FEED_TIMEZONE = os.environ.get('FEED_TIMEZONE', '')
+FEED_COUNTRY = os.environ.get('FEED_COUNTRY', '')
+DISPLAY_LANGUAGE = os.environ.get('DISPLAY_LANGUAGE', '')
 
 # DB 설정
 DB_PATH = os.environ.get('GOOGLE_NEWS_DB_PATH', 'google_news_keyword.db')
@@ -436,8 +446,27 @@ def parse_html_description(html_desc, resolver, main_title, main_link):
 def format_discord_message(news_item, keyword, country_code):
     """Format one keyword notification using the selected locale."""
     config = country_configs.get(country_code, country_configs['US'])
-    _, _, google_news, country_name, _, flag, _, _ = config
-    formatted_date = convert_to_local_time(news_item['pub_date'], country_code)
+    service_language, _, _, service_country_name, _, flag, service_timezone, _ = config
+    service_display_language = resolve_display_language(
+        "",
+        service_language,
+        country_code,
+    )
+    display_language = resolve_display_language(
+        DISPLAY_LANGUAGE,
+        service_language,
+        country_code,
+    )
+    google_news = labels_for(display_language)["google_news"]
+    country_name = (
+        service_country_name
+        if display_language == service_display_language
+        else localized_country_name(country_code, display_language)
+    )
+    timezone_name = FEED_TIMEZONE or service_timezone
+    formatted_date = format_feed_datetime(
+        news_item['pub_date'], display_language, timezone_name
+    )
     message = (
         f"`{google_news} - {keyword} - {country_name} {flag}`\n"
         f"**{news_item['title']}**\n{news_item['link']}"
@@ -567,22 +596,38 @@ def main():
     try:
         rss_url, keyword, country_code = get_rss_url()
 
-        compiled_keyword = None
-        filter_fingerprint = None
+        base_keyword_query = ""
         try:
             base_keyword_query = extract_keyword_query(KEYWORD, rss_url)
         except ValueError:
             if KEYWORD_MODE:
                 raise
-        else:
-            compiled_keyword = compile_keyword_match(
-                base_keyword_query,
-                KEYWORD_MATCH_ALIASES,
-            )
-            filter_fingerprint = keyword_filter_fingerprint(
-                compiled_keyword,
-                KEYWORD_MATCH_MODE,
-            )
+        service_timezone = country_configs.get(
+            country_code, country_configs['US']
+        )[6]
+        service_language = country_configs.get(
+            country_code, country_configs['US']
+        )[0]
+        display_language = resolve_display_language(
+            DISPLAY_LANGUAGE,
+            service_language,
+            FEED_COUNTRY or country_code,
+        )
+        compiled_filter = compile_google_news_feed_filter(
+            common_date=FEED_DATE_FILTER,
+            common_keyword=FEED_KEYWORD_FILTER,
+            common_scope=FEED_KEYWORD_SCOPE,
+            legacy_date=DATE_FILTER_KEYWORD,
+            legacy_keyword=ADVANCED_FILTER_KEYWORD,
+            service_keyword=base_keyword_query,
+            service_aliases=KEYWORD_MATCH_ALIASES,
+            service_mode=KEYWORD_MATCH_MODE,
+            explicit_timezone=FEED_TIMEZONE,
+            service_timezone=service_timezone,
+            country_code=FEED_COUNTRY or country_code,
+            display_language=display_language,
+        )
+        filter_fingerprint = compiled_filter.fingerprint
 
         init_db(reset=INITIALIZE_KEYWORD)
 
@@ -628,14 +673,10 @@ def main():
         matched_items = []
         filtered_count = 0
         for item in news_items:
-            if compiled_keyword is None:
-                matched_items.append(item)
-                continue
-            match_result = match_google_news_item(
+            match_result = compiled_filter.matches(
+                item.findtext('pubDate', ''),
                 item.findtext('title', ''),
                 item.findtext('description', ''),
-                compiled_keyword,
-                KEYWORD_MATCH_MODE,
             )
             if match_result.matched:
                 matched_items.append(item)
@@ -671,9 +712,6 @@ def main():
             record_profile_result("success", 0)
             return 0
 
-        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_KEYWORD)
-        logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
-
         profile_failed = False
         queued_items = []
         for item in news_items:
@@ -682,10 +720,6 @@ def main():
                 guid = item.find('guid').text
                 current_guid = guid
                 pub_date = item.find('pubDate').text
-                if not is_within_date_range(pub_date, since_date, until_date, past_date):
-                    logging.debug(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
-                    continue
-
                 title = replace_brackets(item.find('title').text)
                 google_link = item.find('link').text
                 link = resolver.resolve(google_link).url
@@ -694,10 +728,6 @@ def main():
                 description, related_news = parse_html_description(
                     description_html, resolver, title, link
                 )
-
-                if not apply_advanced_filter(title, description, ADVANCED_FILTER_KEYWORD):
-                    logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-                    continue
 
                 discord_message = format_discord_message(
                     {

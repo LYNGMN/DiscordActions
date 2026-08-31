@@ -10,6 +10,13 @@ import re
 import json
 import sys
 from delivery_admin_alert import notify_admin
+from feed_filters import (
+    compile_feed_filter,
+    resolve_feed_date_filter,
+    resolve_feed_keyword_filter,
+    resolve_feed_timezone,
+)
+from feed_localization import normalize_display_language
 from youtube_delivery_state import (
     finalize_youtube_delivery,
     get_search_published_after,
@@ -21,11 +28,15 @@ from youtube_delivery_state import (
     pending_youtube_targets,
     pending_youtube_video_ids,
     queue_youtube_delivery,
+    record_filtered_youtube_video,
     save_youtube_video,
+    is_youtube_item_handled,
     youtube_delivery_metrics,
 )
 from youtube_discord_delivery import YOUTUBE_AVATAR_URL, send_youtube_webhook
+from youtube_messages import build_youtube_message, resolve_playlist_layout
 from youtube_video_source import (
+    fetch_rss_videos,
     fetch_source_videos,
     fetch_video_details as fetch_source_video_details,
 )
@@ -35,6 +46,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 환경 변수
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
+YOUTUBE_SOURCE = os.getenv('YOUTUBE_SOURCE', 'api').lower()
 YOUTUBE_MODE = os.getenv('YOUTUBE_MODE', 'channels').lower()
 YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID')
 YOUTUBE_PLAYLIST_ID = os.getenv('YOUTUBE_PLAYLIST_ID')
@@ -42,11 +54,20 @@ YOUTUBE_SEARCH_KEYWORD = os.getenv('YOUTUBE_SEARCH_KEYWORD')
 INITIALIZE_MODE_YOUTUBE = os.getenv('INITIALIZE_MODE_YOUTUBE', 'false').lower() == 'true'
 ADVANCED_FILTER_YOUTUBE = os.getenv('ADVANCED_FILTER_YOUTUBE', '')
 DATE_FILTER_YOUTUBE = os.getenv('DATE_FILTER_YOUTUBE', '')
+FEED_DATE_FILTER = os.getenv('FEED_DATE_FILTER', '')
+FEED_KEYWORD_FILTER = os.getenv('FEED_KEYWORD_FILTER', '')
+FEED_KEYWORD_SCOPE = os.getenv('FEED_KEYWORD_SCOPE', 'title').lower()
+FEED_TIMEZONE = os.getenv('FEED_TIMEZONE', '')
+FEED_COUNTRY = os.getenv('FEED_COUNTRY', '')
+YOUTUBE_SERVICE_TIMEZONE = os.getenv('YOUTUBE_SERVICE_TIMEZONE', '')
+YOUTUBE_REGION_CODE = os.getenv('YOUTUBE_REGION_CODE', '')
 DISCORD_WEBHOOK_YOUTUBE = os.getenv('DISCORD_WEBHOOK_YOUTUBE')
 DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW = os.getenv('DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW')
 DISCORD_WEBHOOK_ADMIN = os.getenv('DISCORD_WEBHOOK_ADMIN', '')
 LANGUAGE_YOUTUBE = os.getenv('LANGUAGE_YOUTUBE', 'English')
+DISPLAY_LANGUAGE = os.getenv('DISPLAY_LANGUAGE', '') or LANGUAGE_YOUTUBE
 YOUTUBE_DETAILVIEW = os.getenv('YOUTUBE_DETAILVIEW', 'false').lower() == 'true'
+YOUTUBE_PLAYLIST_LAYOUT = os.getenv('YOUTUBE_PLAYLIST_LAYOUT', 'auto').lower()
 YOUTUBE_BASELINE_ONLY = os.getenv('YOUTUBE_BASELINE_ONLY', 'false').lower() == 'true'
 YOUTUBE_MANUAL_TEST_MODE = os.getenv('YOUTUBE_MANUAL_TEST_MODE', 'false').lower() == 'true'
 YOUTUBE_DELIVERY_ORDER = os.getenv(
@@ -60,23 +81,51 @@ YOUTUBE_RUN_SUMMARY_PATH = os.getenv(
 DB_PATH = os.getenv('YOUTUBE_DB_PATH', 'youtube_videos.db')
 
 def check_env_variables():
-    required_vars = ['YOUTUBE_API_KEY', 'YOUTUBE_MODE', 'DISCORD_WEBHOOK_YOUTUBE']
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    if missing_vars:
-        raise ValueError(f"다음 환경 변수가 설정되지 않았습니다: {', '.join(missing_vars)}")
-    
+    if YOUTUBE_SOURCE not in {'rss', 'api'}:
+        raise ValueError("YOUTUBE_SOURCE must be 'rss' or 'api'")
+    if not DISCORD_WEBHOOK_YOUTUBE:
+        raise ValueError("DISCORD_WEBHOOK_YOUTUBE is required")
+    if YOUTUBE_SOURCE == 'api' and not YOUTUBE_API_KEY:
+        raise ValueError("YOUTUBE_API_KEY is required for the API source")
     if YOUTUBE_MODE not in ['channels', 'playlists', 'search']:
-        raise ValueError("YOUTUBE_MODE는 'channels', 'playlists', 'search' 중 하나여야 합니다.")
-    
+        raise ValueError("invalid YOUTUBE_MODE")
+    if YOUTUBE_SOURCE == 'rss' and YOUTUBE_MODE == 'search':
+        raise ValueError("YouTube RSS does not support search mode")
+    if YOUTUBE_SOURCE == 'rss' and YOUTUBE_DETAILVIEW:
+        raise ValueError("YouTube RSS does not support YOUTUBE_DETAILVIEW")
     if YOUTUBE_MODE == 'channels':
         if not YOUTUBE_CHANNEL_ID:
-            raise ValueError("YOUTUBE_MODE가 'channels'일 때 YOUTUBE_CHANNEL_ID는 필수입니다.")
+            raise ValueError("YOUTUBE_CHANNEL_ID is required")
     elif YOUTUBE_MODE == 'playlists':
         if not YOUTUBE_PLAYLIST_ID:
-            raise ValueError("YOUTUBE_MODE가 'playlists'일 때 YOUTUBE_PLAYLIST_ID는 필수입니다.")
+            raise ValueError("YOUTUBE_PLAYLIST_ID is required")
     elif YOUTUBE_MODE == 'search':
         if not YOUTUBE_SEARCH_KEYWORD:
-            raise ValueError("YOUTUBE_MODE가 'search'일 때 YOUTUBE_SEARCH_KEYWORD는 필수입니다.")
+            raise ValueError("YOUTUBE_SEARCH_KEYWORD is required")
+    normalize_display_language(DISPLAY_LANGUAGE)
+    resolve_playlist_layout(YOUTUBE_PLAYLIST_LAYOUT, [])
+    compile_runtime_feed_filter()
+
+
+def compile_runtime_feed_filter():
+    display_language = normalize_display_language(DISPLAY_LANGUAGE)
+    timezone_name = resolve_feed_timezone(
+        explicit_timezone=FEED_TIMEZONE,
+        service_timezone=YOUTUBE_SERVICE_TIMEZONE,
+        country_code=FEED_COUNTRY or YOUTUBE_REGION_CODE,
+    )
+    date_filter = resolve_feed_date_filter(FEED_DATE_FILTER, DATE_FILTER_YOUTUBE)
+    keyword_filter = resolve_feed_keyword_filter(
+        FEED_KEYWORD_FILTER,
+        ADVANCED_FILTER_YOUTUBE,
+    )
+    return compile_feed_filter(
+        date_filter=date_filter,
+        keyword_filter=keyword_filter,
+        keyword_scope=FEED_KEYWORD_SCOPE,
+        timezone_name=timezone_name,
+        display_language=display_language,
+    )
 
 def init_db(reset=False):
     conn = sqlite3.connect(DB_PATH)
@@ -104,7 +153,8 @@ def init_db(reset=False):
                   caption TEXT,
                   source TEXT,
                   delivery_status TEXT NOT NULL DEFAULT 'sent',
-                  delivery_sequence INTEGER)''')
+                  delivery_sequence INTEGER,
+                  filter_fingerprint TEXT)''')
     conn.commit()
     conn.close()
     initialize_delivery_state(DB_PATH)
@@ -272,20 +322,9 @@ def parse_duration(duration):
     total_seconds = int(parsed_duration.total_seconds())
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    if LANGUAGE_YOUTUBE == 'Korean':
-        if hours > 0:
-            return f"{hours}시간 {minutes}분 {seconds}초"
-        elif minutes > 0:
-            return f"{minutes}분 {seconds}초"
-        else:
-            return f"{seconds}초"
-    else:
-        if hours > 0:
-            return f"{hours}h {minutes}m {seconds}s"
-        elif minutes > 0:
-            return f"{minutes}m {seconds}s"
-        else:
-            return f"{seconds}s"
+    if hours > 0:
+        return "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
+    return "{:02d}:{:02d}".format(minutes, seconds)
 
 def convert_to_local_time(published_at):
     utc_time = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
@@ -366,16 +405,40 @@ def is_within_date_range(published_at, since_date, until_date, past_date):
 
 # 카테고리 ID를 이름으로 변환하는 캐시를 이용한 함수
 category_cache = {}
-def get_category_name(youtube, category_id):
-    if category_id in category_cache:
-        return category_cache[category_id]
-    
-    categories = youtube.videoCategories().list(part="snippet", regionCode="US").execute()
-    for category in categories['items']:
-        category_cache[category['id']] = category['snippet']['title']
-        if category['id'] == category_id:
-            return category['snippet']['title']
-    return "Unknown"
+def get_category_name(
+    youtube,
+    category_id,
+    display_language=None,
+    region_code=None,
+):
+    language = normalize_display_language(display_language or DISPLAY_LANGUAGE)
+    region = (region_code or YOUTUBE_REGION_CODE or 'US').upper()
+    cache_key = (language, region, category_id)
+    if cache_key in category_cache:
+        return category_cache[cache_key]
+    try:
+        categories = youtube.videoCategories().list(
+            part="snippet",
+            regionCode=region,
+            hl=language,
+        ).execute()
+    except Exception as error:
+        print(
+            "Warning: optional YouTube category lookup failed ({})".format(
+                type(error).__name__
+            )
+        )
+        return ""
+    for category in categories.get('items', []):
+        current_id = category.get('id', '')
+        current_title = (category.get('snippet') or {}).get('title', '')
+        if not current_id or not current_title:
+            continue
+        current_key = (language, region, current_id)
+        category_cache[current_key] = current_title
+        if current_id == category_id:
+            return current_title
+    return ""
 
 def fetch_playlist_info(youtube, playlist_id):
     playlist_response = youtube.playlists().list(
@@ -387,7 +450,7 @@ def fetch_playlist_info(youtube, playlist_id):
         playlist_info = playlist_response['items'][0]['snippet']
         return {
             'title': playlist_info['title'],
-            'channel_title': playlist_info['channelTitle']
+            'owner_title': playlist_info['channelTitle']
         }
     return None
 
@@ -423,10 +486,100 @@ def fetch_video_details(youtube, video_ids):
         logging.error("비디오 세부 정보 조회 실패 (오류 유형: %s)", type(error).__name__)
         raise RuntimeError("youtube_video_details_failed") from None
 
+
+def _best_thumbnail(snippet):
+    thumbnails = snippet.get('thumbnails') or {}
+    for name in ('maxres', 'standard', 'high', 'medium', 'default'):
+        candidate = thumbnails.get(name) or {}
+        url = candidate.get('url')
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+    raise ValueError("YouTube video thumbnail is missing")
+
+
+def _api_video_data(youtube, video_detail):
+    try:
+        video_id = video_detail['id']
+        snippet = video_detail['snippet']
+        content_details = video_detail['contentDetails']
+        published_at = snippet['publishedAt']
+        channel_title = html.unescape(snippet['channelTitle'])
+        channel_id = snippet['channelId']
+        title = html.unescape(snippet['title'])
+    except (KeyError, TypeError):
+        raise ValueError("invalid YouTube API video item") from None
+    category_id = snippet.get('categoryId', '')
+    category_name = (
+        get_category_name(
+            youtube,
+            category_id,
+            display_language=normalize_display_language(DISPLAY_LANGUAGE),
+            region_code=FEED_COUNTRY or YOUTUBE_REGION_CODE or 'US',
+        )
+        if category_id
+        else ''
+    )
+    live_details = video_detail.get('liveStreamingDetails') or {}
+    return {
+        'published_at': published_at,
+        'channel_title': channel_title,
+        'channel_id': channel_id,
+        'title': title,
+        'video_id': video_id,
+        'video_url': "https://youtu.be/{}".format(video_id),
+        'description': html.unescape(snippet.get('description', '')),
+        'category_id': category_id,
+        'category_name': category_name,
+        'duration': parse_duration(content_details['duration']),
+        'thumbnail_url': _best_thumbnail(snippet),
+        'tags': ','.join(snippet.get('tags', [])),
+        'live_broadcast_content': snippet.get('liveBroadcastContent', ''),
+        'scheduled_start_time': live_details.get('scheduledStartTime', ''),
+        'caption': content_details.get('caption', ''),
+        'source': 'api:{}'.format(YOUTUBE_MODE),
+    }
+
+
+def fetch_configured_video_data(youtube, known_video_ids):
+    if YOUTUBE_SOURCE == 'rss':
+        try:
+            items, metadata = fetch_rss_videos(
+                YOUTUBE_MODE,
+                channel_id=YOUTUBE_CHANNEL_ID,
+                playlist_id=YOUTUBE_PLAYLIST_ID,
+            )
+        except Exception as error:
+            logging.error("YouTube RSS fetch failed (error type: %s)", type(error).__name__)
+            raise RuntimeError("youtube_source_fetch_failed") from None
+        return items, metadata
+
+    videos = fetch_videos(
+        youtube,
+        YOUTUBE_MODE,
+        YOUTUBE_CHANNEL_ID,
+        YOUTUBE_PLAYLIST_ID,
+        YOUTUBE_SEARCH_KEYWORD,
+        known_video_ids=known_video_ids,
+    )
+    video_ids = [video[0] for video in videos]
+    details = fetch_video_details(youtube, video_ids)
+    details_by_id = {item.get('id'): item for item in details if isinstance(item, dict)}
+    missing = [video_id for video_id in video_ids if video_id not in details_by_id]
+    if missing:
+        raise RuntimeError("youtube_video_details_incomplete")
+    items = [_api_video_data(youtube, details_by_id[video_id]) for video_id in video_ids]
+    metadata = None
+    if YOUTUBE_MODE == 'playlists':
+        metadata = fetch_playlist_info(youtube, YOUTUBE_PLAYLIST_ID)
+        if metadata is None:
+            raise RuntimeError("youtube_playlist_metadata_missing")
+    return items, metadata
+
+
 def fetch_and_post_videos(youtube):
-    logging.info(f"fetch_and_post_videos 함수 시작")
-    logging.info(f"YOUTUBE_DETAILVIEW 설정: {YOUTUBE_DETAILVIEW}")
-    logging.info(f"YOUTUBE_DELIVERY_ORDER 설정: {YOUTUBE_DELIVERY_ORDER}")
+    logging.info("YouTube feed processing started")
+    compiled_filter = compile_runtime_feed_filter()
+    display_language = normalize_display_language(DISPLAY_LANGUAGE)
 
     if not os.path.exists(DB_PATH):
         init_db()
@@ -442,87 +595,39 @@ def fetch_and_post_videos(youtube):
     existing_video_ids = set(row[0] for row in c.fetchall())
     conn.close()
 
-    since_date, until_date, past_date = parse_date_filter(DATE_FILTER_YOUTUBE)
-
     scan_checkpoint = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    videos = fetch_videos(
+    source_items, playlist_info = fetch_configured_video_data(
         youtube,
-        YOUTUBE_MODE,
-        YOUTUBE_CHANNEL_ID,
-        YOUTUBE_PLAYLIST_ID,
-        YOUTUBE_SEARCH_KEYWORD,
-        known_video_ids=existing_video_ids,
+        existing_video_ids,
     )
-    video_ids = [video[0] for video in videos]
-
-    video_details = fetch_video_details(youtube, video_ids)
-
-    # 비디오 세부 정보를 딕셔너리로 변환
-    video_details_dict = {video['id']: video for video in video_details}
-
     new_videos = []
-
-    playlist_info = None
-    if YOUTUBE_MODE == 'playlists':
-        playlist_info = fetch_playlist_info(youtube, YOUTUBE_PLAYLIST_ID)
-
-    # videos 리스트의 순서를 유지하면서 처리
-    for video_id, snippet in videos:
-        if video_id not in video_details_dict:
-            logging.warning(f"비디오 세부 정보를 찾을 수 없음: {video_id}")
+    source_channel_titles = [item['channel_title'] for item in source_items]
+    for video_data in source_items:
+        video_id = video_data['video_id']
+        if is_youtube_item_handled(
+            DB_PATH,
+            video_id,
+            compiled_filter.fingerprint,
+        ):
+            logging.info("Skipping handled YouTube video: %s", video_id)
             continue
-
-        video_detail = video_details_dict[video_id]
-        snippet = video_detail['snippet']
-        content_details = video_detail['contentDetails']
-        live_streaming_details = video_detail.get('liveStreamingDetails', {})
-
-        published_at = snippet['publishedAt']
-        
-        if video_id in existing_video_ids:
-            logging.info(f"이미 존재하는 비디오 건너뛰기: {video_id}")
+        result = compiled_filter.matches(
+            video_data['published_at'],
+            video_data['title'],
+            video_data['description'],
+        )
+        if not result.matched:
+            record_filtered_youtube_video(
+                DB_PATH,
+                video_data,
+                compiled_filter.fingerprint,
+            )
+            logging.info(
+                "YouTube video excluded by %s filter: %s",
+                result.reason,
+                video_id,
+            )
             continue
-
-        if not is_within_date_range(published_at, since_date, until_date, past_date):
-            logging.info(f"날짜 필터에 의해 건너뛰어진 비디오: {snippet['title']}")
-            continue
-
-        video_title = html.unescape(snippet['title'])
-        
-        if not apply_advanced_filter(video_title, ADVANCED_FILTER_YOUTUBE):
-            logging.info(f"고급 필터에 의해 건너뛰어진 비디오: {video_title}")
-            continue
-
-        channel_title = html.unescape(snippet['channelTitle'])
-        description = html.unescape(snippet.get('description', ''))
-        thumbnail_url = snippet['thumbnails']['high']['url']
-        duration = parse_duration(content_details['duration'])
-        category_id = snippet.get('categoryId', 'Unknown')
-        category_name = get_category_name(youtube, category_id)
-        tags = ','.join(snippet.get('tags', []))
-        live_broadcast_content = snippet.get('liveBroadcastContent', '')
-        scheduled_start_time = live_streaming_details.get('scheduledStartTime', '')
-        caption = content_details.get('caption', '')
-
-        video_data = {
-            'published_at': published_at,
-            'channel_title': channel_title,
-            'channel_id': snippet['channelId'],
-            'title': video_title,
-            'video_id': video_id,
-            'video_url': f"https://youtu.be/{video_id}",
-            'description': description,
-            'category_id': category_id,
-            'category_name': category_name,
-            'duration': duration,
-            'thumbnail_url': thumbnail_url,
-            'tags': tags,
-            'live_broadcast_content': live_broadcast_content,
-            'scheduled_start_time': scheduled_start_time,
-            'caption': caption,
-            'source': YOUTUBE_MODE
-        }
-        
         new_videos.append(video_data)
 
     delivery_videos, baseline_videos = partition_youtube_items(
@@ -543,60 +648,21 @@ def fetch_and_post_videos(youtube):
         logging.info("안전 기준선 저장 완료: %s개", len(baseline_videos))
 
     queued_videos = []
+    playlist_layout = resolve_playlist_layout(
+        YOUTUBE_PLAYLIST_LAYOUT,
+        source_channel_titles,
+    )
     for video in delivery_videos:
-        formatted_published_at = convert_to_local_time(video['published_at'])
-        video_url = f"https://youtu.be/{video['video_id']}"
-        
-        if LANGUAGE_YOUTUBE == 'Korean':
-            if YOUTUBE_MODE == 'channels':
-                source_text = f"`{video['channel_title']} - YouTube`\n"
-            elif YOUTUBE_MODE == 'playlists' and playlist_info:
-                source_text = (
-                    f"`📃 {playlist_info['title']} - YouTube 재생목록 by. {playlist_info['channel_title']}`\n\n"
-                    f"`{video['channel_title']} - YouTube`\n"
-                )
-            elif YOUTUBE_MODE == 'search':
-                source_text = f"`🔎 {YOUTUBE_SEARCH_KEYWORD} - YouTube 검색 결과`\n`{video['channel_title']} - YouTube`\n\n"
-            else:
-                source_text = f"`{video['channel_title']} - YouTube`\n"
-            
-            message = (
-                f"{source_text}"
-                f"**{video['title']}**\n"
-                f"{video_url}\n\n"
-                f"📁 카테고리: `{video['category_name']}`\n"
-                f"⌛️ 영상 길이: `{video['duration']}`\n"
-                f"📅 게시일: `{formatted_published_at}`\n"
-                f"🖼️ [썸네일](<{video['thumbnail_url']}>)"
-            )
-            if video['scheduled_start_time']:
-                formatted_start_time = convert_to_local_time(video['scheduled_start_time'])
-                message += f"\n\n🔴 예정된 라이브 시작 시간: `{formatted_start_time}`"
-        else:
-            if YOUTUBE_MODE == 'channels':
-                source_text = f"`{video['channel_title']} - YouTube`\n"
-            elif YOUTUBE_MODE == 'playlists' and playlist_info:
-                source_text = (
-                    f"`📃 {playlist_info['title']} - YouTube Playlist by {playlist_info['channel_title']}`\n\n"
-                    f"`{video['channel_title']} - YouTube`\n"
-                )
-            elif YOUTUBE_MODE == 'search':
-                source_text = f"`🔎 {YOUTUBE_SEARCH_KEYWORD} - YouTube Search Result`\n`{video['channel_title']} - YouTube`\n\n"
-            else:
-                source_text = f"`{video['channel_title']} - YouTube`\n"
-            
-            message = (
-                f"{source_text}"
-                f"**{video['title']}**\n"
-                f"{video_url}\n\n"
-                f"📁 Category: `{video['category_name']}`\n"
-                f"⌛️ Duration: `{video['duration']}`\n"
-                f"📅 Published: `{formatted_published_at}`\n"
-                f"🖼️ [Thumbnail](<{video['thumbnail_url']}>)"
-            )
-            if video['scheduled_start_time']:
-                formatted_start_time = convert_to_local_time(video['scheduled_start_time'])
-                message += f"\n\n🔴 Scheduled Live Start Time: `{formatted_start_time}`"
+        message = build_youtube_message(
+            video,
+            source_type=YOUTUBE_MODE,
+            display_language=display_language,
+            timezone_name=compiled_filter.timezone_name,
+            include_api_details=YOUTUBE_SOURCE == 'api',
+            playlist=playlist_info,
+            playlist_layout=playlist_layout,
+            search_keyword=YOUTUBE_SEARCH_KEYWORD or '',
+        )
 
         targets = [('primary', {'content': message})]
         if YOUTUBE_DETAILVIEW:
@@ -623,7 +689,7 @@ def fetch_and_post_videos(youtube):
 
     if YOUTUBE_MODE == 'search':
         mark_search_checkpoint(DB_PATH, scan_checkpoint)
-    logging.info("fetch_and_post_videos 함수 종료")
+    logging.info("YouTube feed processing completed")
 
 if __name__ == "__main__":
     run_status = 'failed'
@@ -633,7 +699,11 @@ if __name__ == "__main__":
             init_db(reset=True)
             logging.info("초기화 모드로 실행 중: 데이터베이스를 재설정하고 모든 비디오를 다시 가져옵니다.")
         
-        youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+        youtube = (
+            build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+            if YOUTUBE_SOURCE == 'api'
+            else None
+        )
         
         fetch_and_post_videos(youtube)
         

@@ -1,6 +1,7 @@
 import importlib
 import sys
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from types import ModuleType
 
@@ -17,7 +18,10 @@ def load_youtube_script():
     discovery.build = lambda *args, **kwargs: None
     google_api.discovery = discovery
     isodate = ModuleType("isodate")
-    isodate.parse_duration = lambda value: None
+    isodate.parse_duration = lambda value: {
+        "PT7M13S": timedelta(minutes=7, seconds=13),
+        "PT1H2M3S": timedelta(hours=1, minutes=2, seconds=3),
+    }.get(value)
     stubs = {
         "googleapiclient": google_api,
         "googleapiclient.discovery": discovery,
@@ -50,6 +54,38 @@ class FailingVideosResource:
 
 class FailingYouTubeClient:
     def videos(self):
+        return FailingVideosResource()
+
+
+class RecordingRequest:
+    def __init__(self, response):
+        self.response = response
+
+    def execute(self):
+        return self.response
+
+
+class RecordingCategories:
+    def __init__(self):
+        self.calls = []
+
+    def list(self, **kwargs):
+        self.calls.append(kwargs)
+        return RecordingRequest(
+            {"items": [{"id": "25", "snippet": {"title": "뉴스 및 정치"}}]}
+        )
+
+
+class CategoryYouTubeClient:
+    def __init__(self):
+        self.resource = RecordingCategories()
+
+    def videoCategories(self):
+        return self.resource
+
+
+class FailingCategoryYouTubeClient:
+    def videoCategories(self):
         return FailingVideosResource()
 
 
@@ -140,7 +176,112 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn(".github/scripts/youtube_delivery_state.py", source)
         self.assertIn(".github/scripts/youtube_discord_delivery.py", source)
         self.assertIn(".github/scripts/youtube_video_source.py", source)
+        self.assertIn(".github/scripts/youtube_messages.py", source)
+        self.assertIn(".github/scripts/feed_filters.py", source)
+        self.assertIn(".github/scripts/feed_localization.py", source)
         self.assertIn(".github/scripts/youtube_to_discord.py", source)
+
+    def test_rss_source_needs_no_api_key_but_rejects_search(self):
+        module = load_youtube_script()
+        module.YOUTUBE_SOURCE = "rss"
+        module.YOUTUBE_API_KEY = ""
+        module.YOUTUBE_MODE = "channels"
+        module.YOUTUBE_CHANNEL_ID = "UC-channel"
+        module.YOUTUBE_PLAYLIST_ID = ""
+        module.YOUTUBE_SEARCH_KEYWORD = ""
+        module.DISCORD_WEBHOOK_YOUTUBE = "https://discord.example/webhook"
+
+        module.check_env_variables()
+
+        module.YOUTUBE_MODE = "search"
+        module.YOUTUBE_SEARCH_KEYWORD = "news"
+        with self.assertRaisesRegex(ValueError, "RSS.*search"):
+            module.check_env_variables()
+
+    def test_api_source_keeps_api_key_requirement(self):
+        module = load_youtube_script()
+        module.YOUTUBE_SOURCE = "api"
+        module.YOUTUBE_API_KEY = ""
+        module.YOUTUBE_MODE = "channels"
+        module.YOUTUBE_CHANNEL_ID = "UC-channel"
+        module.DISCORD_WEBHOOK_YOUTUBE = "https://discord.example/webhook"
+
+        with self.assertRaisesRegex(ValueError, "YOUTUBE_API_KEY"):
+            module.check_env_variables()
+
+    def test_script_uses_shared_filter_localization_rss_and_message_modules(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("from feed_filters import", source)
+        self.assertIn("from feed_localization import", source)
+        self.assertIn("from youtube_messages import", source)
+        self.assertIn("fetch_rss_videos", source)
+        self.assertIn("build_youtube_message(", source)
+        self.assertIn("record_filtered_youtube_video", source)
+
+    def test_api_category_request_uses_display_language_and_region(self):
+        module = load_youtube_script()
+        client = CategoryYouTubeClient()
+        module.category_cache.clear()
+
+        category = module.get_category_name(
+            client,
+            "25",
+            display_language="ko",
+            region_code="KR",
+        )
+
+        self.assertEqual("뉴스 및 정치", category)
+        self.assertEqual("ko", client.resource.calls[0]["hl"])
+        self.assertEqual("KR", client.resource.calls[0]["regionCode"])
+
+    def test_api_category_failure_omits_optional_category(self):
+        module = load_youtube_script()
+        module.category_cache.clear()
+
+        category = module.get_category_name(
+            FailingCategoryYouTubeClient(),
+            "25",
+            display_language="ko",
+            region_code="KR",
+        )
+
+        self.assertEqual("", category)
+
+    def test_api_duration_uses_requested_clock_format(self):
+        module = load_youtube_script()
+        self.assertEqual("07:13", module.parse_duration("PT7M13S"))
+        self.assertEqual("01:02:03", module.parse_duration("PT1H2M3S"))
+
+    def test_workflow_maps_new_source_filter_language_and_timezone_settings(self):
+        source = self.source()
+
+        self.assertIn("pip install --upgrade -r .github/requirements.txt", source)
+        self.assertIn("YOUTUBE_SOURCE:", source)
+        self.assertIn("YOUTUBE_PLAYLIST_LAYOUT:", source)
+        self.assertIn("FEED_DATE_FILTER:", source)
+        self.assertIn("FEED_KEYWORD_FILTER:", source)
+        self.assertIn("FEED_KEYWORD_SCOPE:", source)
+        self.assertIn("FEED_TIMEZONE:", source)
+        self.assertIn("FEED_COUNTRY:", source)
+        self.assertIn("DISPLAY_LANGUAGE:", source)
+
+    def test_explicit_feed_country_precedes_youtube_region_for_calendar_timezone(self):
+        module = load_youtube_script()
+        module.FEED_TIMEZONE = ""
+        module.YOUTUBE_SERVICE_TIMEZONE = ""
+        module.FEED_COUNTRY = "JP"
+        module.YOUTUBE_REGION_CODE = "US"
+        module.FEED_DATE_FILTER = "calendar:1d"
+        module.DATE_FILTER_YOUTUBE = ""
+        module.FEED_KEYWORD_FILTER = ""
+        module.ADVANCED_FILTER_YOUTUBE = ""
+        module.FEED_KEYWORD_SCOPE = "title"
+        module.DISPLAY_LANGUAGE = "en"
+
+        compiled = module.compile_runtime_feed_filter()
+
+        self.assertEqual("Asia/Tokyo", compiled.timezone_name)
 
 
 if __name__ == "__main__":

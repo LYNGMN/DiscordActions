@@ -47,6 +47,8 @@ def initialize_delivery_state(db_path: str) -> None:
             )
         if "delivery_sequence" not in columns:
             connection.execute("ALTER TABLE videos ADD COLUMN delivery_sequence INTEGER")
+        if "filter_fingerprint" not in columns:
+            connection.execute("ALTER TABLE videos ADD COLUMN filter_fingerprint TEXT")
         connection.execute(
             "CREATE TABLE IF NOT EXISTS youtube_delivery_targets ("
             "video_id TEXT NOT NULL, target TEXT NOT NULL, payload_json TEXT NOT NULL, "
@@ -110,17 +112,56 @@ def save_youtube_video(
     video_data: Dict,
     delivery_status: str = "sent",
 ) -> None:
-    if delivery_status not in {"pending", "sent"}:
+    if delivery_status not in {"filtered", "pending", "sent"}:
         raise ValueError("invalid YouTube delivery status")
     initialize_delivery_state(db_path)
     with sqlite3.connect(db_path) as connection:
         _upsert_youtube_video(connection, video_data, delivery_status)
 
 
+def is_youtube_item_handled(
+    db_path: str,
+    video_id: str,
+    filter_fingerprint: Optional[str] = None,
+) -> bool:
+    if not isinstance(video_id, str) or not video_id:
+        raise ValueError("invalid video id")
+    initialize_delivery_state(db_path)
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            "SELECT delivery_status, filter_fingerprint FROM videos WHERE video_id = ?",
+            (video_id,),
+        ).fetchone()
+    if row is None:
+        return False
+    status, stored_fingerprint = row
+    if status == "filtered" and filter_fingerprint is not None:
+        return stored_fingerprint == filter_fingerprint
+    return status in {"filtered", "pending", "sent"}
+
+
+def record_filtered_youtube_video(
+    db_path: str,
+    video_data: Dict,
+    filter_fingerprint: str,
+) -> None:
+    if not isinstance(filter_fingerprint, str) or not filter_fingerprint:
+        raise ValueError("invalid filter fingerprint")
+    initialize_delivery_state(db_path)
+    with sqlite3.connect(db_path) as connection:
+        _upsert_youtube_video(
+            connection,
+            video_data,
+            "filtered",
+            filter_fingerprint=filter_fingerprint,
+        )
+
+
 def _upsert_youtube_video(
     connection: sqlite3.Connection,
     video_data: Dict,
     delivery_status: str,
+    filter_fingerprint: Optional[str] = None,
 ) -> None:
     required_fields = (
         "published_at",
@@ -148,8 +189,9 @@ def _upsert_youtube_video(
         "INSERT INTO videos ("
         "published_at, channel_title, channel_id, title, video_id, video_url, "
         "description, category_id, category_name, duration, thumbnail_url, tags, "
-        "live_broadcast_content, scheduled_start_time, caption, source, delivery_status"
-        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "live_broadcast_content, scheduled_start_time, caption, source, delivery_status, "
+        "filter_fingerprint"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(video_id) DO UPDATE SET "
         "published_at=excluded.published_at, "
         "channel_title=excluded.channel_title, "
@@ -167,9 +209,12 @@ def _upsert_youtube_video(
         "caption=excluded.caption, "
         "source=excluded.source, "
         "delivery_status=CASE "
-        "WHEN videos.delivery_status='pending' THEN 'pending' "
-        "ELSE excluded.delivery_status END",
-        values + (delivery_status,),
+        "WHEN videos.delivery_status IN ('pending', 'sent') THEN videos.delivery_status "
+        "ELSE excluded.delivery_status END, "
+        "filter_fingerprint=CASE "
+        "WHEN videos.delivery_status IN ('pending', 'sent') THEN videos.filter_fingerprint "
+        "ELSE excluded.filter_fingerprint END",
+        values + (delivery_status, filter_fingerprint),
     )
 
 
