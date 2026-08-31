@@ -62,7 +62,7 @@ def is_item_handled(
     if row is None:
         return False
     status, stored_fingerprint = row
-    if status == "pending":
+    if status in {"pending", "retryable"}:
         return False
     if status == "filtered" and filter_fingerprint is not None:
         return stored_fingerprint == filter_fingerprint
@@ -89,7 +89,8 @@ def record_filtered_item(
         connection.execute(
             "UPDATE news_items SET pub_date = ?, title = ?, link = ?, related_news = ?, "
             "delivery_status = 'filtered', filter_fingerprint = ?, discord_message_id = NULL "
-            "WHERE guid = ? AND (delivery_status = 'filtered' OR delivery_status IS NULL)",
+            "WHERE guid = ? AND "
+            "(delivery_status IN ('filtered', 'retryable') OR delivery_status IS NULL)",
             (pub_date, title, link, related_news, filter_fingerprint, guid),
         )
 
@@ -202,7 +203,7 @@ def _reserve_delivery_in_connection(
                 (_next_delivery_sequence(connection), guid),
             )
         return True
-    if existing_guid is not None and existing_guid[0] != "filtered":
+    if existing_guid is not None and existing_guid[0] not in {"filtered", "retryable"}:
         return False
 
     identity_keys = article_identity_keys(title, link)
@@ -299,6 +300,13 @@ def pending_delivery_messages(db_path: str, guid: str) -> List[Tuple[int, str]]:
 def pending_delivery_guids(db_path: str) -> List[str]:
     with sqlite3.connect(db_path) as connection:
         _ensure_delivery_columns(connection)
+        _ensure_message_table(connection)
+        connection.execute(
+            "UPDATE news_items SET delivery_status = 'retryable', delivery_sequence = NULL "
+            "WHERE delivery_status = 'pending' AND NOT EXISTS ("
+            "SELECT 1 FROM google_news_delivery_messages AS messages "
+            "WHERE messages.guid = news_items.guid)"
+        )
         rows = connection.execute(
             "SELECT guid FROM news_items WHERE delivery_status = 'pending' "
             "ORDER BY CASE WHEN delivery_sequence IS NULL THEN 0 ELSE 1 END, "

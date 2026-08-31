@@ -395,6 +395,59 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
         self.assertEqual("Stored title", self.rows()[0][2])
 
+    def test_orphaned_pending_article_is_released_for_safe_requeue(self):
+        self.assertTrue(
+            self.module.reserve_delivery(
+                self.db_path,
+                "orphaned-guid",
+                "Stored title",
+                "https://example.com/story",
+            )
+        )
+
+        self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
+        self.assertEqual(0, self.module.count_pending_deliveries(self.db_path))
+        self.assertFalse(self.module.is_item_handled(self.db_path, "orphaned-guid"))
+
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path,
+                "orphaned-guid",
+                "Stored title",
+                "https://example.com/story",
+                ["reconstructed message"],
+            )
+        )
+        self.assertEqual(
+            ["orphaned-guid"],
+            self.module.pending_delivery_guids(self.db_path),
+        )
+
+    def test_released_orphan_can_be_recorded_as_filtered(self):
+        self.assertTrue(
+            self.module.reserve_delivery(
+                self.db_path,
+                "orphaned-guid",
+                "Stored title",
+                "https://example.com/story",
+            )
+        )
+        self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
+
+        item = make_item(
+            "orphaned-guid",
+            "Sun, 30 Aug 2026 11:40:00 GMT",
+        )
+        self.module.record_filtered_item(self.db_path, item, "fingerprint-a")
+
+        self.assertTrue(
+            self.module.is_item_handled(
+                self.db_path,
+                "orphaned-guid",
+                "fingerprint-a",
+            )
+        )
+
     def test_canonical_url_ignores_tracking_query_fragment_and_host_case(self):
         first = (
             "https://Publisher.Example/story?id=7&utm_source=google#section"
