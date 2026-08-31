@@ -147,5 +147,44 @@ class YouTubeRssDocumentationTests(unittest.TestCase):
         self.assertIn("[YouTube 아이콘]({})".format(YOUTUBE_ICON), korean)
 
 
+class KoreanReadmeQualityTests(unittest.TestCase):
+    def read_korean_readme(self):
+        return README_KO.read_text(encoding="utf-8")
+
+    def test_keyword_matching_uses_a_general_rule_not_a_specific_article(self):
+        korean = self.read_korean_readme()
+
+        self.assertNotIn("이솔이", korean)
+        self.assertIn(
+            "Google News가 연관 기사 때문에 피드에 포함한 항목이라도",
+            korean,
+        )
+        self.assertIn("메인 제목에 설정한 판정어가 없으면", korean)
+
+    def test_date_boundaries_are_described_as_inclusive(self):
+        korean = self.read_korean_readme()
+
+        self.assertIn("| `from:2026-06-01` | 6월 1일부터 |", korean)
+        self.assertIn("| `to:2026-08-15` | 8월 15일까지 |", korean)
+
+    def test_delivery_terms_preserve_queue_and_webhook_target_meaning(self):
+        korean = self.read_korean_readme()
+
+        self.assertIn("전송 대기열", korean)
+        self.assertIn("미전송 메시지 또는 웹훅 대상", korean)
+        self.assertIn("초기 기준 상태", korean)
+        self.assertNotIn("설정 지문", korean)
+        self.assertNotIn("응답 불명 재전송", korean)
+        self.assertNotIn("저장된 영상 경계", korean)
+
+    def test_korean_headings_use_natural_technical_documentation_terms(self):
+        korean = self.read_korean_readme()
+
+        self.assertIn("## 예약 실행 주기 설정", korean)
+        self.assertIn("## 문제 해결", korean)
+        self.assertNotIn("## 실행 간격 바꾸기", korean)
+        self.assertNotIn("## 문제 확인", korean)
+
+
 if __name__ == "__main__":
     unittest.main()
