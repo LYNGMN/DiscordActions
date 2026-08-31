@@ -31,7 +31,7 @@ thumbnail.
 **원이 근황**
 https://youtu.be/EsKmhBMmqIM
 
-👤 Channel: [안녕하세요원이입니다잘부탁드립니다](https://www.youtube.com/channel/CHANNEL_ID)
+👤 Channel: [안녕하세요원이입니다잘부탁드립니다](https://www.youtube.com/channel/UCWpY0eSJtyO-qNAPbKFRSSg)
 📅 Published: `August 28, 2026`
 🖼️ [Thumbnail](https://i2.ytimg.com/vi/EsKmhBMmqIM/hqdefault.jpg)
 ```
