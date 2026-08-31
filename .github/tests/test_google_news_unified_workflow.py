@@ -20,9 +20,11 @@ EXPECTED_WEBHOOK_SECRETS = (
     "DISCORD_WEBHOOK_GN_KEYWORD_IU",
 )
 NEW_MODULES = (
+    "delivery_admin_alert.py",
     "google_news_delivery_state.py",
     "google_news_discord_delivery.py",
     "google_news_dispatcher.py",
+    "google_news_keyword_matcher.py",
     "google_news_manual_test.py",
     "google_news_profile_result.py",
     "google_news_profiles.py",
@@ -31,6 +33,7 @@ NEW_MODULES = (
     "google_news_url_resolver.py",
     "youtube_delivery_state.py",
     "youtube_discord_delivery.py",
+    "youtube_video_source.py",
     "youtube_to_discord.py",
 )
 
@@ -42,6 +45,8 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
     def test_schedule_manual_input_and_concurrency_are_safe(self):
         source = self.source()
         self.assertIn("cron: '7,22,37,52 * * * *'", source)
+        self.assertIn("timezone: 'Asia/Seoul'", source)
+        self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
         self.assertNotIn("cron: '7,37 * * * *'", source)
         self.assertIn("manual_test:", source)
         self.assertIn("type: boolean", source)

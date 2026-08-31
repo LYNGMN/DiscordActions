@@ -19,6 +19,7 @@ def write_profile_result(
     processed_count: int,
     pending_count: int,
     error_code: Optional[str] = None,
+    ambiguous_retry_count: int = 0,
 ) -> Dict[str, object]:
     if not isinstance(profile_id, str) or not PROFILE_ID.fullmatch(profile_id):
         raise ValueError("invalid profile id")
@@ -26,6 +27,9 @@ def write_profile_result(
         raise ValueError("invalid profile status")
     processed = _non_negative_count(processed_count, "processed_count")
     pending = _non_negative_count(pending_count, "pending_count")
+    ambiguous = _non_negative_count(
+        ambiguous_retry_count, "ambiguous_retry_count"
+    )
     if error_code is not None and (
         not isinstance(error_code, str) or not ERROR_CODE.fullmatch(error_code)
     ):
@@ -36,6 +40,7 @@ def write_profile_result(
         "status": status,
         "processed_count": processed,
         "pending_count": pending,
+        "ambiguous_retry_count": ambiguous,
         "error_code": error_code,
     }
     parent = os.path.dirname(os.path.abspath(path))

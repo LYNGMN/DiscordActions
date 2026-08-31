@@ -509,8 +509,10 @@ class GoogleNewsUrlResolver:
     @staticmethod
     def _is_valid_original_url(url: str) -> bool:
         parsed_url = urlparse(url)
+        hostname = (parsed_url.hostname or "").rstrip(".").lower()
         return (
             parsed_url.scheme in {"http", "https"}
-            and bool(parsed_url.hostname)
-            and parsed_url.hostname != "news.google.com"
+            and bool(hostname)
+            and hostname != "news.google.com"
+            and not hostname.endswith(".news.google.com")
         )

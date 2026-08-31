@@ -48,6 +48,8 @@ def valid_registry():
                 "GL": "KR",
                 "CEID": "KR:ko",
                 "WHEN": "3d",
+                "KEYWORD_MATCH_MODE": "title",
+                "KEYWORD_MATCH_ALIASES": 'IU | "Lee Ji-eun" | 이지은',
             },
         },
     ]
@@ -143,6 +145,13 @@ class GoogleNewsProfileTests(unittest.TestCase):
             profiles["keyword_iu"].environment["KEYWORD"],
         )
         self.assertEqual("3d", profiles["keyword_iu"].environment["WHEN"])
+        self.assertEqual(
+            "title", profiles["keyword_iu"].environment["KEYWORD_MATCH_MODE"]
+        )
+        self.assertEqual(
+            'IU | "Lee Ji-eun" | 이지은',
+            profiles["keyword_iu"].environment["KEYWORD_MATCH_ALIASES"],
+        )
 
     def test_duplicate_routing_fields_are_rejected(self):
         for field in ("id", "webhook_env", "expected_webhook_name", "state_db"):
@@ -197,6 +206,7 @@ class GoogleNewsProfileTests(unittest.TestCase):
             "LANG": "ko_KR.UTF-8",
             "DISCORD_WEBHOOK_GN_TOP_US": FAKE_WEBHOOK_BASE + "/1/redacted",
             "DISCORD_WEBHOOK_GN_KEYWORD_IU": FAKE_WEBHOOK_BASE + "/2/redacted",
+            "DISCORD_WEBHOOK_ADMIN": FAKE_WEBHOOK_BASE + "/3/redacted",
             "UNRELATED_SECRET": "must-not-be-forwarded",
         }
 
@@ -213,9 +223,19 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual("/state/top_us.db", environment["GOOGLE_NEWS_DB_PATH"])
         self.assertEqual("/state/resolver.db", environment["GOOGLE_NEWS_RESOLVER_DB_PATH"])
         self.assertEqual("true", environment["MANUAL_TEST_MODE"])
-        self.assertEqual("2", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
+        self.assertEqual("1000", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
+        self.assertEqual(
+            FAKE_WEBHOOK_BASE + "/3/redacted", environment["DISCORD_WEBHOOK_ADMIN"]
+        )
         self.assertNotIn("DISCORD_WEBHOOK_GN_KEYWORD_IU", environment)
         self.assertNotIn("UNRELATED_SECRET", environment)
+
+    def test_keyword_match_mode_is_validated(self):
+        invalid = valid_registry()
+        invalid[1]["environment"]["KEYWORD_MATCH_MODE"] = "raw_html"
+
+        with self.assertRaisesRegex(ValueError, "KEYWORD_MATCH_MODE"):
+            self.module.validate_profile_data(invalid)
 
     def test_missing_selected_webhook_is_rejected(self):
         profile = self.module.validate_profile_data(copy.deepcopy(valid_registry()))[0]

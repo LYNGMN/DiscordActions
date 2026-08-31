@@ -211,6 +211,29 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
         self.assertTrue(guard.calls[0]["url"].endswith(article_id))
         self.assertEqual(module.GoogleNewsUrlResolver.BATCH_EXECUTE_URL, guard.calls[1]["url"])
 
+    def test_google_news_subdomain_is_not_accepted_as_an_original_url(self):
+        module = load_resolver_module()
+        article_id = "CBMiGoogleSubdomain"
+        source_url = "https://news.google.com/rss/articles/{}?oc=5".format(article_id)
+        get_response, post_response = self._successful_responses(
+            "https://cdn.news.google.com/story"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resolver = module.GoogleNewsUrlResolver(
+                session=QueueSession(
+                    get_responses=[get_response],
+                    post_responses=[post_response],
+                ),
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+
+        self.assertEqual(source_url, result.url)
+        self.assertEqual("fallback", result.status)
+        self.assertEqual("invalid_url", result.error_code)
+
     def test_missing_parameters_on_articles_path_falls_back_to_rss_path(self):
         module = load_resolver_module()
         article_id = "CBMiRssFallback"

@@ -142,7 +142,9 @@
       "HL": "ko",
       "GL": "KR",
       "CEID": "KR:ko",
-      "WHEN": "3d"
+      "WHEN": "3d",
+      "KEYWORD_MATCH_MODE": "title",
+      "KEYWORD_MATCH_ALIASES": "IU | \"Lee Ji-eun\" | 이지은"
     }
   }
 ]

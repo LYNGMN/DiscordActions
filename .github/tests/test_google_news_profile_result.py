@@ -42,6 +42,7 @@ class GoogleNewsProfileResultTests(unittest.TestCase):
                 "status": "success",
                 "processed_count": 2,
                 "pending_count": 1,
+                "ambiguous_retry_count": 0,
                 "error_code": None,
             },
             payload,

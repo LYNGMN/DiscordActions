@@ -2,7 +2,7 @@
 
 import math
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 import requests
 
@@ -15,6 +15,19 @@ GOOGLE_NEWS_AVATAR_URL = (
 )
 TRUNCATION_MARKER = "\n…"
 DATE_MARKER = "\n📅 "
+
+
+class DiscordMessageId(str):
+    def __new__(
+        cls,
+        value: str,
+        ambiguous_retry: bool = False,
+        attempt_count: int = 1,
+    ):
+        instance = str.__new__(cls, value)
+        instance.ambiguous_retry = bool(ambiguous_retry)
+        instance.attempt_count = int(attempt_count)
+        return instance
 
 
 def _discord_character_count(content: str) -> int:
@@ -58,13 +71,48 @@ def _limit_content(content: str) -> str:
     return _truncate_to_character_limit(content, marker_budget).rstrip() + "…"
 
 
+def split_discord_content(
+    content: str,
+    limit: int = MAX_DISCORD_CONTENT_CHARACTERS,
+) -> List[str]:
+    """Split content without dropping lines, using Discord's UTF-16 limit."""
+    if not isinstance(content, str) or not content:
+        raise ValueError("content must be a non-empty string")
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if _discord_character_count(content) <= limit:
+        return [content]
+
+    chunks = []
+    current = ""
+    for line in content.split("\n"):
+        candidate = line if not current else current + "\n" + line
+        if _discord_character_count(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+            current = ""
+        remaining = line
+        while _discord_character_count(remaining) > limit:
+            piece = _truncate_to_character_limit(remaining, limit)
+            if not piece:
+                raise ValueError("unable to split Discord content")
+            chunks.append(piece)
+            remaining = remaining[len(piece):]
+        current = remaining
+    if current or not chunks:
+        chunks.append(current)
+    return chunks
+
+
 def send_webhook_message(
     webhook_url: str,
     payload: Dict[str, str],
     sleep: Callable[[float], None] = time.sleep,
     max_rate_limit_wait_seconds: float = MAX_RATE_LIMIT_WAIT_SECONDS,
 ) -> str:
-    """Post once, or retry one HTTP 429 after Discord's bounded delay."""
+    """Post with one bounded retry and preserve response-unknown evidence."""
     safe_payload = dict(payload)
     safe_payload["username"] = GOOGLE_NEWS_USERNAME
     safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
@@ -72,14 +120,23 @@ def send_webhook_message(
     if isinstance(content, str):
         safe_payload["content"] = _limit_content(content)
 
+    ambiguous_retry = False
     for attempt in range(2):
-        response = requests.post(
-            webhook_url,
-            json=safe_payload,
-            headers={"Content-Type": "application/json"},
-            params={"wait": "true"},
-            timeout=(5.0, 15.0),
-        )
+        try:
+            response = requests.post(
+                webhook_url,
+                json=safe_payload,
+                headers={"Content-Type": "application/json"},
+                params={"wait": "true"},
+                timeout=(5.0, 15.0),
+            )
+        except requests.RequestException as error:
+            if attempt == 0:
+                ambiguous_retry = True
+                sleep(2.0)
+                continue
+            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            raise
         if response.status_code == 429 and attempt == 0:
             retry_after = _retry_after_seconds(response)
             if (
@@ -89,13 +146,22 @@ def send_webhook_message(
                 response.raise_for_status()
             sleep(retry_after)
             continue
+        if response.status_code >= 500 and attempt == 0:
+            sleep(2.0)
+            continue
 
-        response.raise_for_status()
-        body = response.json()
+        try:
+            response.raise_for_status()
+            body = response.json()
+        except (requests.RequestException, TypeError, ValueError) as error:
+            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            raise
         message_id = body.get("id") if isinstance(body, dict) else None
         if not isinstance(message_id, str) or not message_id.isdigit():
-            raise ValueError("invalid message id")
-        return message_id
+            error = ValueError("invalid message id")
+            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            raise error
+        return DiscordMessageId(message_id, ambiguous_retry, attempt + 1)
 
     raise requests.RequestException("discord_delivery_failed")
 
@@ -123,3 +189,12 @@ def _retry_after_seconds(response) -> Optional[float]:
         if math.isfinite(parsed) and parsed >= 0:
             parsed_values.append(parsed)
     return max(parsed_values) if parsed_values else None
+
+
+def _annotate_delivery_error(
+    error: Exception,
+    ambiguous_retry: bool,
+    attempt_count: int,
+) -> None:
+    error.error_code = "ambiguous_retry" if ambiguous_retry else "final_failure"
+    error.attempt_count = int(attempt_count)

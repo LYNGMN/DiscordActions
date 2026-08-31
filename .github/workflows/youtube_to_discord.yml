@@ -3,6 +3,7 @@ name: YouTube to Discord Notification
 on:
   schedule:
     - cron: '11,26,41,56 * * * *'
+      timezone: 'Asia/Seoul'
   workflow_dispatch:
     inputs:
       manual_test:
@@ -72,6 +73,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .
+          merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ steps.previous_state.outputs.source-run-id }}
@@ -100,11 +102,9 @@ jobs:
           YOUTUBE_MODE: ${{ secrets.YOUTUBE_MODE }}
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
           YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
-          YOUTUBE_PLAYLIST_SORT: ${{ secrets.YOUTUBE_PLAYLIST_SORT }}
           YOUTUBE_SEARCH_KEYWORD: ${{ secrets.YOUTUBE_SEARCH_KEYWORD }}
-          YOUTUBE_INIT_MAX_RESULTS: ${{ secrets.YOUTUBE_INIT_MAX_RESULTS }}
-          YOUTUBE_MAX_RESULTS: ${{ secrets.YOUTUBE_MAX_RESULTS }}
-          IS_FIRST_RUN: ${{ steps.state.outputs.restored != 'true' }}
+          YOUTUBE_DELIVERY_ORDER: ${{ vars.YOUTUBE_DELIVERY_ORDER || 'feed_oldest_first' }}
+          YOUTUBE_RUN_SUMMARY_PATH: youtube-run-summary.json
           INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
           YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}
           YOUTUBE_MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
@@ -113,16 +113,36 @@ jobs:
           LANGUAGE_YOUTUBE: ${{ secrets.LANGUAGE_YOUTUBE }}
           DISCORD_WEBHOOK_YOUTUBE: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE }}
           DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW }}
-          DISCORD_AVATAR_YOUTUBE: ${{ secrets.DISCORD_AVATAR_YOUTUBE }}
-          DISCORD_USERNAME_YOUTUBE: ${{ secrets.DISCORD_USERNAME_YOUTUBE }}
+          DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
           YOUTUBE_DETAILVIEW: ${{ secrets.YOUTUBE_DETAILVIEW }}
         run: python .github/scripts/youtube_to_discord.py
+
+      - name: Write safe run summary
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'youtube-run-summary.json';
+            if (!fs.existsSync(path)) {
+              await core.summary.addHeading('YouTube').addRaw('No run summary was produced.').write();
+              return;
+            }
+            const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+            await core.summary
+              .addHeading('YouTube')
+              .addRaw(`Status: ${summary.status}\n`)
+              .addRaw(`Pending deliveries: ${summary.pending_count}\n`)
+              .addRaw(`Ambiguous retries: ${summary.ambiguous_retry_count}\n`)
+              .write();
 
       - name: Upload updated database
         if: always()
         uses: actions/upload-artifact@v5
         with:
           name: youtube_database
-          path: youtube_videos.db
+          path: |
+            youtube_videos.db
+            youtube-run-summary.json
           if-no-files-found: error
           retention-days: 90

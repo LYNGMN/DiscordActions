@@ -15,19 +15,23 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
+from delivery_admin_alert import notify_admin
 from google_news_manual_test import (
     prepare_manual_test_items,
     validate_manual_test_result,
 )
 from google_news_delivery_state import (
+    count_ambiguous_retries,
     count_pending_deliveries,
-    mark_delivery_sent,
+    deliver_queued_item,
+    is_item_handled,
+    pending_delivery_guids,
     prepare_scheduled_items,
-    reserve_delivery,
+    reserve_delivery_with_messages,
 )
-from google_news_discord_delivery import send_webhook_message
+from google_news_discord_delivery import send_webhook_message, split_discord_content
 from google_news_profile_result import write_profile_result
-from google_news_related_links import MAX_RELATED_ITEMS, resolve_related_url
+from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
 
@@ -38,6 +42,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 DISCORD_WEBHOOK_TOPIC = os.environ.get('DISCORD_WEBHOOK_TOPIC')
 DISCORD_AVATAR_TOPIC = os.environ.get('DISCORD_AVATAR_TOPIC', '').strip()
 DISCORD_USERNAME_TOPIC = os.environ.get('DISCORD_USERNAME_TOPIC', '').strip()
+DISCORD_WEBHOOK_ADMIN = os.environ.get('DISCORD_WEBHOOK_ADMIN', '')
 INITIALIZE_TOPIC = os.environ.get('INITIALIZE_MODE_TOPIC', 'false').lower() == 'true'
 ADVANCED_FILTER_TOPIC = os.environ.get('ADVANCED_FILTER_TOPIC', '')
 DATE_FILTER_TOPIC = os.environ.get('DATE_FILTER_TOPIC', '')
@@ -51,9 +56,10 @@ RSS_URL_TOPIC = os.environ.get('RSS_URL_TOPIC', '')
 PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
 RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
 VALIDATE_ONLY = os.environ.get('GOOGLE_NEWS_VALIDATE_ONLY', 'false').lower() == 'true'
-MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '5'))
-MAX_ITEMS = int(os.environ.get('GOOGLE_NEWS_MAX_ITEMS', '3'))
-MAX_AGE_MINUTES = int(os.environ.get('GOOGLE_NEWS_MAX_AGE_MINUTES', '120'))
+MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '1000'))
+DELIVERY_ORDER = os.environ.get(
+    'GOOGLE_NEWS_DELIVERY_ORDER', 'feed_oldest_first'
+).lower()
 
 # DB 설정
 DB_PATH = os.environ.get('GOOGLE_NEWS_DB_PATH', 'google_news_topic.db')
@@ -844,8 +850,10 @@ def init_db(reset=False):
         c = conn.cursor()
         try:
             if reset:
+                c.execute("DROP TABLE IF EXISTS google_news_delivery_messages")
+                c.execute("DROP TABLE IF EXISTS google_news_article_identity")
                 c.execute("DROP TABLE IF EXISTS news_items")
-                logging.info("기존 news_items 테이블 삭제됨")
+                logging.info("기존 기사 및 전송 상태가 초기화되었습니다.")
             
             c.execute('''CREATE TABLE IF NOT EXISTS news_items
                          (pub_date TEXT,
@@ -894,42 +902,15 @@ def is_guid_posted(guid):
 def save_news_item(pub_date, guid, title, link, topic, related_news):
     """뉴스 항목을 데이터베이스에 저장합니다."""
     with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        
-        # 기존 테이블 구조 확인
-        c.execute("PRAGMA table_info(news_items)")
-        columns = [column[1] for column in c.fetchall()]
-        
-        # 관련 뉴스 항목 수 확인
-        related_news_count = len(json.loads(related_news))
-        
-        # 필요한 열 추가
-        for i in range(related_news_count):
-            title_col = f"related_title_{i+1}"
-            press_col = f"related_press_{i+1}"
-            link_col = f"related_link_{i+1}"
-            
-            if title_col not in columns:
-                c.execute(f"ALTER TABLE news_items ADD COLUMN {title_col} TEXT")
-            if press_col not in columns:
-                c.execute(f"ALTER TABLE news_items ADD COLUMN {press_col} TEXT")
-            if link_col not in columns:
-                c.execute(f"ALTER TABLE news_items ADD COLUMN {link_col} TEXT")
-        
-        # 데이터 삽입을 위한 SQL 쿼리 준비
-        columns = ["pub_date", "guid", "title", "link", "topic", "related_news"]
-        values = [pub_date, guid, title, link, topic, related_news]
-        
-        related_news_items = json.loads(related_news)
-        for i, item in enumerate(related_news_items):
-            columns.extend([f"related_title_{i+1}", f"related_press_{i+1}", f"related_link_{i+1}"])
-            values.extend([item['title'], item['press'], item['link']])
-        
-        placeholders = ", ".join(["?" for _ in values])
-        columns_str = ", ".join(columns)
-        
-        c.execute(f"INSERT OR REPLACE INTO news_items ({columns_str}) VALUES ({placeholders})", values)
-        
+        conn.execute(
+            "INSERT INTO news_items (pub_date, guid, title, link, topic, related_news) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(guid) DO UPDATE SET "
+            "pub_date = excluded.pub_date, title = excluded.title, "
+            "link = excluded.link, topic = excluded.topic, "
+            "related_news = excluded.related_news",
+            (pub_date, guid, title, link, topic, related_news),
+        )
         logging.info(f"새 뉴스 항목 저장: {guid}")
 
 def fetch_rss_feed(url, request_guard):
@@ -983,29 +964,14 @@ def replace_brackets(text):
 
 def parse_html_description(html_desc, resolver):
     """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
-    soup = BeautifulSoup(html_desc, 'html.parser')
-    items = soup.find_all('li')
+    return render_related_items(extract_news_items(html_desc, resolver))
 
-    news_items = []
-    for item in items:
-        if len(news_items) >= MAX_RELATED_ITEMS:
-            break
-        if 'Google 뉴스에서 전체 콘텐츠 보기' in item.text or 'View Full Coverage on Google News' in item.text:
-            continue
 
-        title_match = item.find('a')
-        press_match = item.find('font', color="#6f6f6f")
-        if title_match and press_match:
-            google_link = title_match['href']
-            link = resolve_related_url(resolver, google_link)
-            if link is None:
-                continue
-            title_text = replace_brackets(title_match.text)
-            press_name = press_match.text
-            news_item = f"- [{title_text}](<{link}>) | {press_name}"
-            news_items.append(news_item)
-
-    return '\n'.join(news_items)
+def render_related_items(news_items):
+    return '\n'.join(
+        f"- [{item['title']}](<{item['link']}>) | {item['press']}"
+        for item in news_items
+    )
 
 def parse_pub_date(pub_date_str):
     """문자열 형태의 발행일을 datetime 객체로 파싱합니다."""
@@ -1071,7 +1037,10 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
         return message_id
     except (requests.RequestException, TypeError, ValueError) as error:
         logging.error("Discord 메시지 전송 실패 (오류 유형: %s)", type(error).__name__)
-        raise RuntimeError("discord_delivery_failed") from None
+        failure = RuntimeError("discord_delivery_failed")
+        failure.error_code = getattr(error, "error_code", "final_failure")
+        failure.attempt_count = getattr(error, "attempt_count", 1)
+        raise failure from None
 
 
 def record_profile_result(status, processed_count, error_code=None):
@@ -1084,15 +1053,53 @@ def record_profile_result(status, processed_count, error_code=None):
         processed_count,
         count_pending_deliveries(DB_PATH),
         error_code,
+        ambiguous_retry_count=count_ambiguous_retries(DB_PATH),
     )
+
+
+def deliver_reserved_item(guid):
+    outcome = deliver_queued_item(
+        DB_PATH,
+        guid,
+        lambda content: send_discord_message(
+            DISCORD_WEBHOOK_TOPIC,
+            content,
+            avatar_url=DISCORD_AVATAR_TOPIC,
+            username=DISCORD_USERNAME_TOPIC,
+        ),
+    )
+    if outcome.ambiguous_retry_count:
+        print("::warning title=Google News ambiguous retry::A response-unknown delivery was retried")
+        notify_admin(
+            DISCORD_WEBHOOK_ADMIN,
+            "Google News",
+            PROFILE_ID or "topic",
+            guid,
+            "ambiguous_retry",
+        )
+
+
+def resume_pending_deliveries():
+    pending_guids = pending_delivery_guids(DB_PATH)
+    for guid in pending_guids:
+        try:
+            deliver_reserved_item(guid)
+        except Exception as error:
+            notify_admin(
+                DISCORD_WEBHOOK_ADMIN,
+                "Google News",
+                PROFILE_ID or "topic",
+                guid,
+                getattr(error, "error_code", "final_failure"),
+            )
+            raise
+    return len(pending_guids)
 
 def extract_news_items(description, resolver):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
     for li in soup.find_all('li'):
-        if len(news_items) >= MAX_RELATED_ITEMS:
-            break
         a_tag = li.find('a')
         if a_tag:
             title = replace_brackets(a_tag.text)
@@ -1204,6 +1211,12 @@ def main():
 
         init_db(reset=INITIALIZE_TOPIC)
 
+        resumed_count = resume_pending_deliveries()
+        processed_count += resumed_count
+        if MANUAL_TEST_MODE and resumed_count:
+            record_profile_result("success", processed_count)
+            return 0
+
         session = requests.Session()
         request_guard = GoogleNewsRequestGuard(session, RESOLVER_DB_PATH)
         resolver = GoogleNewsUrlResolver(
@@ -1225,12 +1238,11 @@ def main():
         total_items = len(news_items)
         logging.info(f"총 {total_items}개의 뉴스 항목을 가져왔습니다.")
         
-        if INITIALIZE_TOPIC:
-            news_items = sorted(news_items, key=lambda item: parse_pub_date(item.find('pubDate').text))
-            logging.info("초기 실행: 뉴스 항목을 날짜 순으로 정렬했습니다.")
-        else:
-            new_items = [item for item in reversed(news_items) if not is_guid_posted(item.find('guid').text)]
-            news_items = new_items
+        if not INITIALIZE_TOPIC:
+            news_items = [
+                item for item in news_items
+                if not is_item_handled(DB_PATH, item.find('guid').text)
+            ]
             logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
 
         if MANUAL_TEST_MODE:
@@ -1239,9 +1251,7 @@ def main():
             news_items = prepare_scheduled_items(
                 news_items,
                 DB_PATH,
-                datetime.now(pytz.UTC),
-                max_items=MAX_ITEMS,
-                max_age_minutes=MAX_AGE_MINUTES,
+                delivery_order=DELIVERY_ORDER,
             )
         manual_test_expected_count = len(news_items)
         if MANUAL_TEST_MODE:
@@ -1267,9 +1277,12 @@ def main():
         category = get_topic_category(TOPIC_KEYWORD, lang) if TOPIC_MODE else TOPIC_CATEGORY.get(lang, "Topics")
 
         profile_failed = False
+        queued_items = []
         for item in news_items:
+            current_guid = "unknown"
             try:
                 guid = item.find('guid').text
+                current_guid = guid
                 pub_date = item.find('pubDate').text
                 if not is_within_date_range(pub_date, since_date, until_date, past_date):
                     logging.debug(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
@@ -1283,7 +1296,7 @@ def main():
                 related_news = extract_news_items(description_html, resolver)
                 related_news_json = json.dumps(related_news, ensure_ascii=False)
 
-                description = parse_html_description(description_html, resolver)
+                description = render_related_items(related_news)
 
                 if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
                     logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
@@ -1305,26 +1318,50 @@ def main():
                     country_emoji,
                     country_code
                 )
-                if not reserve_delivery(DB_PATH, guid, title, link):
+                if not reserve_delivery_with_messages(
+                    DB_PATH,
+                    guid,
+                    title,
+                    link,
+                    split_discord_content(discord_message),
+                ):
                     already_known_count += 1
                     continue
-                message_id = send_discord_message(
-                    DISCORD_WEBHOOK_TOPIC,
-                    discord_message,
-                    avatar_url=DISCORD_AVATAR_TOPIC,
-                    username=DISCORD_USERNAME_TOPIC
-                )
-
                 save_news_item(pub_date, guid, title, link, TOPIC_KEYWORD if TOPIC_MODE else "general", related_news_json)
-                mark_delivery_sent(DB_PATH, guid, message_id)
-
-                processed_count += 1
-                logging.info(f"뉴스 항목 처리 완료: {title}")
+                queued_items.append((guid, title))
+                logging.info(f"뉴스 항목 대기열 저장 완료: {title}")
 
             except Exception as error:
                 profile_failed = True
-                logging.error("뉴스 항목 처리 실패 (오류 유형: %s)", type(error).__name__)
-                continue
+                logging.error("뉴스 대기열 준비 실패 (오류 유형: %s)", type(error).__name__)
+                print("::warning title=Google News queue preparation failed::No Discord delivery was started")
+                notify_admin(
+                    DISCORD_WEBHOOK_ADMIN,
+                    "Google News",
+                    PROFILE_ID or "topic",
+                    current_guid,
+                    "final_failure",
+                )
+                break
+
+        if not profile_failed:
+            for guid, title in queued_items:
+                try:
+                    deliver_reserved_item(guid)
+                    processed_count += 1
+                    logging.info(f"뉴스 항목 처리 완료: {title}")
+                except Exception as error:
+                    profile_failed = True
+                    logging.error("뉴스 항목 전송 실패 (오류 유형: %s)", type(error).__name__)
+                    print("::warning title=Google News delivery failed::A queued delivery remains pending")
+                    notify_admin(
+                        DISCORD_WEBHOOK_ADMIN,
+                        "Google News",
+                        PROFILE_ID or "topic",
+                        guid,
+                        getattr(error, "error_code", "final_failure"),
+                    )
+                    break
 
         validate_manual_test_result(
             MANUAL_TEST_MODE,
