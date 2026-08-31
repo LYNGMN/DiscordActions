@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make RSS playlist notifications include a localized linked channel field, keep RSS channel notifications concise, and clearly document why duration and category appear only in API mode.
+**Goal:** Make RSS playlist notifications include a localized linked channel field, keep RSS channel notifications concise, and make API detail embed labels follow the same ten-language setting as primary messages.
 
-**Architecture:** Keep the existing shared `build_youtube_message` boundary and branch only its lower metadata section by `include_api_details` and `source_type`. Reuse the RSS item `channel_id` to build the playlist channel link locally; do not add an API request, feed-source link, database change, or new dependency.
+**Architecture:** Keep the existing shared `build_youtube_message` boundary and branch only its lower metadata section by `include_api_details` and `source_type`. Reuse the RSS item `channel_id` to build the playlist channel link locally, and move API detail embed fixed text into the existing `feed_localization` table so primary and detail payloads share `DISPLAY_LANGUAGE`; do not add an API request, feed-source link, database change, or new dependency.
 
 **Tech Stack:** Python 3.8, standard `urllib.parse`, Babel localization already in the repository, standard `unittest`, Markdown documentation.
 
@@ -15,6 +15,8 @@
 - API mode must preserve the existing duration, published date, category, and thumbnail layout.
 - RSS playlist mode adds a localized linked channel field; RSS channel mode does not repeat that field.
 - Preserve the existing ten display languages and do not translate video, channel, or playlist names.
+- Localize API detail embed field and link labels without translating video descriptions, tags, category values, or other YouTube source data.
+- Keep API detail embeds unavailable in RSS mode.
 - Do not change schedules, webhooks, database schemas, delivery state, or network request behavior.
 - Do not send live Discord messages during implementation or review.
 
@@ -245,14 +247,143 @@ git commit -m "docs: explain YouTube RSS and API message fields"
 
 ---
 
-### Task 3: Full Regression and Publication Checkpoint
+### Task 3: Shared API Detail Embed Labels
 
 **Files:**
-- Verify all files changed in Tasks 1 and 2.
+- Modify: `.github/tests/test_feed_localization.py`
+- Modify: `.github/tests/test_youtube_workflow.py`
+- Modify: `.github/scripts/feed_localization.py`
+- Modify: `.github/scripts/youtube_to_discord.py`
+- Modify: `.github/tests/test_youtube_rss_documentation.py`
+- Modify: `README.md`
+- Modify: `README_KR.md`
+
+**Interfaces:**
+- Consumes: `normalize_display_language(language)` and `labels_for(language)` from `feed_localization.py`.
+- Produces: `create_embed_message(video, youtube, display_language)` with localized fixed labels and unchanged YouTube source values.
+
+- [ ] **Step 1: Write failing label-completeness and embed tests**
+
+Extend `test_every_language_has_all_required_labels` to require these keys in
+every supported language:
+
+```python
+for key in (
+    "channel",
+    "video_id",
+    "category",
+    "tags",
+    "duration",
+    "published_date",
+    "subtitle",
+    "thumbnail",
+    "play_video",
+    "download",
+    "embed",
+    "not_available",
+):
+    self.assertTrue(labels[key])
+```
+
+Add focused embed tests in `test_youtube_workflow.py` using a fake
+`channels().list().execute()` response. Assert exact English, Korean, and
+Japanese field names, localized Download/Embed links, and localized empty-tag
+text. Also assert that the video title, description, category value, and tag
+value remain unchanged.
+
+- [ ] **Step 2: Run focused tests and verify RED**
+
+```bash
+PYTHONPYCACHEPREFIX=/private/tmp/discordactions-rss-layout-pycache \
+  /private/tmp/discordactions-pr14-venv/bin/python \
+  -m unittest discover -s .github/tests \
+  -p 'test_feed_localization.py' -v
+
+PYTHONPYCACHEPREFIX=/private/tmp/discordactions-rss-layout-pycache \
+  /private/tmp/discordactions-pr14-venv/bin/python \
+  -m unittest discover -s .github/tests \
+  -p 'test_youtube_workflow.py' -v
+```
+
+Expected: FAIL because the new shared label keys and the explicit
+`display_language` embed interface do not exist.
+
+- [ ] **Step 3: Add complete fixed labels to the shared localization table**
+
+Add these keys to every `_LABELS` language entry in
+`feed_localization.py`: `video_id`, `tags`, `subtitle`, `play_video`,
+`download`, `embed`, and `not_available`. Keep the existing `channel`,
+`duration`, `published_date`, `category`, and `thumbnail` keys. Use native
+fixed-label translations for `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `es`,
+`pt-BR`, `fr`, `de`, and `id`.
+
+- [ ] **Step 4: Make API detail embeds consume `DISPLAY_LANGUAGE`**
+
+Import `labels_for` beside `normalize_display_language`, change the interface,
+and replace every `LANGUAGE_YOUTUBE` conditional:
+
+```python
+def create_embed_message(video, youtube, display_language):
+    language = normalize_display_language(display_language)
+    labels = labels_for(language)
+    channel_thumbnail = get_channel_thumbnail(youtube, video['channel_id'])
+    tags = video['tags'].split(',') if video['tags'] else []
+    formatted_tags = ' '.join(f'`{tag.strip()}`' for tag in tags)
+```
+
+Construct fields with `labels["video_id"]`, `labels["category"]`,
+`labels["tags"]`, `labels["duration"]`, `labels["subtitle"]`, and
+`labels["play_video"]`. Use `labels["not_available"]` for empty tags,
+`labels["download"]` for the subtitle link, and `labels["embed"]` for the
+player link. Pass the already normalized runtime value at the call site:
+
+```python
+embed_message = create_embed_message(video, youtube, display_language)
+```
+
+- [ ] **Step 5: Run focused tests and verify GREEN**
+
+Run both focused commands from Step 2.
+
+Expected: all feed-localization and YouTube workflow tests pass.
+
+- [ ] **Step 6: Add failing documentation assertions, then update both READMEs**
+
+Require `README.md` and `README_KR.md` to state that API detail embed field and
+link labels follow `DISPLAY_LANGUAGE`, source values are not translated, and
+detail embeds remain API-only. Update both documents with equivalent English
+and Korean explanations, then run:
+
+```bash
+/private/tmp/discordactions-pr14-venv/bin/python \
+  -m unittest discover -s .github/tests \
+  -p 'test_youtube_rss_documentation.py' -v
+```
+
+Expected after the documentation edit: all documentation tests pass.
+
+- [ ] **Step 7: Commit the localized API detail labels**
+
+```bash
+git add .github/tests/test_feed_localization.py \
+  .github/tests/test_youtube_workflow.py \
+  .github/scripts/feed_localization.py \
+  .github/scripts/youtube_to_discord.py \
+  .github/tests/test_youtube_rss_documentation.py \
+  README.md README_KR.md
+git commit -m "fix: localize YouTube detail labels"
+```
+
+---
+
+### Task 4: Full Regression and Publication Checkpoint
+
+**Files:**
+- Verify all files changed in Tasks 1 through 3.
 - Do not modify runtime behavior unless a failing test exposes a regression caused by this branch.
 
 **Interfaces:**
-- Consumes: the two verified task commits.
+- Consumes: the verified implementation and documentation commits.
 - Produces: one clean local branch checkpoint eligible for full review and later Draft PR publication.
 
 - [ ] **Step 1: Run the complete unit suite**
