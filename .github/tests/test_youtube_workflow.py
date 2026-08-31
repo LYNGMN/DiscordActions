@@ -89,6 +89,30 @@ class FailingCategoryYouTubeClient:
         return FailingVideosResource()
 
 
+class EmbedChannelsResource:
+    def list(self, **kwargs):
+        return RecordingRequest(
+            {
+                "items": [
+                    {
+                        "snippet": {
+                            "thumbnails": {
+                                "default": {
+                                    "url": "https://img.example/channel.jpg"
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+
+class EmbedYouTubeClient:
+    def channels(self):
+        return EmbedChannelsResource()
+
+
 class YouTubeWorkflowTests(unittest.TestCase):
     def source(self):
         return WORKFLOW.read_text(encoding="utf-8")
@@ -252,6 +276,111 @@ class YouTubeWorkflowTests(unittest.TestCase):
         module = load_youtube_script()
         self.assertEqual("07:13", module.parse_duration("PT7M13S"))
         self.assertEqual("01:02:03", module.parse_duration("PT1H2M3S"))
+
+    def test_api_detail_embed_uses_selected_language_for_every_fixed_label(self):
+        module = load_youtube_script()
+        video = {
+            "video_id": "video-id",
+            "video_url": "https://youtu.be/video-id",
+            "title": "원문 영상 제목",
+            "description": "Original source description",
+            "channel_id": "UC-channel",
+            "channel_title": "원문 채널명",
+            "category_name": "Source category value",
+            "tags": "",
+            "duration": "07:13",
+            "published_at": "2026-08-28T00:00:00Z",
+            "thumbnail_url": "https://img.example/video.jpg",
+        }
+        expectations = {
+            "en": {
+                "names": [
+                    "🆔 Video ID",
+                    "📁 Category",
+                    "🏷️ Tags",
+                    "⌛ Duration",
+                    "🔡 Subtitle",
+                    "▶️ Play Video",
+                ],
+                "missing": "N/A",
+                "download": "Download",
+                "embed": "Embed",
+            },
+            "ko": {
+                "names": [
+                    "🆔 영상 ID",
+                    "📁 카테고리",
+                    "🏷️ 태그",
+                    "⌛ 재생시간",
+                    "🔡 자막",
+                    "▶️ 영상 재생",
+                ],
+                "missing": "정보 없음",
+                "download": "다운로드",
+                "embed": "임베드",
+            },
+            "ja": {
+                "names": [
+                    "🆔 動画 ID",
+                    "📁 カテゴリ",
+                    "🏷️ タグ",
+                    "⌛ 再生時間",
+                    "🔡 字幕",
+                    "▶️ 動画を再生",
+                ],
+                "missing": "該当なし",
+                "download": "ダウンロード",
+                "embed": "埋め込み",
+            },
+        }
+
+        for language, expected in expectations.items():
+            with self.subTest(language=language):
+                payload = module.create_embed_message(
+                    video,
+                    EmbedYouTubeClient(),
+                    language,
+                )
+                embed = payload["embeds"][0]
+                fields = embed["fields"]
+                self.assertEqual(expected["names"], [field["name"] for field in fields])
+                self.assertEqual(expected["missing"], fields[2]["value"])
+                self.assertTrue(
+                    fields[4]["value"].startswith("[{}](".format(expected["download"]))
+                )
+                self.assertTrue(
+                    fields[5]["value"].startswith("[{}](".format(expected["embed"]))
+                )
+                self.assertEqual("원문 영상 제목", embed["title"])
+                self.assertEqual("Original source description", embed["description"])
+                self.assertEqual("Source category value", fields[1]["value"])
+
+    def test_api_detail_embed_keeps_source_tags_without_translation(self):
+        module = load_youtube_script()
+        video = {
+            "video_id": "video-id",
+            "video_url": "https://youtu.be/video-id",
+            "title": "Source title",
+            "description": "Source description",
+            "channel_id": "UC-channel",
+            "channel_title": "Source channel",
+            "category_name": "Source category",
+            "tags": "Original Tag,원문 태그",
+            "duration": "07:13",
+            "published_at": "2026-08-28T00:00:00Z",
+            "thumbnail_url": "https://img.example/video.jpg",
+        }
+
+        payload = module.create_embed_message(
+            video,
+            EmbedYouTubeClient(),
+            "ja",
+        )
+
+        self.assertEqual(
+            "`Original Tag` `원문 태그`",
+            payload["embeds"][0]["fields"][2]["value"],
+        )
 
     def test_workflow_maps_new_source_filter_language_and_timezone_settings(self):
         source = self.source()

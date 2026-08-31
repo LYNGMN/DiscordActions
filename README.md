@@ -267,6 +267,8 @@ selects `channel` for a single-channel list and `curated` for a mixed-channel li
 
 `DISPLAY_LANGUAGE` changes fixed labels and localized dates, not article, video, channel, or playlist titles. Supported values are `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `es`, `pt-BR`, `fr`, `de`, and `id`. YouTube API category names are requested in the selected language and omitted when unavailable. The legacy `LANGUAGE_YOUTUBE` setting remains compatible, but `DISPLAY_LANGUAGE` takes priority.
 
+Across primary messages and API detail embeds, fixed field names and link labels follow `DISPLAY_LANGUAGE`. This includes Channel, Video ID, Category, Tags, Duration, Published Date, Subtitle, Thumbnail, Play Video, Download, Embed, and the unavailable-value label. Video titles, channel names, descriptions, and tags are not translated by the formatter; the category value remains the title returned by YouTube. Detail embeds remain available only in API mode.
+
 ## Schedule examples
 
 Edit `cron` under the workflow's `schedule`. Each expression has exactly five fields: minute, hour, day of month, month, and day of week. The workflows do not declare a schedule timezone.

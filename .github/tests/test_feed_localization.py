@@ -105,9 +105,16 @@ class FeedLocalizationTests(unittest.TestCase):
                 self.assertEqual(expected, labels["duration"])
                 self.assertEqual(expected_channel_labels[language], labels["channel"])
                 for key in (
+                    "video_id",
+                    "tags",
                     "published_date",
                     "category",
+                    "subtitle",
                     "thumbnail",
+                    "play_video",
+                    "download",
+                    "embed",
+                    "not_available",
                     "playlist",
                     "search_results",
                     "google_news",
