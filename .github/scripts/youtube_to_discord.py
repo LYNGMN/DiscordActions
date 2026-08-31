@@ -9,6 +9,8 @@ from datetime import datetime, timezone, timedelta
 import logging
 import re
 import json
+import sys
+from youtube_delivery_state import partition_youtube_items
 from youtube_discord_delivery import YOUTUBE_AVATAR_URL, send_youtube_webhook
 
 # 로깅 설정
@@ -33,6 +35,8 @@ DISCORD_AVATAR_YOUTUBE = os.getenv('DISCORD_AVATAR_YOUTUBE', '').strip()
 DISCORD_USERNAME_YOUTUBE = os.getenv('DISCORD_USERNAME_YOUTUBE', '').strip()
 LANGUAGE_YOUTUBE = os.getenv('LANGUAGE_YOUTUBE', 'English')
 YOUTUBE_DETAILVIEW = os.getenv('YOUTUBE_DETAILVIEW', 'false').lower() == 'true'
+YOUTUBE_BASELINE_ONLY = os.getenv('YOUTUBE_BASELINE_ONLY', 'false').lower() == 'true'
+YOUTUBE_MANUAL_TEST_MODE = os.getenv('YOUTUBE_MANUAL_TEST_MODE', 'false').lower() == 'true'
 
 # DB 설정
 DB_PATH = 'youtube_videos.db'
@@ -130,8 +134,8 @@ def get_channel_thumbnail(youtube, channel_id):
             id=channel_id
         ).execute()
         return response['items'][0]['snippet']['thumbnails']['default']['url']
-    except Exception as e:
-        logging.error(f"채널 썸네일을 가져오는 데 실패했습니다: {e}")
+    except Exception as error:
+        logging.error("채널 썸네일 조회 실패 (오류 유형: %s)", type(error).__name__)
         return ""
 
 def create_embed_message(video, youtube):
@@ -400,8 +404,8 @@ def fetch_video_details(youtube, video_ids):
                 id=','.join(chunk)
             ).execute()
             video_details.extend(video_details_response.get('items', []))
-        except Exception as e:
-            logging.error(f"비디오 세부 정보를 가져오는 중 오류 발생: {e}")
+        except Exception as error:
+            logging.error("비디오 세부 정보 조회 실패 (오류 유형: %s)", type(error).__name__)
     return video_details
 
 def fetch_and_post_videos(youtube):
@@ -493,9 +497,23 @@ def fetch_and_post_videos(youtube):
         
         new_videos.append(video_data)
 
-    logging.info(f"새로운 비디오 수: {len(new_videos)}")
+    delivery_videos, baseline_videos = partition_youtube_items(
+        new_videos,
+        baseline_only=YOUTUBE_BASELINE_ONLY,
+        manual_test=YOUTUBE_MANUAL_TEST_MODE,
+    )
+    logging.info(
+        "새 비디오 선별 완료: 전송 %s개, 기준선 %s개",
+        len(delivery_videos),
+        len(baseline_videos),
+    )
 
-    for video in new_videos:
+    for video in baseline_videos:
+        save_video(video)
+    if baseline_videos:
+        logging.info("안전 기준선 저장 완료: %s개", len(baseline_videos))
+
+    for video in delivery_videos:
         formatted_published_at = convert_to_local_time(video['published_at'])
         video_url = f"https://youtu.be/{video['video_id']}"
         
@@ -560,8 +578,8 @@ def fetch_and_post_videos(youtube):
                 time.sleep(1)  # Discord 웹훅 속도 제한 방지를 위한 대기
                 post_to_discord(embed_message, is_embed=True, is_detail=True)
                 logging.info(f"임베드 메시지 전송 완료: {video['title']}")
-            except Exception as e:
-                logging.error(f"임베드 메시지 생성 또는 전송 중 오류 발생: {e}")
+            except Exception as error:
+                logging.error("임베드 메시지 처리 실패 (오류 유형: %s)", type(error).__name__)
         else:
             logging.info("YOUTUBE_DETAILVIEW가 False이므로 임베드 메시지를 전송하지 않습니다.")
         
@@ -594,7 +612,8 @@ if __name__ == "__main__":
         logging.info(f"데이터베이스의 비디오 수: {count}")
         conn.close()
         
-    except Exception as e:
-        logging.error(f"오류 발생: {e}", exc_info=True)
+    except Exception as error:
+        logging.error("실행 실패 (오류 유형: %s)", type(error).__name__)
+        sys.exit(1)
     finally:
         logging.info("스크립트 실행 완료")
