@@ -89,6 +89,57 @@ class SequenceResolver(StubResolver):
 
 
 class GoogleNewsScriptIntegrationTests(unittest.TestCase):
+    def test_reset_clears_delivery_state_but_preserves_url_cache(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as temp_dir:
+                module = load_script(script_path)
+                module.DB_PATH = str(Path(temp_dir) / "articles.db")
+                module.init_db(reset=False)
+                self.assertTrue(
+                    module.reserve_delivery_with_messages(
+                        module.DB_PATH,
+                        "old-guid",
+                        "Repeated story",
+                        "https://publisher.example/repeated-story",
+                        ["queued message"],
+                    )
+                )
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    connection.execute(
+                        "CREATE TABLE google_news_url_cache "
+                        "(article_id TEXT PRIMARY KEY, resolved_url TEXT)"
+                    )
+                    connection.execute(
+                        "INSERT INTO google_news_url_cache VALUES (?, ?)",
+                        ("cached-id", "https://publisher.example/cached"),
+                    )
+
+                module.init_db(reset=True)
+
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    cache_count = connection.execute(
+                        "SELECT COUNT(*) FROM google_news_url_cache"
+                    ).fetchone()[0]
+                    state_tables = connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' "
+                        "AND name IN (?, ?)",
+                        (
+                            "google_news_article_identity",
+                            "google_news_delivery_messages",
+                        ),
+                    ).fetchall()
+                self.assertEqual(1, cache_count)
+                self.assertEqual([], state_tables)
+                self.assertTrue(
+                    module.reserve_delivery_with_messages(
+                        module.DB_PATH,
+                        "new-guid",
+                        "Repeated story",
+                        "https://publisher.example/repeated-story",
+                        ["new queued message"],
+                    )
+                )
+
     def test_each_handler_completes_one_crash_safe_manual_delivery(self):
         published_at = format_datetime(datetime.now(timezone.utc), usegmt=True)
         rss = (
@@ -233,8 +284,17 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertIn("GOOGLE_NEWS_RESULT_PATH", source)
                 self.assertIn("GoogleNewsRequestGuard", source)
                 self.assertIn("prepare_scheduled_items", source)
-                self.assertIn("reserve_delivery", source)
-                self.assertIn("mark_delivery_sent", source)
+                self.assertIn("reserve_delivery_with_messages", source)
+                self.assertIn("deliver_queued_item", source)
+                self.assertIn("pending_delivery_guids", source)
+                self.assertIn("resume_pending_deliveries", source)
+                self.assertIn("split_discord_content", source)
+                self.assertIn("queued_items.append", source)
+                self.assertLess(
+                    source.index("queued_items.append"),
+                    source.index("for guid, title in queued_items"),
+                )
+                self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
                 self.assertIn("write_profile_result", source)
                 self.assertIn("request_guard=request_guard", source)
                 self.assertIn("fetch_rss_feed(rss_url, request_guard)", source)
@@ -405,7 +465,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     items[0]["link"],
                 )
 
-    def test_all_scripts_omit_unresolved_related_links_and_stop_after_four(self):
+    def test_all_scripts_keep_every_related_link_with_safe_fallback(self):
         description = "<ul>{}</ul>".format(
             "".join(
                 '<li><a href="https://news.google.com/rss/articles/{}">Story {}</a>'
@@ -429,13 +489,14 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
 
                 items = module.extract_news_items(description, resolver)
 
-                self.assertEqual(4, len(items))
-                self.assertEqual(5, len(resolver.related_calls))
-                self.assertTrue(
-                    all("news.google.com" not in item["link"] for item in items)
+                self.assertEqual(6, len(items))
+                self.assertEqual(6, len(resolver.related_calls))
+                self.assertIn(
+                    "news.google.com/rss/articles/0",
+                    items[0]["link"],
                 )
 
-    def test_related_descriptions_omit_every_unresolved_google_news_link(self):
+    def test_related_descriptions_keep_article_fallback_but_omit_full_coverage(self):
         description = """
             <ul>
               <li>
@@ -472,7 +533,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 else:
                     rendered = module.parse_html_description(description, resolver)
 
-                self.assertNotIn("news.google.com", rendered)
+                self.assertIn("news.google.com/rss/articles/unresolved", rendered)
                 self.assertNotIn("전체 콘텐츠 보기", rendered)
 
     def test_keyword_and_science_technology_source_titles_are_exact(self):
@@ -534,10 +595,8 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 )
                 self.assertNotIn("Discord 메시지 전송 최종 실패: {e}", source)
                 self.assertIn('RuntimeError("rss_fetch_failed") from None', source)
-                self.assertIn(
-                    'RuntimeError("discord_delivery_failed") from None',
-                    source,
-                )
+                self.assertIn('failure = RuntimeError("discord_delivery_failed")', source)
+                self.assertIn('failure.error_code = getattr(error, "error_code"', source)
 
 
 if __name__ == "__main__":

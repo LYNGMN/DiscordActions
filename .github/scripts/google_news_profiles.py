@@ -38,6 +38,8 @@ HANDLER_ENVIRONMENT = {
             "AFTER_DATE",
             "BEFORE_DATE",
             "RSS_URL_KEYWORD",
+            "KEYWORD_MATCH_MODE",
+            "KEYWORD_MATCH_ALIASES",
         },
     },
 }
@@ -108,6 +110,11 @@ def _validate_environment(handler: str, value: object, index: int) -> Mapping[st
                 index, ", ".join(sorted(unknown))
             )
         )
+    if handler == "keyword" and value.get("KEYWORD_MATCH_MODE", "title") not in {
+        "title",
+        "title_or_description",
+    }:
+        raise ValueError("profile {} has invalid KEYWORD_MATCH_MODE".format(index))
     return MappingProxyType(dict(value))
 
 
@@ -202,10 +209,16 @@ def build_handler_environment(
             "GOOGLE_NEWS_PROFILE_ID": profile.profile_id,
             "GOOGLE_NEWS_DB_PATH": os.path.join(state_dir, profile.state_db),
             "GOOGLE_NEWS_RESOLVER_DB_PATH": resolver_db,
-            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "2",
+            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "1000",
+            "GOOGLE_NEWS_DELIVERY_ORDER": base_env.get(
+                "GOOGLE_NEWS_DELIVERY_ORDER", "feed_oldest_first"
+            ),
             "MANUAL_TEST_MODE": "true" if manual_test else "false",
         }
     )
+    admin_webhook = base_env.get("DISCORD_WEBHOOK_ADMIN", "").strip()
+    if admin_webhook:
+        environment["DISCORD_WEBHOOK_ADMIN"] = admin_webhook
 
     handler_key = profile.handler.upper()
     environment["DISCORD_WEBHOOK_{}".format(handler_key)] = webhook_url
