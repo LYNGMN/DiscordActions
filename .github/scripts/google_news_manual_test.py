@@ -40,12 +40,17 @@ def prepare_manual_test_items(
 
 
 def validate_manual_test_result(
-    enabled: bool, expected_count: int, processed_count: int
+    enabled: bool,
+    expected_count: int,
+    processed_count: int,
+    already_known_count: int = 0,
 ) -> None:
-    if enabled and processed_count != expected_count:
+    handled_count = processed_count + already_known_count
+    if enabled and handled_count != expected_count:
         raise RuntimeError(
             "manual test item count mismatch: "
-            f"expected {expected_count}, processed {processed_count}"
+            f"expected {expected_count}, processed {processed_count}, "
+            f"already known {already_known_count}"
         )
 
 

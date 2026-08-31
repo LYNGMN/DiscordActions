@@ -1206,6 +1206,7 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     processed_count = 0
+    already_known_count = 0
     try:
         rss_url, topic_name, lang = get_rss_url()
 
@@ -1313,6 +1314,7 @@ def main():
                     country_code
                 )
                 if not reserve_delivery(DB_PATH, guid, title, link):
+                    already_known_count += 1
                     continue
                 message_id = send_discord_message(
                     DISCORD_WEBHOOK_TOPIC,
@@ -1333,7 +1335,10 @@ def main():
                 continue
 
         validate_manual_test_result(
-            MANUAL_TEST_MODE, manual_test_expected_count, processed_count
+            MANUAL_TEST_MODE,
+            manual_test_expected_count,
+            processed_count,
+            already_known_count,
         )
         if profile_failed:
             raise RuntimeError("profile_run_failed")

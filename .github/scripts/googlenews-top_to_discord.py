@@ -557,6 +557,7 @@ def record_profile_result(status, processed_count, error_code=None):
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     processed_count = 0
+    already_known_count = 0
     try:
         rss_url, discord_source, timezone, date_format = get_rss_url()
 
@@ -639,6 +640,7 @@ def main():
                     processed_item["title"],
                     processed_item["link"],
                 ):
+                    already_known_count += 1
                     continue
                 message_id = send_discord_message(
                     DISCORD_WEBHOOK_TOP,
@@ -664,7 +666,10 @@ def main():
                 continue
 
         validate_manual_test_result(
-            MANUAL_TEST_MODE, manual_test_expected_count, processed_count
+            MANUAL_TEST_MODE,
+            manual_test_expected_count,
+            processed_count,
+            already_known_count,
         )
         if profile_failed:
             raise RuntimeError("profile_run_failed")
