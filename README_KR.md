@@ -131,6 +131,93 @@ RSS에는 `YOUTUBE_DETAILVIEW`에 필요한 상세 필드가 없으므로 `YOUTU
 
 API 방식은 `YOUTUBE_API_KEY` Secret도 필요합니다. 선택 Secret은 `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, `LANGUAGE_YOUTUBE`입니다. Repository Variable `YOUTUBE_DELIVERY_ORDER`는 `feed_oldest_first|feed_newest_first`, `YOUTUBE_PLAYLIST_LAYOUT`은 `auto|channel|curated`를 사용합니다.
 
+### 리센느로 따라 하는 YouTube RSS 빠른 설정
+
+RSS 방식은 한 채널의 새 영상이나 공개 재생목록의 새 영상을 간단히 받고 싶을 때 적합합니다. YouTube API 키가 필요하지 않습니다. 현재 워크플로에는 `YOUTUBE_MODE`가 하나이므로 채널 예시와 재생목록 예시 중 하나를 선택해 사용하세요. 한 번의 실행에서 둘을 동시에 확인하지는 않습니다.
+
+먼저 **Settings → Secrets and variables → Actions → Variables**에서 다음 값을 등록합니다.
+
+| 이름 | 값 | 용도 |
+| --- | --- | --- |
+| `YOUTUBE_SOURCE` | `rss` | API 키가 필요 없는 Atom 피드 사용 |
+| `DISPLAY_LANGUAGE` | `ko` | 고정 문구와 날짜를 한국어로 표시 |
+| `FEED_TIMEZONE` | `Asia/Seoul` 또는 대상 사용자의 시간대, 선택 | 필터와 표시 날짜의 현지 기준 설정 |
+
+아래의 `이름=값` 표기는 완성된 설정을 한눈에 확인하기 위한 것입니다. GitHub 화면에서는 이름과 값을 서로 다른 입력칸에 넣으세요.
+
+#### 예시 A: RESCENE 채널
+
+채널 페이지: https://www.youtube.com/channel/UCtKtCiaWRz-d3EZn2xd1mdA
+
+`/channel/` 뒤의 값이 채널 ID인 `UCtKtCiaWRz-d3EZn2xd1mdA`입니다. 워크플로가 다음 RSS 주소를 자동으로 만들기 때문에 RSS URL을 별도 설정으로 저장할 필요는 없습니다.
+
+https://www.youtube.com/feeds/videos.xml?channel_id=UCtKtCiaWRz-d3EZn2xd1mdA
+
+**Actions → Secrets**에서 다음 값을 등록하거나 바꿉니다.
+
+| 완성된 설정 | 용도 |
+| --- | --- |
+| `YOUTUBE_MODE=channels` | 채널 업로드 피드 사용 |
+| `YOUTUBE_CHANNEL_ID=UCtKtCiaWRz-d3EZn2xd1mdA` | RESCENE 채널 선택 |
+| `DISCORD_WEBHOOK_YOUTUBE=기존 Discord 웹훅` | 알림을 받을 Discord 채널 선택 |
+
+RSS 설정에는 `YOUTUBE_API_KEY`를 추가하지 않습니다. Atom 피드는 API 전용 상세 필드를 제공하지 않으므로 `YOUTUBE_DETAILVIEW`는 등록하지 않거나 `false`로 설정하세요.
+
+`DISPLAY_LANGUAGE=ko`일 때 채널 알림은 다음과 같은 형식입니다. 아래 내용은 2026년 9월 1일 실제 피드로 확인한 예시이며, 이후 영상 제목과 날짜는 달라집니다.
+
+```text
+`RESCENE - YouTube`
+**Let’s go**
+https://youtu.be/JPAKX4X_9WU
+
+📅 게시일자: `2026년 8월 31일`
+🖼️ [썸네일](https://i3.ytimg.com/vi/JPAKX4X_9WU/hqdefault.jpg)
+```
+
+#### 예시 B: RESCENE Archive 재생목록
+
+재생목록 페이지: https://www.youtube.com/playlist?list=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt
+
+`list=` 뒤의 값이 재생목록 ID인 `PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt`입니다. 워크플로가 다음 RSS 주소를 자동으로 만듭니다.
+
+https://www.youtube.com/feeds/videos.xml?playlist_id=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt
+
+**Actions → Secrets**에서 다음 값을 등록하거나 바꿉니다.
+
+| 완성된 설정 | 용도 |
+| --- | --- |
+| `YOUTUBE_MODE=playlists` | 공개 재생목록 피드 사용 |
+| `YOUTUBE_PLAYLIST_ID=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt` | RESCENE Archive 재생목록 선택 |
+| `DISCORD_WEBHOOK_YOUTUBE=기존 Discord 웹훅` | 알림을 받을 Discord 채널 선택 |
+
+**Actions → Variables**에는 `YOUTUBE_PLAYLIST_LAYOUT=curated`도 등록합니다. `RESCENE Archive`에는 여러 채널의 영상이 들어 있으므로 소유자를 표시하는 혼합 재생목록 제목을 항상 유지할 수 있습니다. 기본값 `auto`도 현재 피드를 검사하면 같은 형식을 선택합니다.
+
+```text
+`📃 RESCENE Archive - YouTube 재생목록 by. RESCENE`
+
+`안녕하세요원이입니다잘부탁드립니다 - YouTube`
+**원이 근황**
+https://youtu.be/EsKmhBMmqIM
+
+📅 게시일자: `2026년 8월 28일`
+🖼️ [썸네일](https://i2.ytimg.com/vi/EsKmhBMmqIM/hqdefault.jpg)
+```
+
+#### RSS 설정 실행 및 확인
+
+1. **Actions → YouTube to Discord Notification → Run workflow**를 엽니다.
+2. 첫 실행은 `manual_test=true`를 유지합니다. 조건에 맞는 최신 항목을 최대 1개만 보내고 나머지 현재 항목은 기준선으로 저장하므로 과거 영상이 한꺼번에 전송되지 않습니다.
+3. 실행이 성공하고 Discord에 시험 알림이 최대 1개만 왔는지 확인합니다. 워크플로는 활성 상태로 두세요. 이후 예약 실행은 15분마다 새 항목을 확인하고, 기본값에서는 RSS의 오래된 위치부터 새 위치 순서로 발견된 영상을 모두 전송합니다.
+
+다음 오류는 잘못된 설정을 조기에 알려주는 정상적인 안전장치입니다.
+
+- `YOUTUBE_API_KEY is required`: Variables 탭의 `YOUTUBE_SOURCE`가 빠졌거나 정확히 `rss`가 아닙니다.
+- `YouTube RSS does not support search mode`: RSS와 `YOUTUBE_MODE=search`를 함께 사용했습니다. 검색은 API 방식을 사용하세요.
+- `YouTube RSS does not support YOUTUBE_DETAILVIEW`: API 전용 상세 보기가 아직 켜져 있습니다.
+- 피드가 유효하지 않다는 오류: 채널·재생목록 ID를 잘못 복사했거나 대상이 비공개·삭제 상태일 수 있습니다. 위에 적힌 완성 RSS 주소를 브라우저에서 열어 확인하세요.
+
+RSS는 현재 Atom 피드에 들어 있는 한정된 항목만 볼 수 있고 다음 페이지가 없습니다. 예약 실행이 보기 전에 피드에서 사라진 영상은 RSS 방식으로 복구할 수 없습니다. 과거 항목 복구, 검색, 재생시간·카테고리, 전체 페이지 조회가 필요하면 API 방식을 사용하세요.
+
 두 서비스 모두 선택 Secret `DISCORD_WEBHOOK_ADMIN`을 등록하면 응답 불명 재전송이나 최종 전송 실패를 관리자 채널에 알립니다. 알림에는 서비스, 프로필, 해시 처리된 항목 식별자, Actions 실행 링크만 포함됩니다.
 
 - 채널 모드는 채널의 업로드 재생목록을 조회하고, 저장된 영상 경계 또는 페이지 끝까지 읽습니다.

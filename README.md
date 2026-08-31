@@ -133,6 +133,93 @@ Required settings are `YOUTUBE_MODE` and `DISCORD_WEBHOOK_YOUTUBE`, plus one mod
 
 The API source additionally requires the `YOUTUBE_API_KEY` Secret. Optional Secrets are `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, and `LANGUAGE_YOUTUBE`. The optional Repository Variables `YOUTUBE_DELIVERY_ORDER` and `YOUTUBE_PLAYLIST_LAYOUT` accept `feed_oldest_first|feed_newest_first` and `auto|channel|curated` respectively.
 
+### YouTube RSS quick start with RESCENE
+
+The RSS source is the simplest choice when you want new uploads from one channel or one public playlist. It does not require a YouTube API key. The current workflow has one `YOUTUBE_MODE`, so choose the channel example or the playlist example for a run; it does not monitor both at the same time.
+
+Open **Settings → Secrets and variables → Actions → Variables** and add:
+
+| Name | Value | Why |
+| --- | --- | --- |
+| `YOUTUBE_SOURCE` | `rss` | Use the no-API-key Atom feed source |
+| `DISPLAY_LANGUAGE` | `en` | Show the fixed message labels and date in English; use `ko` for Korean |
+| `FEED_TIMEZONE` | your audience's timezone, optional | Apply the intended local date to filters and displayed dates |
+
+The rows below use `NAME=value` notation only to make the finished setup easy to check. Enter the name and value in separate GitHub fields.
+
+#### Example A: RESCENE channel
+
+Source page: https://www.youtube.com/channel/UCtKtCiaWRz-d3EZn2xd1mdA
+
+The channel ID is the text after `/channel/`: `UCtKtCiaWRz-d3EZn2xd1mdA`. The workflow builds this feed automatically, so you do not need a separate RSS URL setting:
+
+https://www.youtube.com/feeds/videos.xml?channel_id=UCtKtCiaWRz-d3EZn2xd1mdA
+
+Under **Actions → Secrets**, add or update:
+
+| Finished setting | Purpose |
+| --- | --- |
+| `YOUTUBE_MODE=channels` | Read a channel upload feed |
+| `YOUTUBE_CHANNEL_ID=UCtKtCiaWRz-d3EZn2xd1mdA` | Select the RESCENE channel |
+| `DISCORD_WEBHOOK_YOUTUBE=your existing Discord webhook` | Choose the destination Discord channel |
+
+Do not add `YOUTUBE_API_KEY` for this RSS setup. Leave `YOUTUBE_DETAILVIEW` unset or set it to `false`, because the Atom feed does not supply the API-only detail fields.
+
+With `DISPLAY_LANGUAGE=en`, a channel item uses this layout. This is a real feed example checked on September 1, 2026; future video titles and dates will naturally differ.
+
+```text
+`RESCENE - YouTube`
+**Let’s go**
+https://youtu.be/JPAKX4X_9WU
+
+📅 Published: `August 31, 2026`
+🖼️ [Thumbnail](https://i3.ytimg.com/vi/JPAKX4X_9WU/hqdefault.jpg)
+```
+
+#### Example B: RESCENE Archive playlist
+
+Source page: https://www.youtube.com/playlist?list=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt
+
+The playlist ID is the value after `list=`: `PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt`. The workflow builds this feed automatically:
+
+https://www.youtube.com/feeds/videos.xml?playlist_id=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt
+
+Under **Actions → Secrets**, add or update:
+
+| Finished setting | Purpose |
+| --- | --- |
+| `YOUTUBE_MODE=playlists` | Read a public playlist feed |
+| `YOUTUBE_PLAYLIST_ID=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt` | Select the RESCENE Archive playlist |
+| `DISCORD_WEBHOOK_YOUTUBE=your existing Discord webhook` | Choose the destination Discord channel |
+
+Under **Actions → Variables**, also set `YOUTUBE_PLAYLIST_LAYOUT=curated`. `RESCENE Archive` contains videos from more than one channel, so this keeps the playlist owner in a stable curated-playlist header. The default `auto` currently reaches the same layout after inspecting the feed.
+
+```text
+`📃 RESCENE Archive - YouTube Playlist by. RESCENE`
+
+`안녕하세요원이입니다잘부탁드립니다 - YouTube`
+**원이 근황**
+https://youtu.be/EsKmhBMmqIM
+
+📅 Published: `August 28, 2026`
+🖼️ [Thumbnail](https://i2.ytimg.com/vi/EsKmhBMmqIM/hqdefault.jpg)
+```
+
+#### Run and verify the RSS setup
+
+1. Open **Actions → YouTube to Discord Notification → Run workflow**.
+2. Keep `manual_test=true` for the first run. It sends at most the newest matching item and stores the other current items as a baseline, preventing an old-video flood.
+3. Confirm that the run succeeds and that Discord receives no more than one test message. Leave the workflow enabled; later scheduled runs check every 15 minutes and send every newly discovered item in feed order, oldest position first by default.
+
+Common RSS errors are deliberate configuration checks:
+
+- `YOUTUBE_API_KEY is required` means `YOUTUBE_SOURCE` is missing or is not exactly `rss` in the Variables tab.
+- `YouTube RSS does not support search mode` means RSS was combined with `YOUTUBE_MODE=search`; use the API source for search.
+- `YouTube RSS does not support YOUTUBE_DETAILVIEW` means the API-only detail view is still enabled.
+- An invalid feed usually means the channel or playlist ID was copied incorrectly, is unavailable, or is not public. Open the generated feed URL above to check it.
+
+RSS only sees the finite set of entries currently published in the Atom feed and has no next page. A video that disappears before a scheduled run sees it cannot be recovered by RSS. Use the API source when history recovery, search, duration, category, or full pagination matters.
+
 For either service, the optional `DISCORD_WEBHOOK_ADMIN` Secret reports response-unknown retries and final delivery failures to an admin channel. Alerts contain only the service, profile, a hashed item identifier, and the Actions run link.
 
 - Channel mode reads the channel uploads playlist to the stored-video boundary or the final page.
