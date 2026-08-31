@@ -26,9 +26,17 @@ from google_news_delivery_state import (
     is_item_handled,
     pending_delivery_guids,
     prepare_scheduled_items,
+    record_filtered_item,
     reserve_delivery_with_messages,
 )
 from google_news_discord_delivery import send_webhook_message, split_discord_content
+from google_news_feed_filter import compile_google_news_feed_filter
+from feed_localization import (
+    format_feed_datetime,
+    labels_for,
+    localized_country_name,
+    resolve_display_language,
+)
 from google_news_profile_result import write_profile_result
 from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
@@ -58,6 +66,12 @@ MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTION
 DELIVERY_ORDER = os.environ.get(
     'GOOGLE_NEWS_DELIVERY_ORDER', 'feed_oldest_first'
 ).lower()
+FEED_DATE_FILTER = os.environ.get('FEED_DATE_FILTER', '')
+FEED_KEYWORD_FILTER = os.environ.get('FEED_KEYWORD_FILTER', '')
+FEED_KEYWORD_SCOPE = os.environ.get('FEED_KEYWORD_SCOPE', 'title').lower()
+FEED_TIMEZONE = os.environ.get('FEED_TIMEZONE', '')
+FEED_COUNTRY = os.environ.get('FEED_COUNTRY', '')
+DISPLAY_LANGUAGE = os.environ.get('DISPLAY_LANGUAGE', '')
 
 # DB 설정
 DB_PATH = os.environ.get('GOOGLE_NEWS_DB_PATH', 'google_news_top.db')
@@ -283,6 +297,25 @@ def get_rss_url():
         hl, ceid, google_news, news_type, country_name, country_name_en, flag, timezone, date_format = country_configs[TOP_COUNTRY]
         rss_url = f"https://news.google.com/rss?hl={hl}&gl={TOP_COUNTRY}&ceid={ceid}"
         
+        service_display_language = resolve_display_language(
+            "",
+            hl,
+            TOP_COUNTRY,
+        )
+        display_language = resolve_display_language(
+            DISPLAY_LANGUAGE,
+            hl,
+            TOP_COUNTRY,
+        )
+        labels = labels_for(display_language)
+        google_news = labels["google_news"]
+        news_type = labels["top_news"]
+        country_name = (
+            country_name
+            if display_language == service_display_language
+            else localized_country_name(TOP_COUNTRY, display_language)
+        )
+
         # Discord 메시지 제목 형식 생성
         discord_source = f"`{google_news} - {news_type} - {country_name} {flag}`"
         
@@ -327,7 +360,13 @@ def parse_rss_date(pub_date, timezone, date_format):
 
 def format_discord_message(news_item, discord_source, timezone, date_format):
     """Discord 메시지를 포맷팅합니다."""
-    formatted_date = parse_rss_date(news_item['pub_date'], timezone, date_format)
+    display_language = resolve_display_language(
+        DISPLAY_LANGUAGE,
+        country_code=FEED_COUNTRY or TOP_COUNTRY or '',
+    )
+    formatted_date = format_feed_datetime(
+        news_item['pub_date'], display_language, FEED_TIMEZONE or timezone
+    )
 
     if discord_source:
         message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
@@ -558,6 +597,26 @@ def main():
     already_known_count = 0
     try:
         rss_url, discord_source, timezone, date_format = get_rss_url()
+        country_match = re.search(r'(?:[?&])gl=([^&]+)', rss_url or '')
+        country_code = FEED_COUNTRY or TOP_COUNTRY or (
+            country_match.group(1) if country_match else ''
+        )
+        display_language = resolve_display_language(
+            DISPLAY_LANGUAGE,
+            country_code=country_code,
+        )
+        compiled_filter = compile_google_news_feed_filter(
+            common_date=FEED_DATE_FILTER,
+            common_keyword=FEED_KEYWORD_FILTER,
+            common_scope=FEED_KEYWORD_SCOPE,
+            legacy_date=DATE_FILTER_TOP,
+            legacy_keyword=ADVANCED_FILTER_TOP,
+            explicit_timezone=FEED_TIMEZONE,
+            service_timezone=timezone,
+            country_code=country_code,
+            display_language=display_language,
+        )
+        filter_fingerprint = compiled_filter.fingerprint
 
         init_db(reset=INITIALIZE_TOP)
 
@@ -592,9 +651,26 @@ def main():
         if not INITIALIZE_TOP:
             news_items = [
                 item for item in news_items
-                if not is_item_handled(DB_PATH, item.find('guid').text)
+                if not is_item_handled(
+                    DB_PATH,
+                    item.find('guid').text,
+                    filter_fingerprint,
+                )
             ]
             logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
+
+        matched_items = []
+        for item in news_items:
+            match_result = compiled_filter.matches(
+                item.findtext('pubDate', ''),
+                item.findtext('title', ''),
+                item.findtext('description', ''),
+            )
+            if match_result.matched:
+                matched_items.append(item)
+            else:
+                record_filtered_item(DB_PATH, item, filter_fingerprint)
+        news_items = matched_items
 
         if MANUAL_TEST_MODE:
             news_items = prepare_manual_test_items(news_items, DB_PATH, True)
@@ -618,20 +694,12 @@ def main():
             record_profile_result("success", 0)
             return 0
 
-        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOP)
-        logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
-
         profile_failed = False
         queued_items = []
         for item in news_items:
             current_guid = "unknown"
             try:
                 current_guid = item.find('guid').text
-                pub_date = item.find('pubDate').text
-                if not is_within_date_range(pub_date, since_date, until_date, past_date):
-                    logging.debug(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
-                    continue
-
                 processed_item = process_news_item(item, resolver)
                 if processed_item is None:
                     profile_failed = True

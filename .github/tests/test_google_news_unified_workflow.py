@@ -24,6 +24,7 @@ NEW_MODULES = (
     "google_news_delivery_state.py",
     "google_news_discord_delivery.py",
     "google_news_dispatcher.py",
+    "google_news_feed_filter.py",
     "google_news_keyword_matcher.py",
     "google_news_manual_test.py",
     "google_news_profile_result.py",
@@ -31,8 +32,11 @@ NEW_MODULES = (
     "google_news_related_links.py",
     "google_news_request_guard.py",
     "google_news_url_resolver.py",
+    "feed_filters.py",
+    "feed_localization.py",
     "youtube_delivery_state.py",
     "youtube_discord_delivery.py",
+    "youtube_messages.py",
     "youtube_video_source.py",
     "youtube_to_discord.py",
 )
@@ -67,6 +71,18 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             source,
             re.compile(r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/"),
         )
+
+    def test_unified_workflow_maps_common_filter_language_and_timezone_settings(self):
+        source = self.source()
+        for setting in (
+            "FEED_DATE_FILTER",
+            "FEED_KEYWORD_FILTER",
+            "FEED_KEYWORD_SCOPE",
+            "FEED_TIMEZONE",
+            "FEED_COUNTRY",
+            "DISPLAY_LANGUAGE",
+        ):
+            self.assertIn("{}:".format(setting), source)
 
     def test_webhook_secrets_are_scoped_only_to_the_dispatcher_step(self):
         source = self.source()

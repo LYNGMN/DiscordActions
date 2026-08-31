@@ -27,9 +27,17 @@ from google_news_delivery_state import (
     is_item_handled,
     pending_delivery_guids,
     prepare_scheduled_items,
+    record_filtered_item,
     reserve_delivery_with_messages,
 )
 from google_news_discord_delivery import send_webhook_message, split_discord_content
+from google_news_feed_filter import compile_google_news_feed_filter
+from feed_localization import (
+    format_feed_datetime,
+    labels_for,
+    resolve_display_language,
+)
+from feed_filters import resolve_feed_timezone
 from google_news_profile_result import write_profile_result
 from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
@@ -60,6 +68,12 @@ MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTION
 DELIVERY_ORDER = os.environ.get(
     'GOOGLE_NEWS_DELIVERY_ORDER', 'feed_oldest_first'
 ).lower()
+FEED_DATE_FILTER = os.environ.get('FEED_DATE_FILTER', '')
+FEED_KEYWORD_FILTER = os.environ.get('FEED_KEYWORD_FILTER', '')
+FEED_KEYWORD_SCOPE = os.environ.get('FEED_KEYWORD_SCOPE', 'title').lower()
+FEED_TIMEZONE = os.environ.get('FEED_TIMEZONE', '')
+FEED_COUNTRY = os.environ.get('FEED_COUNTRY', '')
+DISPLAY_LANGUAGE = os.environ.get('DISPLAY_LANGUAGE', '')
 
 # DB 설정
 DB_PATH = os.environ.get('GOOGLE_NEWS_DB_PATH', 'google_news_topic.db')
@@ -775,9 +789,35 @@ def get_topic_category(keyword, lang='en'):
         }
     }
     
+    localized_fallbacks = {
+        "zh-TW": {
+            "headlines": "焦點新聞",
+            "entertainment": "娛樂新聞",
+            "sports": "體育新聞",
+            "business": "財經新聞",
+            "technology": "科技新聞",
+            "health": "健康新聞",
+            "science": "科學新聞",
+            "education": "教育新聞",
+            "lifestyle": "生活風格新聞",
+        },
+        "id": {
+            "headlines": "Berita utama",
+            "entertainment": "Berita hiburan",
+            "sports": "Berita olahraga",
+            "business": "Berita bisnis",
+            "technology": "Berita teknologi",
+            "health": "Berita kesehatan",
+            "science": "Berita sains",
+            "education": "Berita pendidikan",
+            "lifestyle": "Berita gaya hidup",
+        },
+    }
+    language = {"zh-CN": "zh", "pt-BR": "pt"}.get(lang, lang)
     for category, data in categories.items():
         if keyword in data["keywords"]:
-            return data[lang]
+            localized = localized_fallbacks.get(lang, {}).get(category)
+            return localized or data.get(language, data["en"])
     
     return "기타 뉴스" if lang == 'ko' else "Other News"
 
@@ -1004,7 +1044,17 @@ def parse_rss_date(pub_date, country_code):
 
 def format_discord_message(news_item, news_prefix, category, topic_name, country_emoji, country_code):
     """Discord 메시지를 포맷팅합니다."""
-    formatted_date = parse_rss_date(news_item['pub_date'], country_code)
+    display_language = resolve_display_language(
+        DISPLAY_LANGUAGE,
+        country_code=country_code,
+    )
+    timezone_name = resolve_feed_timezone(
+        explicit_timezone=FEED_TIMEZONE,
+        country_code=FEED_COUNTRY or country_code,
+    )
+    formatted_date = format_feed_datetime(
+        news_item['pub_date'], display_language, timezone_name
+    )
 
     discord_source = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`"
 
@@ -1208,6 +1258,26 @@ def main():
     already_known_count = 0
     try:
         rss_url, topic_name, lang = get_rss_url()
+        country_match = re.search(r'(?:[?&])gl=([^&]+)', rss_url or '')
+        country_code = FEED_COUNTRY or (
+            country_match.group(1) if country_match else ''
+        )
+        display_language = resolve_display_language(
+            DISPLAY_LANGUAGE,
+            lang,
+            country_code,
+        )
+        compiled_filter = compile_google_news_feed_filter(
+            common_date=FEED_DATE_FILTER,
+            common_keyword=FEED_KEYWORD_FILTER,
+            common_scope=FEED_KEYWORD_SCOPE,
+            legacy_date=DATE_FILTER_TOPIC,
+            legacy_keyword=ADVANCED_FILTER_TOPIC,
+            explicit_timezone=FEED_TIMEZONE,
+            country_code=country_code,
+            display_language=display_language,
+        )
+        filter_fingerprint = compiled_filter.fingerprint
 
         init_db(reset=INITIALIZE_TOPIC)
 
@@ -1241,9 +1311,26 @@ def main():
         if not INITIALIZE_TOPIC:
             news_items = [
                 item for item in news_items
-                if not is_item_handled(DB_PATH, item.find('guid').text)
+                if not is_item_handled(
+                    DB_PATH,
+                    item.find('guid').text,
+                    filter_fingerprint,
+                )
             ]
             logging.info(f"후속 실행: {len(news_items)}개의 새로운 뉴스 항목을 처리합니다.")
+
+        matched_items = []
+        for item in news_items:
+            match_result = compiled_filter.matches(
+                item.findtext('pubDate', ''),
+                item.findtext('title', ''),
+                item.findtext('description', ''),
+            )
+            if match_result.matched:
+                matched_items.append(item)
+            else:
+                record_filtered_item(DB_PATH, item, filter_fingerprint)
+        news_items = matched_items
 
         if MANUAL_TEST_MODE:
             news_items = prepare_manual_test_items(news_items, DB_PATH, True)
@@ -1267,14 +1354,10 @@ def main():
             record_profile_result("success", 0)
             return 0
 
-        since_date, until_date, past_date = parse_date_filter(DATE_FILTER_TOPIC)
-        logging.debug(f"적용된 날짜 필터 - since: {since_date}, until: {until_date}, past: {past_date}")
-
-        gl_param = re.search(r'gl=(\w+)', TOPIC_PARAMS)
-        country_code = gl_param.group(1) if gl_param else 'KR'
+        country_code = country_code or 'KR'
         country_emoji = get_country_emoji(country_code)
-        news_prefix = get_news_prefix(lang)
-        category = get_topic_category(TOPIC_KEYWORD, lang) if TOPIC_MODE else TOPIC_CATEGORY.get(lang, "Topics")
+        news_prefix = labels_for(display_language)["google_news"]
+        category = get_topic_category(TOPIC_KEYWORD, display_language) if TOPIC_MODE else labels_for(display_language)["topics"]
 
         profile_failed = False
         queued_items = []
@@ -1284,10 +1367,6 @@ def main():
                 guid = item.find('guid').text
                 current_guid = guid
                 pub_date = item.find('pubDate').text
-                if not is_within_date_range(pub_date, since_date, until_date, past_date):
-                    logging.debug(f"날짜 필터에 의해 건너뛰어진 뉴스: {item.find('title').text}")
-                    continue
-
                 title = replace_brackets(item.find('title').text)
                 google_link = item.find('link').text
                 link = resolver.resolve(google_link).url
@@ -1297,10 +1376,6 @@ def main():
                 related_news_json = json.dumps(related_news, ensure_ascii=False)
 
                 description = render_related_items(related_news)
-
-                if not apply_advanced_filter(title, description, ADVANCED_FILTER_TOPIC):
-                    logging.info(f"고급 검색 필터에 의해 건너뛰어진 뉴스: {title}")
-                    continue
 
                 news_item = {
                     "guid": guid,

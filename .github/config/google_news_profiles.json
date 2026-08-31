@@ -8,7 +8,9 @@
     "visible_username": "Google News",
     "environment": {
       "TOP_MODE": "true",
-      "TOP_COUNTRY": "US"
+      "TOP_COUNTRY": "US",
+      "FEED_COUNTRY": "US",
+      "DISPLAY_LANGUAGE": "en"
     }
   },
   {
@@ -20,7 +22,9 @@
     "visible_username": "Google News",
     "environment": {
       "TOP_MODE": "true",
-      "TOP_COUNTRY": "KR"
+      "TOP_COUNTRY": "KR",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -32,7 +36,9 @@
     "visible_username": "Google News",
     "environment": {
       "TOP_MODE": "true",
-      "TOP_COUNTRY": "JP"
+      "TOP_COUNTRY": "JP",
+      "FEED_COUNTRY": "JP",
+      "DISPLAY_LANGUAGE": "ja"
     }
   },
   {
@@ -44,7 +50,9 @@
     "visible_username": "Google News",
     "environment": {
       "TOP_MODE": "true",
-      "TOP_COUNTRY": "CN"
+      "TOP_COUNTRY": "CN",
+      "FEED_COUNTRY": "CN",
+      "DISPLAY_LANGUAGE": "zh-CN"
     }
   },
   {
@@ -57,7 +65,9 @@
     "environment": {
       "TOPIC_MODE": "true",
       "TOPIC_KEYWORD": "korea",
-      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -72,7 +82,9 @@
       "KEYWORD": "서울",
       "HL": "ko",
       "GL": "KR",
-      "CEID": "KR:ko"
+      "CEID": "KR:ko",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -85,7 +97,9 @@
     "environment": {
       "TOPIC_MODE": "true",
       "TOPIC_KEYWORD": "entertainment",
-      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -98,7 +112,9 @@
     "environment": {
       "TOPIC_MODE": "true",
       "TOPIC_KEYWORD": "technology",
-      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -111,7 +127,9 @@
     "environment": {
       "TOPIC_MODE": "true",
       "TOPIC_KEYWORD": "science_technology",
-      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako"
+      "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -126,7 +144,9 @@
       "KEYWORD": "노코드 OR \"no-code\" OR nocode",
       "HL": "ko",
       "GL": "KR",
-      "CEID": "KR:ko"
+      "CEID": "KR:ko",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   },
   {
@@ -144,7 +164,9 @@
       "CEID": "KR:ko",
       "WHEN": "3d",
       "KEYWORD_MATCH_MODE": "title",
-      "KEYWORD_MATCH_ALIASES": "IU | \"Lee Ji-eun\" | 이지은"
+      "KEYWORD_MATCH_ALIASES": "IU | \"Lee Ji-eun\" | 이지은",
+      "FEED_COUNTRY": "KR",
+      "DISPLAY_LANGUAGE": "ko"
     }
   }
 ]

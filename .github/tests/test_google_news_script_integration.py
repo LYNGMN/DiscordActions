@@ -303,6 +303,36 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     source.index("fetch_rss_feed(rss_url, request_guard)"),
                 )
 
+    def test_all_handlers_apply_the_shared_feed_filter_before_network_delivery(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                source = script_path.read_text(encoding="utf-8")
+
+                self.assertIn(
+                    "from google_news_feed_filter import compile_google_news_feed_filter",
+                    source,
+                )
+                self.assertIn("record_filtered_item", source)
+                for setting in (
+                    "FEED_DATE_FILTER",
+                    "FEED_KEYWORD_FILTER",
+                    "FEED_KEYWORD_SCOPE",
+                    "FEED_TIMEZONE",
+                    "FEED_COUNTRY",
+                    "DISPLAY_LANGUAGE",
+                ):
+                    self.assertIn(setting, source)
+                self.assertIn("compiled_filter.matches(", source)
+                self.assertIn("compiled_filter.fingerprint", source)
+                self.assertLess(
+                    source.index("compile_google_news_feed_filter("),
+                    source.index("fetch_rss_feed(rss_url, request_guard)"),
+                )
+                self.assertLess(
+                    source.index("compiled_filter.matches("),
+                    source.index("prepare_scheduled_items("),
+                )
+
     def test_keyword_handler_has_one_effective_rss_url_builder(self):
         keyword_source = SCRIPT_PATHS[0].read_text(encoding="utf-8")
         self.assertEqual(1, keyword_source.count("def get_rss_url():"))
@@ -560,6 +590,34 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
         self.assertIn(
             "`Google 뉴스 - 기술 뉴스 - 과학/기술 🇰🇷`",
             topic_message,
+        )
+
+    def test_topic_category_uses_all_supported_display_languages(self):
+        topic = load_script(SCRIPT_PATHS[2])
+        expected = {
+            "ko": "기술 뉴스",
+            "en": "Technology news",
+            "ja": "テクノロジー関連のニュース",
+            "zh-CN": "科技新闻",
+            "zh-TW": "科技新聞",
+            "es": "Noticias de tecnología",
+            "pt-BR": "Notícias de tecnologia",
+            "fr": "Actus technologie",
+            "de": "Nachrichten aus dem Bereich Technologie",
+            "id": "Berita teknologi",
+        }
+
+        for language, label in expected.items():
+            with self.subTest(language=language):
+                self.assertEqual(
+                    label,
+                    topic.get_topic_category("technology", language),
+                )
+
+        source = SCRIPT_PATHS[2].read_text(encoding="utf-8")
+        self.assertIn(
+            "get_topic_category(TOPIC_KEYWORD, display_language)",
+            source,
         )
 
     def test_all_scripts_wire_safe_manual_test_mode(self):

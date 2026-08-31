@@ -131,9 +131,17 @@ class GoogleNewsProfileTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            {"TOP_MODE": "true", "TOP_COUNTRY": "US"},
+            {
+                "TOP_MODE": "true",
+                "TOP_COUNTRY": "US",
+                "FEED_COUNTRY": "US",
+                "DISPLAY_LANGUAGE": "en",
+            },
             profiles["top_us"].environment,
         )
+        self.assertEqual("ko", profiles["top_kr"].environment["DISPLAY_LANGUAGE"])
+        self.assertEqual("ja", profiles["top_jp"].environment["DISPLAY_LANGUAGE"])
+        self.assertEqual("zh-CN", profiles["top_cn"].environment["DISPLAY_LANGUAGE"])
         self.assertEqual("korea", profiles["topic_korea"].environment["TOPIC_KEYWORD"])
         self.assertEqual("서울", profiles["topic_seoul"].environment["KEYWORD"])
         self.assertEqual(
@@ -236,6 +244,56 @@ class GoogleNewsProfileTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "KEYWORD_MATCH_MODE"):
             self.module.validate_profile_data(invalid)
+
+    def test_common_filter_language_and_timezone_settings_are_allowed_per_profile(self):
+        data = valid_registry()
+        data[0]["environment"].update(
+            {
+                "FEED_DATE_FILTER": "calendar:7d",
+                "FEED_KEYWORD_FILTER": "technology NOT rumor",
+                "FEED_KEYWORD_SCOPE": "title_or_description",
+                "FEED_TIMEZONE": "Asia/Tokyo",
+                "FEED_COUNTRY": "JP",
+                "DISPLAY_LANGUAGE": "ja",
+            }
+        )
+
+        profiles = self.module.validate_profile_data(data)
+
+        self.assertEqual("calendar:7d", profiles[0].environment["FEED_DATE_FILTER"])
+        self.assertEqual("ja", profiles[0].environment["DISPLAY_LANGUAGE"])
+
+    def test_profile_common_settings_override_global_common_settings(self):
+        data = valid_registry()
+        data[0]["environment"]["DISPLAY_LANGUAGE"] = "ja"
+        data[0]["environment"]["FEED_TIMEZONE"] = "Asia/Tokyo"
+        profile = self.module.validate_profile_data(data)[0]
+
+        environment = self.module.build_handler_environment(
+            profile,
+            {
+                profile.webhook_env: FAKE_WEBHOOK_BASE + "/1/redacted",
+                "DISPLAY_LANGUAGE": "ko",
+                "FEED_TIMEZONE": "Asia/Seoul",
+                "FEED_DATE_FILTER": "calendar:1d",
+            },
+            "/state",
+            "/state/resolver.db",
+            False,
+        )
+
+        self.assertEqual("ja", environment["DISPLAY_LANGUAGE"])
+        self.assertEqual("Asia/Tokyo", environment["FEED_TIMEZONE"])
+        self.assertEqual("calendar:1d", environment["FEED_DATE_FILTER"])
+
+    def test_empty_display_language_uses_country_default(self):
+        self.module.validate_common_feed_environment(
+            {
+                "DISPLAY_LANGUAGE": "",
+                "FEED_COUNTRY": "JP",
+                "FEED_KEYWORD_SCOPE": "title",
+            }
+        )
 
     def test_missing_selected_webhook_is_rejected(self):
         profile = self.module.validate_profile_data(copy.deepcopy(valid_registry()))[0]

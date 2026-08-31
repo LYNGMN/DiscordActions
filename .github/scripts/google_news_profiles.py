@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Dict, List, Mapping
 
+from feed_filters import compile_feed_filter, resolve_feed_timezone
+from feed_localization import resolve_display_language
+
 
 PROFILE_FIELDS = {
     "id",
@@ -43,6 +46,16 @@ HANDLER_ENVIRONMENT = {
         },
     },
 }
+COMMON_PROFILE_ENVIRONMENT = {
+    "DISPLAY_LANGUAGE",
+    "FEED_COUNTRY",
+    "FEED_DATE_FILTER",
+    "FEED_KEYWORD_FILTER",
+    "FEED_KEYWORD_SCOPE",
+    "FEED_TIMEZONE",
+}
+for _contract in HANDLER_ENVIRONMENT.values():
+    _contract["allowed"].update(COMMON_PROFILE_ENVIRONMENT)
 BASE_ENV_ALLOWLIST = {
     "HOME",
     "LANG",
@@ -55,7 +68,7 @@ BASE_ENV_ALLOWLIST = {
     "RUNNER_TEMP",
     "SSL_CERT_FILE",
     "TZ",
-}
+} | COMMON_PROFILE_ENVIRONMENT
 CREDENTIAL_KEY = re.compile(
     r"(?:authorization|cookie|password|secret|token|webhook)", re.IGNORECASE
 )
@@ -115,7 +128,52 @@ def _validate_environment(handler: str, value: object, index: int) -> Mapping[st
         "title_or_description",
     }:
         raise ValueError("profile {} has invalid KEYWORD_MATCH_MODE".format(index))
+    scope = value.get("FEED_KEYWORD_SCOPE", "title")
+    if scope not in {"title", "title_or_description"}:
+        raise ValueError("profile {} has invalid FEED_KEYWORD_SCOPE".format(index))
+    try:
+        language = resolve_display_language(
+            value.get("DISPLAY_LANGUAGE", ""),
+            country_code=value.get("FEED_COUNTRY", ""),
+        )
+        timezone_name = resolve_feed_timezone(
+            explicit_timezone=value.get("FEED_TIMEZONE", ""),
+            country_code=value.get("FEED_COUNTRY", ""),
+        )
+        compile_feed_filter(
+            date_filter=value.get("FEED_DATE_FILTER", ""),
+            keyword_filter=value.get("FEED_KEYWORD_FILTER", ""),
+            keyword_scope=scope,
+            timezone_name=timezone_name,
+            display_language=language,
+        )
+    except ValueError as error:
+        raise ValueError("profile {} has invalid common feed settings: {}".format(index, error)) from None
     return MappingProxyType(dict(value))
+
+
+def validate_common_feed_environment(value: Mapping[str, str]) -> None:
+    """Validate merged global/profile feed settings before external requests."""
+
+    scope = value.get("FEED_KEYWORD_SCOPE", "title")
+    try:
+        language = resolve_display_language(
+            value.get("DISPLAY_LANGUAGE", ""),
+            country_code=value.get("FEED_COUNTRY", ""),
+        )
+        timezone_name = resolve_feed_timezone(
+            explicit_timezone=value.get("FEED_TIMEZONE", ""),
+            country_code=value.get("FEED_COUNTRY", ""),
+        )
+        compile_feed_filter(
+            date_filter=value.get("FEED_DATE_FILTER", ""),
+            keyword_filter=value.get("FEED_KEYWORD_FILTER", ""),
+            keyword_scope=scope,
+            timezone_name=timezone_name,
+            display_language=language,
+        )
+    except ValueError as error:
+        raise ValueError("invalid common feed settings: {}".format(error)) from None
 
 
 def validate_profile_data(raw: object) -> List[GoogleNewsProfile]:

@@ -153,6 +153,21 @@ class GoogleNewsKeywordMatcherTests(unittest.TestCase):
             self.module.keyword_filter_fingerprint(other_aliases, "title"),
         )
 
+    def test_common_filter_inputs_expose_only_main_and_related_article_titles(self):
+        title, related = self.module.google_news_filter_inputs(
+            "이솔이 비키니 화제 - 아이유 뉴스",
+            """
+              <a href="https://example.com/iu" data-topic="아이유">전혀 다른 기사</a>
+              <font color="#6f6f6f">아이유 뉴스</font>
+              <ol><li><a href="https://example.com/related">아이유 새 앨범</a></li></ol>
+            """,
+        )
+
+        self.assertEqual("이솔이 비키니 화제", title)
+        self.assertEqual("전혀 다른 기사\n아이유 새 앨범", related)
+        self.assertNotIn("example.com", related)
+        self.assertNotIn("아이유 뉴스", related)
+
 
 if __name__ == "__main__":
     unittest.main()

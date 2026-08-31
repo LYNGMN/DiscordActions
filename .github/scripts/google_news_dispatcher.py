@@ -22,6 +22,7 @@ from google_news_profiles import (
     GoogleNewsProfile,
     build_handler_environment,
     load_profiles,
+    validate_common_feed_environment,
 )
 from google_news_request_guard import GoogleNewsRequestGuard
 
@@ -246,6 +247,10 @@ def run_dispatch(
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
 ) -> DispatchSummary:
+    for profile in profiles:
+        merged_environment = dict(env)
+        merged_environment.update(profile.environment)
+        validate_common_feed_environment(merged_environment)
     if not validate_only:
         validate_webhooks(profiles, env, session or requests.Session())
     return run_profiles(
