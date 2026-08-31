@@ -17,7 +17,7 @@ Discord Actions checks Google News and YouTube with GitHub Actions and sends new
 2. Open **Settings → Secrets and variables → Actions**.
 3. Add only the Secrets and Variables required by the service you use. Never paste their values into documentation, issues, or Actions logs.
 4. Open **Actions**, choose the workflow, and use **Run workflow** first. With `manual_test=true`, each channel sends at most one current item and baselines the rest.
-5. After testing, set the Repository Variable `GOOGLE_NEWS_SCHEDULE_ENABLED` to `true` if scheduled Google News delivery should run.
+5. After the manual test, leave the workflow enabled. Scheduled runs then continue automatically; no separate enable variable is required.
 
 ## Shared date and keyword filters
 
@@ -79,7 +79,7 @@ DISCORD_WEBHOOK_GN_KEYWORD_NOCODE
 DISCORD_WEBHOOK_GN_KEYWORD_IU
 ```
 
-Scheduled delivery requires the Repository Variable `GOOGLE_NEWS_SCHEDULE_ENABLED=true`. The optional `GOOGLE_NEWS_DELIVERY_ORDER` variable accepts:
+Scheduled delivery continues automatically while the workflow is enabled. The optional `GOOGLE_NEWS_DELIVERY_ORDER` variable accepts:
 
 | Value | Behavior |
 | --- | --- |
@@ -164,17 +164,17 @@ RSS messages omit duration and category. Playlist messages add one blank line af
 
 ## Schedule examples
 
-Edit `cron` under the workflow's `schedule`. Keep the two services on different minutes to avoid simultaneous work. The repository currently uses `timezone: 'Asia/Seoul'`; change it to the operator's calendar timezone, such as `Asia/Tokyo`, when appropriate. This schedule timezone is separate from `FEED_TIMEZONE`, which controls filtering and displayed dates.
+Edit `cron` under the workflow's `schedule`. Each expression has exactly five fields: minute, hour, day of month, month, and day of week. The workflows do not declare a schedule timezone.
 
 | Interval | Google News | YouTube |
 | --- | --- | --- |
-| Every 15 minutes (default) | `7,22,37,52 * * * *` | `11,26,41,56 * * * *` |
-| Every 30 minutes | `7,37 * * * *` | `11,41 * * * *` |
-| Hourly | `7 * * * *` | `11 * * * *` |
-| Every 6 hours | `7 */6 * * *` | `11 */6 * * *` |
-| Daily at 09:00 | `7 9 * * *` | `11 9 * * *` |
-| Every Monday at 09:00 | `7 9 * * 1` | `11 9 * * 1` |
-| First day of each month at 09:00 | `7 9 1 * *` | `11 9 1 * *` |
+| Every 15 minutes (default) | `*/15 * * * *` | `*/15 * * * *` |
+| Every 30 minutes | `*/30 * * * *` | `*/30 * * * *` |
+| Hourly | `0 * * * *` | `0 * * * *` |
+| Every 6 hours | `0 */6 * * *` | `0 */6 * * *` |
+| Daily at 09:00 | `0 9 * * *` | `0 9 * * *` |
+| Every Monday at 09:00 | `0 9 * * 1` | `0 9 * * 1` |
+| First day of each month at 09:00 | `0 9 1 * *` | `0 9 1 * *` |
 
 Scheduled GitHub Actions runs can start late. Weekly and monthly examples are calendar schedules, not fixed 7-day or 30-day durations. Google News RSS is not an archive: with long intervals, an article that has already disappeared from the feed cannot be recovered. Use the default 15-minute schedule when minimizing missed news matters.
 
@@ -182,7 +182,7 @@ Scheduled GitHub Actions runs can start late. Weekly and monthly examples are ca
 
 - Check the Actions result and its uploaded SQLite state artifact first.
 - Never publish webhook URLs, API keys, or tokens in logs or support posts.
-- If scheduled Google News runs do not deliver, confirm that `GOOGLE_NEWS_SCHEDULE_ENABLED` is the string `true`.
+- A successful manual test does not disable scheduling. If no scheduled run appears, confirm that the workflow is enabled and that the five-field `schedule` exists on the default branch.
 - Distinguish GitHub scheduling delays and external API limits from code failures. Saved incomplete deliveries resume in sequence on the next run.
 
 ## Contributing and license
