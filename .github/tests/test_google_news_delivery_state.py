@@ -210,6 +210,89 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "delivery reservation not found"):
             self.module.mark_delivery_sent(self.db_path, "missing", "123456789012345678")
 
+    def test_canonical_url_ignores_tracking_query_fragment_and_host_case(self):
+        first = (
+            "https://Publisher.Example/story?id=7&utm_source=google#section"
+        )
+        second = (
+            "https://publisher.example/story?utm_medium=rss&id=7"
+        )
+
+        self.assertEqual(
+            self.module.canonicalize_article_url(first),
+            self.module.canonicalize_article_url(second),
+        )
+
+    def test_changed_guid_and_tracking_query_are_one_article(self):
+        first = "https://publisher.example/story?id=7&utm_source=google"
+        second = "https://PUBLISHER.example/story?utm_medium=rss&id=7#section"
+
+        self.assertTrue(
+            self.module.reserve_delivery(self.db_path, "g1", "Same - Press", first)
+        )
+        self.assertFalse(
+            self.module.reserve_delivery(self.db_path, "g2", "Same - Press", second)
+        )
+
+    def test_changed_google_wrapper_is_deduped_by_normalized_title(self):
+        self.assertTrue(
+            self.module.reserve_delivery(
+                self.db_path,
+                "g1",
+                "아이유   새 소식 - 언론사",
+                "https://news.google.com/rss/articles/first",
+            )
+        )
+        self.assertFalse(
+            self.module.reserve_delivery(
+                self.db_path,
+                "g2",
+                "아이유 새 소식 - 언론사",
+                "https://news.google.com/rss/articles/second",
+            )
+        )
+
+    def test_distinct_titles_with_google_wrappers_are_deliverable(self):
+        self.assertTrue(
+            self.module.reserve_delivery(
+                self.db_path,
+                "g1",
+                "첫 번째 기사 - 언론사",
+                "https://news.google.com/rss/articles/first",
+            )
+        )
+        self.assertTrue(
+            self.module.reserve_delivery(
+                self.db_path,
+                "g2",
+                "두 번째 기사 - 언론사",
+                "https://news.google.com/rss/articles/second",
+            )
+        )
+
+    def test_existing_news_rows_are_backfilled_before_reservation(self):
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "INSERT INTO news_items (pub_date, guid, title, link, related_news) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    "Sun, 30 Aug 2026 12:00:00 GMT",
+                    "legacy-guid",
+                    "이미 게시된 기사 - 언론사",
+                    "https://publisher.example/already-posted?utm_source=google",
+                    "[]",
+                ),
+            )
+
+        self.assertFalse(
+            self.module.reserve_delivery(
+                self.db_path,
+                "new-guid",
+                "이미 게시된 기사 - 언론사",
+                "https://publisher.example/already-posted?utm_medium=rss",
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
