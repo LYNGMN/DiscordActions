@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 import re
 import json
+from youtube_discord_delivery import YOUTUBE_AVATAR_URL, send_youtube_webhook
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -181,7 +182,7 @@ def create_embed_message(video, youtube):
         },
         "footer": {
             "text": "YouTube",
-            "icon_url": "https://icon.dataimpact.ing/media/original/youtube/youtube_social_circle_red.png"
+            "icon_url": YOUTUBE_AVATAR_URL
         },
         "timestamp": video['published_at'],
         "image": {
@@ -196,25 +197,15 @@ def create_embed_message(video, youtube):
     }
 
 def post_to_discord(message, is_embed=False, is_detail=False):
-    headers = {'Content-Type': 'application/json'}
-    
     if is_embed:
         payload = message
     else:
         payload = {"content": message}
-        if DISCORD_AVATAR_YOUTUBE:
-            payload["avatar_url"] = DISCORD_AVATAR_YOUTUBE
-        if DISCORD_USERNAME_YOUTUBE:
-            payload["username"] = DISCORD_USERNAME_YOUTUBE
     
     webhook_url = DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW if is_detail and DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW else DISCORD_WEBHOOK_YOUTUBE
-    
-    response = requests.post(webhook_url, json=payload, headers=headers)
-    if response.status_code != 204:
-        logging.error(f"Discord에 메시지를 게시하는 데 실패했습니다. 상태 코드: {response.status_code}")
-        logging.error(response.text)
-    else:
-        logging.info(f"Discord에 메시지 게시 완료 ({'상세' if is_detail else '기본'} 웹훅)")
+
+    send_youtube_webhook(webhook_url, payload)
+    logging.info(f"Discord에 메시지 게시 완료 ({'상세' if is_detail else '기본'} 웹훅)")
     time.sleep(2)  # 속도 제한
 
 def parse_duration(duration):
