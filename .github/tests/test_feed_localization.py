@@ -25,6 +25,7 @@ class FeedLocalizationTests(unittest.TestCase):
     def setUp(self):
         self.video = {
             "channel_title": "BBC News 코리아",
+            "channel_id": "UCWpY0eSJtyO-qNAPbKFRSSg",
             "title": "2030 청년들 올림픽 공원 시위를 말하다- BBC News 코리아",
             "video_id": "dv74X0spCm0",
             "video_url": "https://youtu.be/dv74X0spCm0",
@@ -86,10 +87,23 @@ class FeedLocalizationTests(unittest.TestCase):
             "de": "Dauer",
             "id": "Durasi",
         }
+        expected_channel_labels = {
+            "ko": "채널명",
+            "en": "Channel",
+            "ja": "チャンネル",
+            "zh-CN": "频道",
+            "zh-TW": "頻道",
+            "es": "Canal",
+            "pt-BR": "Canal",
+            "fr": "Chaîne",
+            "de": "Kanal",
+            "id": "Saluran",
+        }
         for language, expected in expected_duration_labels.items():
             with self.subTest(language=language):
                 labels = self.localization.labels_for(language)
                 self.assertEqual(expected, labels["duration"])
+                self.assertEqual(expected_channel_labels[language], labels["channel"])
                 for key in (
                     "published_date",
                     "category",
@@ -196,7 +210,7 @@ class FeedLocalizationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid YouTube playlist layout"):
             self.messages.resolve_playlist_layout("unknown", ["same"])
 
-    def test_rss_message_omits_unavailable_duration_and_category(self):
+    def test_rss_channel_message_contains_only_available_lower_metadata(self):
         message = self.messages.build_youtube_message(
             self.video,
             source_type="channels",
@@ -205,13 +219,43 @@ class FeedLocalizationTests(unittest.TestCase):
             include_api_details=False,
         )
 
-        self.assertNotIn("Duration:", message)
-        self.assertNotIn("Category:", message)
-        self.assertIn("📅 Published: `June 29, 2026`", message)
-        self.assertIn(
+        self.assertEqual(
+            "`BBC News 코리아 - YouTube`\n"
+            "**2030 청년들 올림픽 공원 시위를 말하다- BBC News 코리아**\n"
+            "https://youtu.be/dv74X0spCm0\n\n"
+            "📅 Published: `June 29, 2026`\n"
             "🖼️ [Thumbnail](https://i.ytimg.com/vi/qdq9GpInFLY/hqdefault.jpg)",
             message,
         )
+
+    def test_rss_playlist_message_links_channel_without_api_only_fields(self):
+        message = self.messages.build_youtube_message(
+            self.video,
+            source_type="playlists",
+            display_language="en",
+            timezone_name="UTC",
+            include_api_details=False,
+            playlist={
+                "title": "RESCENE Archive",
+                "owner_title": "RESCENE",
+            },
+            playlist_layout="curated",
+        )
+
+        self.assertEqual(
+            "`📃 RESCENE Archive - YouTube Playlist by. RESCENE`\n\n"
+            "`BBC News 코리아 - YouTube`\n"
+            "**2030 청년들 올림픽 공원 시위를 말하다- BBC News 코리아**\n"
+            "https://youtu.be/dv74X0spCm0\n\n"
+            "👤 Channel: [BBC News 코리아]"
+            "(https://www.youtube.com/channel/UCWpY0eSJtyO-qNAPbKFRSSg)\n"
+            "📅 Published: `June 29, 2026`\n"
+            "🖼️ [Thumbnail](https://i.ytimg.com/vi/qdq9GpInFLY/hqdefault.jpg)",
+            message,
+        )
+        self.assertNotIn("Duration:", message)
+        self.assertNotIn("Category:", message)
+        self.assertNotIn("feeds/videos.xml", message)
 
     def test_search_header_is_localized_without_translating_titles(self):
         message = self.messages.build_youtube_message(

@@ -57,6 +57,7 @@ _BABEL_LOCALES = {
 
 _LABELS = {
     "ko": {
+        "channel": "채널명",
         "duration": "재생시간",
         "published_date": "게시일자",
         "category": "카테고리",
@@ -68,6 +69,7 @@ _LABELS = {
         "topics": "주제",
     },
     "en": {
+        "channel": "Channel",
         "duration": "Duration",
         "published_date": "Published",
         "category": "Category",
@@ -79,6 +81,7 @@ _LABELS = {
         "topics": "Topics",
     },
     "ja": {
+        "channel": "チャンネル",
         "duration": "再生時間",
         "published_date": "公開日",
         "category": "カテゴリ",
@@ -90,6 +93,7 @@ _LABELS = {
         "topics": "トピック",
     },
     "zh-CN": {
+        "channel": "频道",
         "duration": "时长",
         "published_date": "发布日期",
         "category": "类别",
@@ -101,6 +105,7 @@ _LABELS = {
         "topics": "主题",
     },
     "zh-TW": {
+        "channel": "頻道",
         "duration": "片長",
         "published_date": "發布日期",
         "category": "類別",
@@ -112,6 +117,7 @@ _LABELS = {
         "topics": "主題",
     },
     "es": {
+        "channel": "Canal",
         "duration": "Duración",
         "published_date": "Fecha de publicación",
         "category": "Categoría",
@@ -123,6 +129,7 @@ _LABELS = {
         "topics": "Temas",
     },
     "pt-BR": {
+        "channel": "Canal",
         "duration": "Duração",
         "published_date": "Data de publicação",
         "category": "Categoria",
@@ -134,6 +141,7 @@ _LABELS = {
         "topics": "Tópicos",
     },
     "fr": {
+        "channel": "Chaîne",
         "duration": "Durée",
         "published_date": "Date de publication",
         "category": "Catégorie",
@@ -145,6 +153,7 @@ _LABELS = {
         "topics": "Thèmes",
     },
     "de": {
+        "channel": "Kanal",
         "duration": "Dauer",
         "published_date": "Veröffentlichungsdatum",
         "category": "Kategorie",
@@ -156,6 +165,7 @@ _LABELS = {
         "topics": "Themen",
     },
     "id": {
+        "channel": "Saluran",
         "duration": "Durasi",
         "published_date": "Tanggal publikasi",
         "category": "Kategori",
