@@ -61,6 +61,8 @@ class YouTubeWorkflowTests(unittest.TestCase):
         source = self.source()
 
         self.assertIn("cron: '11,26,41,56 * * * *'", source)
+        self.assertIn("timezone: 'Asia/Seoul'", source)
+        self.assertIn("YOUTUBE_DELIVERY_ORDER", source)
         self.assertNotIn("cron: '0 * * * *'", source)
         self.assertIn("manual_test:", source)
         self.assertIn("default: true", source)
@@ -78,6 +80,7 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("core.setOutput('source-run-id'", source)
         self.assertIn("artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}", source)
         self.assertIn("run-id: ${{ steps.previous_state.outputs.source-run-id }}", source)
+        self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
 
     def test_missing_state_always_baselines_and_manual_mode_is_one_item(self):
@@ -102,6 +105,13 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", upload_section)
         self.assertIn("if-no-files-found: error", upload_section)
 
+    def test_actions_summary_reports_pending_and_ambiguous_retries(self):
+        source = self.source()
+        self.assertIn("Write safe run summary", source)
+        self.assertIn("Pending deliveries", source)
+        self.assertIn("Ambiguous retries", source)
+        self.assertIn("YOUTUBE_RUN_SUMMARY_PATH", source)
+
     def test_script_saves_baseline_before_delivery_and_exits_nonzero_on_error(self):
         source = SCRIPT.read_text(encoding="utf-8")
 
@@ -111,6 +121,10 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertLess(
             source.index("for video in baseline_videos:"),
             source.index("for video in delivery_videos:"),
+        )
+        self.assertLess(
+            source.index("queued_videos.append"),
+            source.index("for video_id, video_title in queued_videos:"),
         )
         self.assertIn("sys.exit(1)", source)
 
@@ -125,6 +139,7 @@ class YouTubeWorkflowTests(unittest.TestCase):
 
         self.assertIn(".github/scripts/youtube_delivery_state.py", source)
         self.assertIn(".github/scripts/youtube_discord_delivery.py", source)
+        self.assertIn(".github/scripts/youtube_video_source.py", source)
         self.assertIn(".github/scripts/youtube_to_discord.py", source)
 
 

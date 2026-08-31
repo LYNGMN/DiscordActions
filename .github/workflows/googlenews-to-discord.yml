@@ -3,6 +3,7 @@ name: Google News to Discord
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'
+      timezone: 'Asia/Seoul'
   workflow_dispatch:
     inputs:
       manual_test:
@@ -95,6 +96,8 @@ jobs:
       - name: Run unified Google News dispatcher
         env:
           MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
+          GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
+          DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
           DISCORD_WEBHOOK_GN_TOP_US: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_US }}
           DISCORD_WEBHOOK_GN_TOP_KR: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_KR }}
           DISCORD_WEBHOOK_GN_TOP_JP: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_JP }}
@@ -125,10 +128,14 @@ jobs:
               return;
             }
             const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const pending = summary.profiles.reduce((total, item) => total + item.pending_count, 0);
+            const ambiguous = summary.profiles.reduce((total, item) => total + item.ambiguous_retry_count, 0);
             await core.summary
               .addHeading('Google News')
               .addRaw(`Status: ${summary.status}\n`)
               .addRaw(`Profiles: ${summary.profiles.length}\n`)
+              .addRaw(`Pending deliveries: ${pending}\n`)
+              .addRaw(`Ambiguous retries: ${ambiguous}\n`)
               .write();
 
       - name: Upload updated state
