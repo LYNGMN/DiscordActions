@@ -5,13 +5,16 @@
 Make Discord notifications clearly distinguish the information supplied by a
 YouTube Atom RSS feed from the richer information supplied by the YouTube Data
 API. RSS notifications must not imply that duration or category data is
-available, while API notifications keep the existing detailed layout.
+available, while every fixed label in API messages and API detail embeds uses
+the same selected display language.
 
 ## Chosen Approach
 
 Use explicit RSS and API message layouts at the shared YouTube message boundary.
+Keep all fixed YouTube labels in the existing shared ten-language localization
+table and make both plain messages and API detail embeds consume that table.
 This keeps the no-API-key RSS path simple, avoids hidden API requests, and
-prevents changes to the existing API notification format.
+prevents language drift between the primary and detail webhooks.
 
 The alternatives were rejected because one generic optional-field layout makes
 the source difference unclear, while enriching RSS through the API would require
@@ -58,7 +61,9 @@ https://youtu.be/VIDEO_ID
 ## API Layout
 
 API mode keeps its existing layout and continues to show duration and category
-when YouTube supplies them.
+when YouTube supplies them. Optional API detail embeds localize these fixed
+labels through `DISPLAY_LANGUAGE`: Video ID, Category, Tags, Duration,
+Subtitle, Play Video, Download, Embed, and Not Available.
 
 ```text
 ⏳ Duration: `07:13`
@@ -70,13 +75,21 @@ when YouTube supplies them.
 RSS mode never displays placeholder duration or category lines because the Atom
 feed does not provide those fields. It also does not display or link the source
 feed URL; the supplied `view-source` example was reference material only.
+Detail embeds remain an API-only feature.
 
 ## Localization and Documentation
 
-The existing ten-language label system gains a localized `Channel` label.
-`DISPLAY_LANGUAGE=ko` renders the lower RSS playlist fields as `채널명`,
-`게시일자`, and `썸네일`. Video, channel, and playlist names remain
-unchanged.
+The existing ten-language label system gains localized labels for Channel,
+Video ID, Category, Tags, Duration, Published Date, Subtitle, Thumbnail, Play
+Video, Download, Embed, and Not Available. `DISPLAY_LANGUAGE=ko` renders the
+corresponding fixed labels in Korean; `ja`, `zh-CN`, `zh-TW`, `es`, `pt-BR`,
+`fr`, `de`, and `id` render their own labels instead of falling back to Korean.
+
+Video titles, channel names, playlist names, descriptions, tags, and category
+values remain source data and are not translated. The category value continues
+to use the localized title returned by the YouTube API when one is available.
+The legacy `LANGUAGE_YOUTUBE` setting remains a fallback only when
+`DISPLAY_LANGUAGE` is not set.
 
 `README.md` and `README_KR.md` will show separate RSS channel, RSS playlist, and
 API examples. The comparison table and nearby guidance will explicitly state
@@ -88,7 +101,11 @@ that duration and category require API mode and are unavailable in RSS mode.
   canonical HTTPS channel URL from it.
 - Playlist RSS messages require a valid channel ID before being queued.
 - Channel RSS messages do not add a redundant lower channel field.
-- API message construction and resumable Discord delivery state are unchanged.
+- `create_embed_message(video, youtube, display_language)` normalizes the
+  selected language and reads every fixed label from `labels_for(language)`.
+- Empty API tags display the localized Not Available value.
+- API payload structure, source values, and resumable Discord delivery state are
+  unchanged.
 - No webhook, schedule, database schema, feed URL display, or API request behavior
   changes as part of this work.
 
@@ -98,7 +115,13 @@ that duration and category require API mode and are unavailable in RSS mode.
 - Verify the playlist channel name is linked to the correct channel URL.
 - Verify RSS messages omit duration, category, and source-feed URLs.
 - Verify API messages still include duration and category.
-- Verify English and Korean labels and documentation examples.
+- Verify every supported language supplies the complete fixed-label set.
+- Verify exact English, Korean, and Japanese API detail embed labels, including
+  localized Download, Embed, and Not Available text.
+- Verify the legacy `LANGUAGE_YOUTUBE` fallback remains compatible when
+  `DISPLAY_LANGUAGE` is unset.
+- Verify English and Korean documentation examples explain that fixed labels,
+  including API detail embed fields, follow `DISPLAY_LANGUAGE`.
 - Run the complete Python unit suite, `py_compile`, `git diff --check`, structured
   file checks, and the changed-file credential scan before publication.
 - Do not send a live Discord message during implementation or review.
