@@ -16,7 +16,7 @@ from feed_filters import (
     resolve_feed_keyword_filter,
     resolve_feed_timezone,
 )
-from feed_localization import normalize_display_language
+from feed_localization import labels_for, normalize_display_language
 from youtube_delivery_state import (
     finalize_youtube_delivery,
     get_search_published_after,
@@ -175,14 +175,13 @@ def get_channel_thumbnail(youtube, channel_id):
         logging.error("채널 썸네일 조회 실패 (오류 유형: %s)", type(error).__name__)
         return ""
 
-def create_embed_message(video, youtube):
+def create_embed_message(video, youtube, display_language):
+    labels = labels_for(normalize_display_language(display_language))
     channel_thumbnail = get_channel_thumbnail(youtube, video['channel_id'])
     
     tags = video['tags'].split(',') if video['tags'] else []
     formatted_tags = ' '.join(f'`{tag.strip()}`' for tag in tags)
     
-    play_text = "Play Video" if LANGUAGE_YOUTUBE == 'English' else "영상 재생"
-    play_link = f"https://www.youtube.com/watch?v={video['video_id']}"
     embed_link = f"https://www.youtube.com/embed/{video['video_id']}"
     
     embed = {
@@ -192,28 +191,31 @@ def create_embed_message(video, youtube):
         "color": 16711680,  # Red color
         "fields": [
             {
-                "name": "🆔 Video ID" if LANGUAGE_YOUTUBE == 'English' else "🆔 영상 ID",
+                "name": f"🆔 {labels['video_id']}",
                 "value": f"`{video['video_id']}`"
             },            
             {
-                "name": "📁 Category" if LANGUAGE_YOUTUBE == 'English' else "📁 영상 분류",
+                "name": f"📁 {labels['category']}",
                 "value": video['category_name']
             },
             {
-                "name": "🏷️ Tags" if LANGUAGE_YOUTUBE == 'English' else "🏷️ 영상 태그",
-                "value": formatted_tags if formatted_tags else "N/A"
+                "name": f"🏷️ {labels['tags']}",
+                "value": formatted_tags if formatted_tags else labels['not_available']
             },
             {
-                "name": "⌛ Duration" if LANGUAGE_YOUTUBE == 'English' else "⌛ 영상 길이",
+                "name": f"⌛ {labels['duration']}",
                 "value": video['duration']
             },            
             {
-                "name": "🔡 Subtitle" if LANGUAGE_YOUTUBE == 'English' else "🔡 영상 자막",
-                "value": f"[Download](https://downsub.com/?url={video['video_url']})"
+                "name": f"🔡 {labels['subtitle']}",
+                "value": (
+                    f"[{labels['download']}]"
+                    f"(https://downsub.com/?url={video['video_url']})"
+                )
             },
             {
-                "name": "▶️ " + play_text,
-                "value": f"[Embed]({embed_link})"
+                "name": f"▶️ {labels['play_video']}",
+                "value": f"[{labels['embed']}]({embed_link})"
             }
         ],
         "author": {
@@ -667,7 +669,7 @@ def fetch_and_post_videos(youtube):
         targets = [('primary', {'content': message})]
         if YOUTUBE_DETAILVIEW:
             logging.info(f"YOUTUBE_DETAILVIEW가 True입니다. 임베드 메시지 생성 및 전송 시도")
-            embed_message = create_embed_message(video, youtube)
+            embed_message = create_embed_message(video, youtube, display_language)
             targets.append(('detail', embed_message))
             logging.info(f"임베드 메시지 생성 완료: {video['title']}")
         else:

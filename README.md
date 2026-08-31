@@ -121,6 +121,17 @@ Set the Repository Variable `YOUTUBE_SOURCE` to `rss` or `api`. Existing setups 
 | Older items no longer in the current feed | Cannot recover them | Can page through channel/playlist data |
 | Quota | No YouTube API quota | Uses YouTube Data API quota |
 
+The two message layouts reflect the fields that YouTube actually supplies. The
+[official Atom notification format](https://developers.google.com/youtube/v3/guides/push_notifications)
+identifies the video and channel and includes the title, author, and publication
+metadata, but it does not include the API-only duration or category fields. In API
+mode, the [video resource](https://developers.google.com/youtube/v3/docs/videos)
+provides duration as `contentDetails.duration` and the category ID as
+`snippet.categoryId`; the workflow then requests the localized category name with
+[`videoCategories.list`](https://developers.google.com/youtube/v3/docs/videoCategories/list).
+Therefore, a missing duration or category in an RSS notification is expected, not
+an error. Choose API mode when those details are required.
+
 Both sources use the same video ID and SQLite state, so switching from RSS to API or back does not resend an already handled video. RSS has no page token: if a video disappears from the current feed before a run sees it, RSS cannot recover it.
 
 RSS does not provide the fields required by `YOUTUBE_DETAILVIEW`, so keep that setting disabled when `YOUTUBE_SOURCE=rss`.
@@ -201,6 +212,7 @@ Under **Actions → Variables**, also set `YOUTUBE_PLAYLIST_LAYOUT=curated`. `RE
 **원이 근황**
 https://youtu.be/EsKmhBMmqIM
 
+👤 Channel: [안녕하세요원이입니다잘부탁드립니다](https://www.youtube.com/channel/UCWpY0eSJtyO-qNAPbKFRSSg)
 📅 Published: `August 28, 2026`
 🖼️ [Thumbnail](https://i2.ytimg.com/vi/EsKmhBMmqIM/hqdefault.jpg)
 ```
@@ -243,11 +255,19 @@ https://youtu.be/VIDEO_ID
 🖼️ [Thumbnail](https://i.ytimg.com/vi/VIDEO_ID/hqdefault.jpg)
 ```
 
-RSS messages omit duration and category. Playlist messages add one blank line after their first line. `channel` layout uses `` `📃 Playlist title by. Channel - YouTube Playlist` ``, while `curated` uses `` `📃 Playlist title - YouTube Playlist by. Owner` ``. `auto` selects `channel` for a single-channel list and `curated` for a mixed-channel list.
+RSS channel messages show the publication date and thumbnail. RSS playlist
+messages additionally link the channel that owns each video, which matters when a
+playlist mixes several channels. RSS messages omit duration and category because
+Atom does not supply them. Playlist messages add one blank line after their first
+line. `channel` layout uses `` `📃 Playlist title by. Channel - YouTube Playlist` ``,
+while `curated` uses `` `📃 Playlist title - YouTube Playlist by. Owner` ``. `auto`
+selects `channel` for a single-channel list and `curated` for a mixed-channel list.
 
 ## Display languages
 
 `DISPLAY_LANGUAGE` changes fixed labels and localized dates, not article, video, channel, or playlist titles. Supported values are `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `es`, `pt-BR`, `fr`, `de`, and `id`. YouTube API category names are requested in the selected language and omitted when unavailable. The legacy `LANGUAGE_YOUTUBE` setting remains compatible, but `DISPLAY_LANGUAGE` takes priority.
+
+Across primary messages and API detail embeds, fixed field names and link labels follow `DISPLAY_LANGUAGE`. This includes Channel, Video ID, Category, Tags, Duration, Published Date, Subtitle, Thumbnail, Play Video, Download, Embed, and the unavailable-value label. Video titles, channel names, descriptions, and tags are not translated by the formatter; the category value remains the title returned by YouTube. Detail embeds remain available only in API mode.
 
 ## Schedule examples
 

@@ -1,6 +1,7 @@
 """Plain Discord message formatting shared by YouTube RSS and API sources."""
 
 from typing import Dict, Iterable, Optional
+from urllib.parse import quote
 
 from feed_localization import format_feed_date, labels_for, normalize_display_language
 
@@ -97,6 +98,14 @@ def build_youtube_message(
         if category_name:
             lines.append("📁 {}: `{}`".format(labels["category"], category_name))
     else:
+        if source_type == "playlists":
+            lines.append(
+                "👤 {}: [{}]({})".format(
+                    labels["channel"],
+                    channel_title,
+                    _youtube_channel_url(video),
+                )
+            )
         lines.append(
             "📅 {}: `{}`".format(
                 labels["published_date"],
@@ -112,3 +121,10 @@ def _required(data: Dict[str, str], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("missing YouTube message field: {}".format(key))
     return value.strip()
+
+
+def _youtube_channel_url(video: Dict[str, str]) -> str:
+    channel_id = _required(video, "channel_id")
+    return "https://www.youtube.com/channel/{}".format(
+        quote(channel_id, safe="")
+    )
