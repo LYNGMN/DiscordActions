@@ -4,8 +4,8 @@ Google News와 YouTube의 새 항목을 GitHub Actions로 확인하고 Discord �
 
 ## 주요 동작
 
-- Google News 이름은 `Google News`, 아이콘은 프로젝트의 Google News 아이콘으로 고정됩니다.
-- YouTube 이름은 `YouTube`, 아이콘은 프로젝트의 YouTube 아이콘으로 고정됩니다.
+- Discord 메시지 작성자로 표시되는 Google News 봇은 표시 이름을 `Google News`로, 프로필 아이콘을 [Google News 아이콘](https://discordactions.github.io/logo/media/original/news/googlenews.png)으로 항상 사용합니다.
+- Discord 메시지 작성자로 표시되는 YouTube 봇은 표시 이름을 `YouTube`로, 프로필 아이콘을 [YouTube 아이콘](https://discordactions.github.io/logo/media/original/youtube/youtube_social_circle_red.png)으로 항상 사용합니다.
 - 새 항목은 게시일을 다시 정렬하지 않고 RSS/API 목록의 위치를 기준으로 처리합니다. 기본값은 피드의 오래된 위치부터 최신 위치 순서입니다.
 - 한 번에 여러 항목이 발견되면 일부만 자르지 않고 모두 순차 전송합니다.
 - 첫 YouTube 실행은 현재 영상을 기준선으로만 저장하여 과거 영상이 한꺼번에 전송되는 일을 막습니다.

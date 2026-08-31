@@ -4,8 +4,8 @@ Discord Actions checks Google News and YouTube with GitHub Actions and sends new
 
 ## Behavior
 
-- Google News messages always use the name `Google News` and the project Google News icon.
-- YouTube messages always use the name `YouTube` and the project YouTube icon.
+- The Discord bot shown as the author of each Google News message always uses the display name `Google News` and the [Google News icon](https://discordactions.github.io/logo/media/original/news/googlenews.png) as its profile icon.
+- The Discord bot shown as the author of each YouTube message always uses the display name `YouTube` and the [YouTube icon](https://discordactions.github.io/logo/media/original/youtube/youtube_social_circle_red.png) as its profile icon.
 - New items are ordered by their position in the RSS/API response, not by publication timestamps. The default sends older feed positions before newer ones.
 - Every newly discovered item is queued; scheduled runs no longer truncate a batch to a small result limit.
 - A first YouTube run stores the current videos as a baseline instead of flooding Discord with history.

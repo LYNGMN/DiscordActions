@@ -19,6 +19,13 @@ PLAYLIST_FEED = (
     "https://www.youtube.com/feeds/videos.xml?"
     "playlist_id=PL7zZDePsdYwPNu51o8b9MKQ_eGk520SFt"
 )
+GOOGLE_NEWS_ICON = (
+    "https://discordactions.github.io/logo/media/original/news/googlenews.png"
+)
+YOUTUBE_ICON = (
+    "https://discordactions.github.io/logo/media/original/youtube/"
+    "youtube_social_circle_red.png"
+)
 
 
 class YouTubeRssDocumentationTests(unittest.TestCase):
@@ -62,6 +69,23 @@ class YouTubeRssDocumentationTests(unittest.TestCase):
             "`📃 RESCENE Archive - YouTube 재생목록 by. RESCENE`",
             korean,
         )
+
+    def test_branding_explains_discord_bot_identity_and_links_icons(self):
+        english, korean = self.readmes()
+
+        self.assertIn("Discord bot shown as the author", english)
+        self.assertIn(
+            "[Google News icon]({})".format(GOOGLE_NEWS_ICON),
+            english,
+        )
+        self.assertIn("[YouTube icon]({})".format(YOUTUBE_ICON), english)
+
+        self.assertIn("Discord 메시지 작성자로 표시되는 Google News 봇", korean)
+        self.assertIn(
+            "[Google News 아이콘]({})".format(GOOGLE_NEWS_ICON),
+            korean,
+        )
+        self.assertIn("[YouTube 아이콘]({})".format(YOUTUBE_ICON), korean)
 
 
 if __name__ == "__main__":
