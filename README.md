@@ -19,6 +19,48 @@ Discord Actions checks Google News and YouTube with GitHub Actions and sends new
 4. Open **Actions**, choose the workflow, and use **Run workflow** first. With `manual_test=true`, each channel sends at most one current item and baselines the rest.
 5. After testing, set the Repository Variable `GOOGLE_NEWS_SCHEDULE_ENABLED` to `true` if scheduled Google News delivery should run.
 
+## Shared date and keyword filters
+
+Google News and YouTube use the same optional Repository Variables. A profile value in `.github/config/google_news_profiles.json` overrides the repository-wide value for that Google News profile.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FEED_DATE_FILTER` | empty | Keep only items inside a relative or fixed publication-date range |
+| `FEED_KEYWORD_FILTER` | empty | Keep only items that satisfy a Boolean keyword expression |
+| `FEED_KEYWORD_SCOPE` | `title` | Use `title` or `title_or_description` |
+| `FEED_TIMEZONE` | automatic | Timezone used by calendar filters and displayed dates |
+| `FEED_COUNTRY` | service setting | Country used to select a timezone when no explicit timezone is set |
+| `DISPLAY_LANGUAGE` | service setting or `en` | Fixed labels and dates; supported values are listed below |
+
+Date filters are inclusive. They decide whether an item may be delivered; they never reorder the feed.
+
+| Example | Meaning |
+| --- | --- |
+| `calendar:1d` | From midnight today in the resolved timezone |
+| `calendar:7d` | Today and the previous six local calendar days |
+| `calendar:1mo` | From the same local calendar date one month earlier, with month-end correction |
+| `rolling:24h` | The exact previous 24 hours |
+| `rolling:7d` | The exact previous 168 hours |
+| `rolling:30d` | The exact previous 30 days |
+| `from:2026-06-01 to:2026-08-15` | June 1 through August 15, including both full local dates |
+| `from:2026-06-01` | On or after June 1 |
+| `to:2026-08-15` | On or before August 15 |
+
+`calendar:7d` follows local date boundaries; `rolling:7d` always means exactly 168 hours. Timezone selection is explicit `FEED_TIMEZONE` first, then a timezone supplied by the service, then `FEED_COUNTRY`/the service country, and finally `UTC`. Display language is never used to guess a country. For example, use `FEED_TIMEZONE=Asia/Tokyo` or `FEED_COUNTRY=JP` for a Japanese calendar boundary.
+
+Some countries span multiple timezones. In that case, set `FEED_TIMEZONE` explicitly instead of relying on `FEED_COUNTRY`; for example, choose the timezone of the intended U.S. audience.
+
+Keyword filters support `OR`/`|`, `AND`/`&`/adjacent terms, `NOT`/`!`/`-`, parentheses, and exact phrases such as `"Lee Ji-eun"`. When both date and keyword filters are set, an item must pass both. Examples:
+
+```text
+FEED_KEYWORD_FILTER=(AI OR "artificial intelligence") NOT rumor
+FEED_KEYWORD_SCOPE=title
+FEED_DATE_FILTER=calendar:7d
+FEED_TIMEZONE=Asia/Seoul
+```
+
+With `title_or_description`, Google News checks the main title plus related-story link titles; YouTube checks the video title plus its actual description. Publisher names, URLs, and HTML attributes are not keyword inputs. An invalid filter, language, or timezone stops before RSS/API requests and Discord delivery.
+
 ## Google News
 
 The unified workflow runs profiles from [.github/config/google_news_profiles.json](.github/config/google_news_profiles.json). The current profiles use these Discord Secrets:
@@ -67,13 +109,29 @@ The main story and every related story attempt original-URL resolution. A relate
 
 ## YouTube
 
-Required Secrets are `YOUTUBE_API_KEY`, `YOUTUBE_MODE`, and `DISCORD_WEBHOOK_YOUTUBE`, plus one mode-specific value:
+Set the Repository Variable `YOUTUBE_SOURCE` to `rss` or `api`. Existing setups that omit it continue to use `api`.
+
+| Capability | RSS (`YOUTUBE_SOURCE=rss`) | API (`YOUTUBE_SOURCE=api`) |
+| --- | --- | --- |
+| Setup | Easiest; no API key | Requires a YouTube Data API key |
+| Channel uploads | Yes, from the current Atom feed | Yes, with paginated uploads-playlist history |
+| Playlists | Yes, from the current Atom feed | Yes, every playlist page |
+| Search results | No | Yes, every returned page after the saved checkpoint |
+| Duration and category | Not supplied, so omitted | Included when YouTube supplies them |
+| Older items no longer in the current feed | Cannot recover them | Can page through channel/playlist data |
+| Quota | No YouTube API quota | Uses YouTube Data API quota |
+
+Both sources use the same video ID and SQLite state, so switching from RSS to API or back does not resend an already handled video. RSS has no page token: if a video disappears from the current feed before a run sees it, RSS cannot recover it.
+
+RSS does not provide the fields required by `YOUTUBE_DETAILVIEW`, so keep that setting disabled when `YOUTUBE_SOURCE=rss`.
+
+Required settings are `YOUTUBE_MODE` and `DISCORD_WEBHOOK_YOUTUBE`, plus one mode-specific value:
 
 - `channels`: `YOUTUBE_CHANNEL_ID`
 - `playlists`: `YOUTUBE_PLAYLIST_ID`
-- `search`: `YOUTUBE_SEARCH_KEYWORD`
+- `search`: `YOUTUBE_SEARCH_KEYWORD` (API only)
 
-Optional Secrets are `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, and `LANGUAGE_YOUTUBE`. The optional Repository Variable `YOUTUBE_DELIVERY_ORDER` uses `feed_oldest_first` or `feed_newest_first`.
+The API source additionally requires the `YOUTUBE_API_KEY` Secret. Optional Secrets are `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, and `LANGUAGE_YOUTUBE`. The optional Repository Variables `YOUTUBE_DELIVERY_ORDER` and `YOUTUBE_PLAYLIST_LAYOUT` accept `feed_oldest_first|feed_newest_first` and `auto|channel|curated` respectively.
 
 For either service, the optional `DISCORD_WEBHOOK_ADMIN` Secret reports response-unknown retries and final delivery failures to an admin channel. Alerts contain only the service, profile, a hashed item identifier, and the Actions run link.
 
@@ -85,9 +143,28 @@ For either service, the optional `DISCORD_WEBHOOK_ADMIN` Secret reports response
 
 Weekly and monthly runs still queue every new video discovered by the API in that run.
 
+The API message layout is:
+
+```text
+`BBC News Korea - YouTube`
+**Video title**
+https://youtu.be/VIDEO_ID
+
+⏳ Duration: `07:13`
+📅 Published: `June 29, 2026`
+📁 Category: `News & Politics`
+🖼️ [Thumbnail](https://i.ytimg.com/vi/VIDEO_ID/hqdefault.jpg)
+```
+
+RSS messages omit duration and category. Playlist messages add one blank line after their first line. `channel` layout uses `` `📃 Playlist title by. Channel - YouTube Playlist` ``, while `curated` uses `` `📃 Playlist title - YouTube Playlist by. Owner` ``. `auto` selects `channel` for a single-channel list and `curated` for a mixed-channel list.
+
+## Display languages
+
+`DISPLAY_LANGUAGE` changes fixed labels and localized dates, not article, video, channel, or playlist titles. Supported values are `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `es`, `pt-BR`, `fr`, `de`, and `id`. YouTube API category names are requested in the selected language and omitted when unavailable. The legacy `LANGUAGE_YOUTUBE` setting remains compatible, but `DISPLAY_LANGUAGE` takes priority.
+
 ## Schedule examples
 
-Edit `cron` under the workflow's `schedule`. Keep the two services on different minutes to avoid simultaneous work. Each example also uses `timezone: 'Asia/Seoul'`.
+Edit `cron` under the workflow's `schedule`. Keep the two services on different minutes to avoid simultaneous work. The repository currently uses `timezone: 'Asia/Seoul'`; change it to the operator's calendar timezone, such as `Asia/Tokyo`, when appropriate. This schedule timezone is separate from `FEED_TIMEZONE`, which controls filtering and displayed dates.
 
 | Interval | Google News | YouTube |
 | --- | --- | --- |

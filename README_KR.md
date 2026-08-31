@@ -19,6 +19,48 @@ Google News와 YouTube의 새 항목을 GitHub Actions로 확인하고 Discord �
 4. **Actions**에서 해당 워크플로를 선택하고 **Run workflow**로 먼저 시험합니다. `manual_test=true`이면 채널별 최신 항목 1개만 전송하고 나머지는 기준선으로 저장합니다.
 5. 시험이 끝난 뒤 Google News 예약 전송을 사용하려면 Repository Variable `GOOGLE_NEWS_SCHEDULE_ENABLED`를 `true`로 설정합니다.
 
+## 공통 날짜·키워드 필터
+
+Google News와 YouTube는 같은 선택 Repository Variable을 사용합니다. Google News 프로필의 `.github/config/google_news_profiles.json` 값이 있으면 저장소 공통 값보다 우선합니다.
+
+| 설정 | 기본값 | 용도 |
+| --- | --- | --- |
+| `FEED_DATE_FILTER` | 비움 | 상대 기간 또는 고정 날짜 범위의 항목만 전송 |
+| `FEED_KEYWORD_FILTER` | 비움 | 불리언 키워드 식을 통과한 항목만 전송 |
+| `FEED_KEYWORD_SCOPE` | `title` | `title` 또는 `title_or_description` |
+| `FEED_TIMEZONE` | 자동 | 달력 필터와 표시 날짜에 사용할 시간대 |
+| `FEED_COUNTRY` | 서비스 설정 | 명시적 시간대가 없을 때 시간대를 선택할 국가 |
+| `DISPLAY_LANGUAGE` | 서비스 설정 또는 `en` | 고정 문구와 날짜의 표시 언어 |
+
+날짜 필터의 시작·종료 경계는 모두 포함합니다. 날짜는 전송 여부만 판정하며 피드 순서를 바꾸지 않습니다.
+
+| 예시 | 의미 |
+| --- | --- |
+| `calendar:1d` | 결정된 시간대의 오늘 0시부터 |
+| `calendar:7d` | 오늘과 지난 6개 현지 날짜 |
+| `calendar:1mo` | 현지 달력의 한 달 전 같은 날부터. 말일은 자동 보정 |
+| `rolling:24h` | 현재로부터 정확히 지난 24시간 |
+| `rolling:7d` | 정확히 지난 168시간 |
+| `rolling:30d` | 정확히 지난 30일 |
+| `from:2026-06-01 to:2026-08-15` | 6월 1일부터 8월 15일까지, 양쪽 현지 날짜 전체 포함 |
+| `from:2026-06-01` | 6월 1일 이후 |
+| `to:2026-08-15` | 8월 15일 이전 |
+
+`calendar:7d`는 현지 달력 날짜 경계를 따르고, `rolling:7d`는 항상 정확히 168시간을 의미합니다. 시간대는 `FEED_TIMEZONE` → 서비스가 제공한 시간대 → `FEED_COUNTRY`/서비스 국가 → `UTC` 순으로 결정합니다. 표시 언어로 국가를 추측하지 않습니다. 일본 달력 기준이면 `FEED_TIMEZONE=Asia/Tokyo` 또는 `FEED_COUNTRY=JP`를 사용하세요.
+
+미국처럼 여러 시간대를 사용하는 국가는 `FEED_COUNTRY`에만 의존하지 말고 대상 사용자 지역에 맞는 `FEED_TIMEZONE`을 직접 지정하세요.
+
+키워드는 `OR`/`|`, `AND`/`&`/띄어쓰기, `NOT`/`!`/`-`, 괄호, `"Lee Ji-eun"`같은 정확한 구문을 지원합니다. 날짜와 키워드를 모두 설정하면 두 조건을 모두 통과해야 합니다.
+
+```text
+FEED_KEYWORD_FILTER=(AI OR "artificial intelligence") NOT 루머
+FEED_KEYWORD_SCOPE=title
+FEED_DATE_FILTER=calendar:7d
+FEED_TIMEZONE=Asia/Seoul
+```
+
+`title_or_description`에서 Google News는 메인 제목과 연관뉴스 링크 제목을, YouTube는 영상 제목과 실제 설명을 검사합니다. 언론사명, URL, HTML 속성은 검사하지 않습니다. 잘못된 필터·언어·시간대 설정은 RSS/API 요청과 Discord 전송 전에 실패합니다.
+
 ## Google News 설정
 
 Google News 통합 워크플로는 [프로필 설정 파일](.github/config/google_news_profiles.json)에 등록된 프로필을 순서대로 실행합니다. 현재 프로필에 필요한 Discord Secret 이름은 다음과 같습니다.
@@ -65,13 +107,29 @@ Google News 예약 실행에는 Repository Variable `GOOGLE_NEWS_SCHEDULE_ENABLE
 
 ## YouTube 설정
 
-필수 Secret은 `YOUTUBE_API_KEY`, `YOUTUBE_MODE`, `DISCORD_WEBHOOK_YOUTUBE`입니다. 모드에 따라 다음 중 하나도 필요합니다.
+Repository Variable `YOUTUBE_SOURCE`를 `rss` 또는 `api`로 설정합니다. 설정하지 않은 기존 사용자는 계속 `api`를 사용합니다.
+
+| 항목 | RSS (`YOUTUBE_SOURCE=rss`) | API (`YOUTUBE_SOURCE=api`) |
+| --- | --- | --- |
+| 설정 난이도 | 가장 쉬움. API 키 불필요 | YouTube Data API 키 필요 |
+| 채널 업로드 | 현재 Atom 피드에서 가능 | 업로드 재생목록의 전체 페이지 조회 |
+| 재생목록 | 현재 Atom 피드에서 가능 | 모든 재생목록 페이지 조회 |
+| 검색 결과 | 불가 | 저장된 검색 기준 이후의 반환 페이지 전체 처리 |
+| 재생시간·카테고리 | 피드가 제공하지 않아 생략 | YouTube가 제공하면 표시 |
+| 현재 피드에서 사라진 과거 항목 | 복구 불가 | 채널·재생목록 페이지를 계속 조회 가능 |
+| 할당량 | YouTube API 할당량 없음 | YouTube Data API 할당량 사용 |
+
+RSS와 API는 같은 영상 ID와 SQLite 상태를 사용하므로 방식을 바꿔도 이미 처리한 영상을 다시 보내지 않습니다. RSS에는 다음 페이지가 없으므로, 실행 전에 영상이 현재 피드에서 사라지면 복구할 수 없습니다.
+
+RSS에는 `YOUTUBE_DETAILVIEW`에 필요한 상세 필드가 없으므로 `YOUTUBE_SOURCE=rss`일 때는 이 설정을 꺼 두세요.
+
+필수 설정은 `YOUTUBE_MODE`, `DISCORD_WEBHOOK_YOUTUBE`와 모드별 값입니다.
 
 - `channels`: `YOUTUBE_CHANNEL_ID`
 - `playlists`: `YOUTUBE_PLAYLIST_ID`
-- `search`: `YOUTUBE_SEARCH_KEYWORD`
+- `search`: `YOUTUBE_SEARCH_KEYWORD` (API 전용)
 
-선택 Secret은 `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, `LANGUAGE_YOUTUBE`입니다. Repository Variable `YOUTUBE_DELIVERY_ORDER`는 Google News와 같은 `feed_oldest_first` 또는 `feed_newest_first` 값을 사용합니다.
+API 방식은 `YOUTUBE_API_KEY` Secret도 필요합니다. 선택 Secret은 `DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW`, `YOUTUBE_DETAILVIEW`, `ADVANCED_FILTER_YOUTUBE`, `DATE_FILTER_YOUTUBE`, `LANGUAGE_YOUTUBE`입니다. Repository Variable `YOUTUBE_DELIVERY_ORDER`는 `feed_oldest_first|feed_newest_first`, `YOUTUBE_PLAYLIST_LAYOUT`은 `auto|channel|curated`를 사용합니다.
 
 두 서비스 모두 선택 Secret `DISCORD_WEBHOOK_ADMIN`을 등록하면 응답 불명 재전송이나 최종 전송 실패를 관리자 채널에 알립니다. 알림에는 서비스, 프로필, 해시 처리된 항목 식별자, Actions 실행 링크만 포함됩니다.
 
@@ -83,9 +141,28 @@ Google News 예약 실행에는 Repository Variable `GOOGLE_NEWS_SCHEDULE_ENABLE
 
 주간·월간 실행에서도 API에서 발견한 신규 영상은 모두 같은 실행 대기열에 들어갑니다.
 
+API 메시지 형식은 다음과 같습니다.
+
+```text
+`BBC News 코리아 - YouTube`
+**영상 제목**
+https://youtu.be/VIDEO_ID
+
+⏳ 재생시간: `07:13`
+📅 게시일자: `2026년 6월 29일`
+📁 카테고리: `뉴스 및 정치`
+🖼️ [썸네일](https://i.ytimg.com/vi/VIDEO_ID/hqdefault.jpg)
+```
+
+RSS 메시지는 재생시간과 카테고리를 생략합니다. 재생목록은 첫 줄 다음에 항상 한 줄을 비웁니다. `channel`은 `` `📃 재생목록명 by. 채널명 - YouTube 재생목록` ``, `curated`는 `` `📃 재생목록명 - YouTube 재생목록 by. 소유자` `` 형식입니다. `auto`는 단일 채널 목록을 `channel`, 혼합 채널 목록을 `curated`로 자동 선택합니다.
+
+## 표시 언어
+
+`DISPLAY_LANGUAGE`는 고정 문구와 날짜만 바꾸며 기사·영상·채널·재생목록의 고유 제목은 번역하지 않습니다. 지원 값은 `ko`, `en`, `ja`, `zh-CN`, `zh-TW`, `es`, `pt-BR`, `fr`, `de`, `id`입니다. YouTube API 카테고리는 선택 언어로 요청하고, 얻지 못하면 그 줄을 생략합니다. 기존 `LANGUAGE_YOUTUBE`도 호환되지만 `DISPLAY_LANGUAGE`가 우선합니다.
+
 ## 실행 간격 바꾸기
 
-워크플로의 `schedule` 아래 `cron`을 바꾸면 됩니다. 두 서비스가 동시에 시작하지 않도록 Google News와 YouTube의 실행 분을 다르게 유지합니다. 아래 예시는 모두 `timezone: 'Asia/Seoul'`을 함께 사용합니다.
+워크플로의 `schedule` 아래 `cron`을 바꾸면 됩니다. 두 서비스가 동시에 시작하지 않도록 Google News와 YouTube의 실행 분을 다르게 유지합니다. 현재 저장소는 `timezone: 'Asia/Seoul'`을 사용하며, 일본 사용자라면 `Asia/Tokyo`처럼 운영자의 달력 시간대로 바꾸세요. 이 예약 시간대와 필터·메시지 날짜의 `FEED_TIMEZONE`은 서로 다른 설정입니다.
 
 | 간격 | Google News | YouTube |
 | --- | --- | --- |

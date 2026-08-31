@@ -31,10 +31,13 @@ jobs:
       - name: Compile Google News Scripts
         run: >-
           python -m py_compile
+          .github/scripts/feed_filters.py
+          .github/scripts/feed_localization.py
           .github/scripts/delivery_admin_alert.py
           .github/scripts/google_news_delivery_state.py
           .github/scripts/google_news_discord_delivery.py
           .github/scripts/google_news_dispatcher.py
+          .github/scripts/google_news_feed_filter.py
           .github/scripts/google_news_keyword_matcher.py
           .github/scripts/google_news_manual_test.py
           .github/scripts/google_news_profile_result.py
@@ -49,5 +52,6 @@ jobs:
           python -m py_compile
           .github/scripts/youtube_delivery_state.py
           .github/scripts/youtube_discord_delivery.py
+          .github/scripts/youtube_messages.py
           .github/scripts/youtube_video_source.py
           .github/scripts/youtube_to_discord.py
