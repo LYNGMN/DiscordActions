@@ -592,6 +592,54 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
             topic_message,
         )
 
+    def test_all_google_news_messages_use_country_specific_datetime(self):
+        item = {
+            "title": "테스트 기사",
+            "link": "https://publisher.example/story",
+            "description": "",
+            "pub_date": "Mon, 31 Aug 2026 08:41:00 GMT",
+        }
+        keyword = load_script(SCRIPT_PATHS[0])
+        top = load_script(SCRIPT_PATHS[1])
+        topic = load_script(SCRIPT_PATHS[2])
+
+        for module in (keyword, top, topic):
+            module.DISPLAY_LANGUAGE = "ko"
+            module.FEED_TIMEZONE = "Asia/Seoul"
+            module.FEED_COUNTRY = "KR"
+
+        expected_date_line = "📅 2026년 08월 31일 오후 05:41:00 (KST)"
+        self.assertTrue(
+            keyword.format_discord_message(item, "테스트", "KR").endswith(
+                expected_date_line
+            )
+        )
+        self.assertTrue(
+            top.format_discord_message(
+                item,
+                "`Google 뉴스`",
+                "Asia/Seoul",
+                "",
+            ).endswith(expected_date_line)
+        )
+        self.assertTrue(
+            topic.format_discord_message(
+                item,
+                "Google 뉴스",
+                "테스트",
+                "주제",
+                "🇰🇷",
+                "KR",
+            ).endswith(expected_date_line)
+        )
+
+    def test_all_google_news_scripts_use_the_shared_datetime_formatter(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                source = script_path.read_text(encoding="utf-8")
+                self.assertIn("format_google_news_datetime", source)
+                self.assertNotIn("format_feed_datetime", source)
+
     def test_topic_category_uses_all_supported_display_languages(self):
         topic = load_script(SCRIPT_PATHS[2])
         expected = {

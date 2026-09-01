@@ -33,7 +33,7 @@ from google_news_delivery_state import (
 from google_news_discord_delivery import send_webhook_message, split_discord_content
 from google_news_feed_filter import compile_google_news_feed_filter
 from feed_localization import (
-    format_feed_datetime,
+    format_google_news_datetime,
     labels_for,
     resolve_display_language,
 )
@@ -1052,8 +1052,11 @@ def format_discord_message(news_item, news_prefix, category, topic_name, country
         explicit_timezone=FEED_TIMEZONE,
         country_code=FEED_COUNTRY or country_code,
     )
-    formatted_date = format_feed_datetime(
-        news_item['pub_date'], display_language, timezone_name
+    formatted_date = format_google_news_datetime(
+        news_item['pub_date'],
+        FEED_COUNTRY or country_code,
+        timezone_name,
+        display_language,
     )
 
     discord_source = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`"
