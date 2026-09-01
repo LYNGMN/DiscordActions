@@ -170,6 +170,14 @@ class YouTubeRssDocumentationTests(unittest.TestCase):
         )
         self.assertIn("[YouTube 아이콘]({})".format(YOUTUBE_ICON), korean)
 
+    def test_readmes_explain_scheduled_workflow_inactivity(self):
+        english, korean = self.readmes()
+
+        self.assertNotIn("`validate_only=true`", english)
+        self.assertIn("60 days", english)
+        self.assertNotIn("`validate_only=true`", korean)
+        self.assertIn("60일", korean)
+
 
 class GoogleNewsProfileDocumentationTests(unittest.TestCase):
     def readmes(self):

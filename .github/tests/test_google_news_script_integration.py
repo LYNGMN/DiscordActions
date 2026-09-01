@@ -288,6 +288,11 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertIn("deliver_queued_item", source)
                 self.assertIn("pending_delivery_guids", source)
                 self.assertIn("resume_pending_deliveries", source)
+                self.assertIn(
+                    "pending_guids = pending_guids[:1]",
+                    source,
+                    "manual tests must resume at most one queued article per profile",
+                )
                 self.assertIn("split_discord_content", source)
                 self.assertIn("queued_items.append", source)
                 self.assertLess(
@@ -301,6 +306,36 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertLess(
                     source.index("GoogleNewsRequestGuard("),
                     source.index("fetch_rss_feed(rss_url, request_guard)"),
+                )
+
+    def test_manual_resume_is_one_article_but_scheduled_resume_is_unbounded(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as temp_dir:
+                module = load_script(script_path)
+                module.DB_PATH = str(Path(temp_dir) / "state.db")
+                module.init_db()
+                for index, guid in enumerate(("first-guid", "second-guid")):
+                    self.assertTrue(
+                        module.reserve_delivery_with_messages(
+                            module.DB_PATH,
+                            guid,
+                            "Title {}".format(index),
+                            "https://publisher.example/article/{}".format(index),
+                            ["message"],
+                        )
+                    )
+
+                module.MANUAL_TEST_MODE = True
+                with mock.patch.object(module, "deliver_reserved_item") as deliver:
+                    self.assertEqual(1, module.resume_pending_deliveries())
+                deliver.assert_called_once_with("first-guid")
+
+                module.MANUAL_TEST_MODE = False
+                with mock.patch.object(module, "deliver_reserved_item") as deliver:
+                    self.assertEqual(2, module.resume_pending_deliveries())
+                self.assertEqual(
+                    [mock.call("first-guid"), mock.call("second-guid")],
+                    deliver.call_args_list,
                 )
 
     def test_all_handlers_apply_the_shared_feed_filter_before_network_delivery(self):
@@ -458,11 +493,11 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 module = load_script(script_path)
                 rate_limited = SimpleNamespace(
                     status_code=429,
-                    headers={"Retry-After": "61"},
+                    headers={"Retry-After": "301"},
                     raise_for_status=mock.Mock(
                         side_effect=module.requests.HTTPError("rate limited")
                     ),
-                    json=lambda: {"retry_after": 61.0},
+                    json=lambda: {"retry_after": 301.0},
                 )
 
                 with mock.patch.object(
@@ -492,7 +527,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 with mock.patch.object(
                     module.requests,
                     "post",
-                    side_effect=[rate_limited, rate_limited],
+                    side_effect=[rate_limited] * 5,
                 ) as post, self.assertRaisesRegex(
                     RuntimeError, "discord_delivery_failed"
                 ):
@@ -502,7 +537,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                         username="Google News",
                     )
 
-                self.assertEqual(2, post.call_count)
+                self.assertEqual(5, post.call_count)
 
     def test_validation_mode_never_calls_discord(self):
         for script_path in SCRIPT_PATHS:
