@@ -253,7 +253,7 @@ def _annotate_delivery_error(
     attempt_count: int,
     error_code: Optional[str] = None,
 ) -> None:
-    error.error_code = error_code or (
-        "ambiguous_retry" if ambiguous_retry else "final_failure"
+    error.error_code = (
+        "ambiguous_retry" if ambiguous_retry else error_code or "final_failure"
     )
     error.attempt_count = int(attempt_count)

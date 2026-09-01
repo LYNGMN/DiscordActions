@@ -237,6 +237,32 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
         self.assertEqual("discord_http_400", raised.exception.error_code)
         self.assertNotIn("unsafe response detail", raised.exception.error_code)
 
+    def test_rate_limit_failure_preserves_prior_response_unknown_evidence(self):
+        rate_limited = FakeResponse()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "0"}
+        rate_limited.json = mock.Mock(return_value={"retry_after": 0.0})
+        rate_limited.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            side_effect=[requests.Timeout("response unknown")]
+            + [rate_limited] * 5,
+        ) as post:
+            with self.assertRaises(requests.HTTPError) as raised:
+                self.delivery.send_webhook_message(
+                    "https://example.com/webhook",
+                    {"content": "safe"},
+                    sleep=lambda _seconds: None,
+                )
+
+        self.assertEqual("ambiguous_retry", raised.exception.error_code)
+        self.assertEqual(6, raised.exception.attempt_count)
+        self.assertEqual(6, post.call_count)
+
 
 if __name__ == "__main__":
     unittest.main()
