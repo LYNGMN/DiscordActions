@@ -10,7 +10,6 @@ import sqlite3
 import sys
 import pytz
 from urllib.parse import urlparse
-from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
@@ -1016,31 +1015,6 @@ def render_related_items(news_items):
 def parse_pub_date(pub_date_str):
     """문자열 형태의 발행일을 datetime 객체로 파싱합니다."""
     return parser.parse(pub_date_str)
-
-def convert_to_local_time(pub_date, country_code):
-    try:
-        # email.utils.parsedate_to_datetime 함수를 사용하여 날짜 파싱
-        utc_time = parsedate_to_datetime(pub_date)
-    except ValueError:
-        # 파싱에 실패한 경우 원본 문자열 반환
-        return pub_date
-
-    time_formats = {
-        'KR': ('Asia/Seoul', '%Y년 %m월 %d일 %H:%M:%S (KST)'),
-        'US': ('America/New_York', '%Y-%m-%d %I:%M:%S %p (EST)'),
-        'JP': ('Asia/Tokyo', '%Y年%m月%d日 %H:%M:%S (JST)'),
-        'CN': ('Asia/Shanghai', '%Y年%m月%d日 %H:%M:%S (CST)')
-    }
-
-    if country_code in time_formats:
-        timezone, time_format = time_formats[country_code]
-        local_time = utc_time.astimezone(pytz.timezone(timezone))
-        return local_time.strftime(time_format)
-    else:
-        return utc_time.strftime('%Y-%m-%d %H:%M:%S')
-
-def parse_rss_date(pub_date, country_code):
-    return convert_to_local_time(pub_date, country_code)
 
 def format_discord_message(news_item, news_prefix, category, topic_name, country_emoji, country_code):
     """Discord 메시지를 포맷팅합니다."""

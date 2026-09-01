@@ -640,6 +640,13 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertIn("format_google_news_datetime", source)
                 self.assertNotIn("format_feed_datetime", source)
 
+    def test_all_google_news_scripts_remove_legacy_datetime_helpers(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                self.assertFalse(hasattr(module, "convert_to_local_time"))
+                self.assertFalse(hasattr(module, "parse_rss_date"))
+
     def test_topic_category_uses_all_supported_display_languages(self):
         topic = load_script(SCRIPT_PATHS[2])
         expected = {

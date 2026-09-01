@@ -9,7 +9,6 @@ import json
 import sqlite3
 import sys
 import pytz
-from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
@@ -320,20 +319,6 @@ def replace_brackets(text):
     text = re.sub(r'(?<!\s)(?<!^)〈', ' 〈', text)
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
-
-def convert_to_local_time(pub_date, country_code):
-    try:
-        utc_time = parsedate_to_datetime(pub_date)
-    except ValueError:
-        return pub_date
-
-    _, _, _, _, _, _, timezone, date_format = country_configs.get(country_code, country_configs['US'])
-
-    local_time = utc_time.astimezone(pytz.timezone(timezone))
-    return local_time.strftime(date_format)
-
-def parse_rss_date(pub_date, country_code='KR'):
-    return convert_to_local_time(pub_date, country_code)
 
 def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅 전송 결과의 메시지 ID를 반환합니다."""

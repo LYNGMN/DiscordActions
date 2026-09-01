@@ -350,14 +350,6 @@ def parse_pub_date(pub_date_str):
     """문자열 형태의 발행일을 datetime 객체로 파싱합니다."""
     return parser.parse(pub_date_str)
 
-def parse_rss_date(pub_date, timezone, date_format):
-    """RSS 날짜를 파싱하여 형식화된 문자열로 반환합니다."""
-    dt = parser.parse(pub_date)
-    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-        dt = dt.replace(tzinfo=pytz.UTC)
-    local_dt = dt.astimezone(pytz.timezone(timezone))
-    return local_dt.strftime(date_format)
-
 def format_discord_message(news_item, discord_source, timezone, date_format):
     """Discord 메시지를 포맷팅합니다."""
     display_language = resolve_display_language(
