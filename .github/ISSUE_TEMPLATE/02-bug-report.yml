@@ -1,0 +1,86 @@
+name: Bug report / 오류 신고
+description: Report one reproducible problem. / 재현할 수 있는 문제 하나를 신고합니다.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write the complete English record first and the complete Korean record below. Remove secrets, webhook URLs, and tokens from logs.
+
+        영어 전체 기록을 먼저 작성하고 그 아래에 완전한 한국어 기록을 작성해 주세요. 로그에서 Secret, Webhook URL, Token을 제거하세요.
+  - type: textarea
+    id: summary_en
+    attributes:
+      label: English - Summary and impact
+      description: Describe the problem and who or what it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce_en
+    attributes:
+      label: English - Conditions and steps to reproduce
+      description: Include the workflow, mode, configuration names, and repeatable steps without secret values.
+    validations:
+      required: true
+  - type: textarea
+    id: actual_en
+    attributes:
+      label: English - Actual result
+      description: Explain what happened, including safe error text when available.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_en
+    attributes:
+      label: English - Expected result
+      description: Explain what should have happened.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_en
+    attributes:
+      label: English - Acceptance criteria
+      description: List observable conditions that prove the problem is fixed.
+      placeholder: |
+        - [ ] The original reproduction no longer fails
+        - [ ] A regression test passes
+    validations:
+      required: true
+  - type: textarea
+    id: summary_ko
+    attributes:
+      label: 한국어 - 문제 요약과 영향
+      description: 문제와 영향을 받는 대상을 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce_ko
+    attributes:
+      label: 한국어 - 재현 조건과 순서
+      description: 민감한 값을 제외하고 Workflow, Mode, 설정 이름, 반복 가능한 순서를 작성해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: actual_ko
+    attributes:
+      label: 한국어 - 실제 결과
+      description: 확인된 안전한 오류 문구를 포함해 실제로 일어난 일을 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_ko
+    attributes:
+      label: 한국어 - 기대 결과
+      description: 원래 어떻게 동작해야 하는지 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_ko
+    attributes:
+      label: 한국어 - 완료 조건
+      description: 문제가 해결됐음을 확인할 수 있는 조건을 나열해 주세요.
+      placeholder: |
+        - [ ] 기존 재현 순서에서 더 이상 실패하지 않음
+        - [ ] 회귀 테스트 통과
+    validations:
+      required: true

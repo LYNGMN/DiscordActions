@@ -1,0 +1,84 @@
+name: Feature request / 기능 요청
+description: Propose one independently reviewable improvement. / 독립적으로 검토할 수 있는 개선 하나를 제안합니다.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write the complete English record first and the complete Korean record below. Do not include secrets.
+
+        영어 전체 기록을 먼저 작성하고 그 아래에 완전한 한국어 기록을 작성해 주세요. 민감정보는 포함하지 마세요.
+  - type: textarea
+    id: summary_en
+    attributes:
+      label: English - Summary
+      description: Describe one requested outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: problem_en
+    attributes:
+      label: English - Current problem
+      description: Explain what is difficult or missing now.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_en
+    attributes:
+      label: English - Expected result
+      description: Explain what users should be able to do after the change.
+    validations:
+      required: true
+  - type: textarea
+    id: impact_en
+    attributes:
+      label: English - User impact
+      description: Explain who benefits and how their experience changes.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_en
+    attributes:
+      label: English - Acceptance criteria
+      description: List observable conditions that prove completion.
+      placeholder: |
+        - [ ] Observable result
+    validations:
+      required: true
+  - type: textarea
+    id: summary_ko
+    attributes:
+      label: 한국어 - 요약
+      description: 원하는 결과 하나를 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: problem_ko
+    attributes:
+      label: 한국어 - 현재 문제
+      description: 지금 무엇이 어렵거나 부족한지 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_ko
+    attributes:
+      label: 한국어 - 원하는 결과
+      description: 변경 후 사용자가 무엇을 할 수 있어야 하는지 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: impact_ko
+    attributes:
+      label: 한국어 - 사용자 영향
+      description: 누가 어떤 도움을 받는지 설명해 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_ko
+    attributes:
+      label: 한국어 - 완료 조건
+      description: 작업 완료를 확인할 수 있는 조건을 나열해 주세요.
+      placeholder: |
+        - [ ] 확인 가능한 결과
+    validations:
+      required: true
