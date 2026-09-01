@@ -264,6 +264,17 @@ def run_dispatch(
     )
 
 
+def select_profiles(
+    profiles: Sequence[GoogleNewsProfile], profile_id: Optional[str]
+) -> Sequence[GoogleNewsProfile]:
+    if profile_id is None:
+        return profiles
+    for profile in profiles:
+        if profile.profile_id == profile_id:
+            return [profile]
+    raise ValueError("unknown_profile_id")
+
+
 def _read_profile_result(
     expected_profile_id: str, path: str, return_code: int
 ) -> ProfileRunResult:
@@ -339,11 +350,14 @@ def main(argv=None) -> int:
     parser.add_argument("--profiles", default=str(DEFAULT_PROFILES_PATH))
     parser.add_argument("--state-dir", default=".google-news-state")
     parser.add_argument("--manual-test", action="store_true")
+    parser.add_argument("--profile-id")
     parser.add_argument("--validate-only", action="store_true")
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     try:
-        profiles = load_profiles(arguments.profiles)
+        profiles = select_profiles(
+            load_profiles(arguments.profiles), arguments.profile_id
+        )
         summary = run_dispatch(
             profiles,
             os.environ,

@@ -4,10 +4,12 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "workflows" / "youtube_to_discord.yml"
+MANUAL_WORKFLOW = ROOT / "workflows" / "youtube-manual-test.yml"
 CI_WORKFLOW = ROOT / "workflows" / "test.yml"
 SCRIPT = ROOT / "scripts" / "youtube_to_discord.py"
 
@@ -117,16 +119,16 @@ class YouTubeWorkflowTests(unittest.TestCase):
     def source(self):
         return WORKFLOW.read_text(encoding="utf-8")
 
-    def test_schedule_manual_input_and_concurrency_are_safe(self):
+    def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
         source = self.source()
 
         self.assertIn("cron: '*/15 * * * *'", source)
         self.assertNotIn("timezone:", source)
         self.assertIn("YOUTUBE_DELIVERY_ORDER", source)
         self.assertNotIn("cron: '0 * * * *'", source)
-        self.assertIn("manual_test:", source)
-        self.assertIn("default: true", source)
-        self.assertIn("type: boolean", source)
+        self.assertNotIn("workflow_dispatch:", source)
+        self.assertNotIn("manual_test:", source)
+        self.assertIn("YOUTUBE_MANUAL_TEST_MODE: 'false'", source)
         self.assertIn("group: youtube-to-discord", source)
         self.assertIn("cancel-in-progress: false", source)
 
@@ -134,6 +136,9 @@ class YouTubeWorkflowTests(unittest.TestCase):
         source = self.source()
 
         self.assertIn("status: 'completed'", source)
+        self.assertIn("'youtube_to_discord.yml'", source)
+        self.assertIn("'youtube-manual-test.yml'", source)
+        self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
         self.assertIn("artifact.name === 'youtube_database'", source)
         self.assertIn("!artifact.expired", source)
         self.assertIn("core.setOutput('artifact-id'", source)
@@ -143,19 +148,65 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
 
-    def test_missing_state_always_baselines_and_manual_mode_is_one_item(self):
+    def test_missing_state_in_scheduled_mode_baselines_without_manual_delivery(self):
         source = self.source()
 
         self.assertIn(
             "YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}",
             source,
         )
+        self.assertIn("YOUTUBE_MANUAL_TEST_MODE: 'false'", source)
+        self.assertNotIn("touch youtube_videos.db", source)
+
+    def test_manual_workflow_sends_one_video_and_shares_operating_state(self):
+        source = MANUAL_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("name: YouTube Manual Delivery Test", source)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("schedule:", source)
+        self.assertIn("YOUTUBE_MANUAL_TEST_MODE: 'true'", source)
         self.assertIn(
-            "YOUTUBE_MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' "
-            "&& inputs.manual_test == true }}",
+            "YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}",
             source,
         )
-        self.assertNotIn("touch youtube_videos.db", source)
+        self.assertIn("one video", source)
+        self.assertIn("영상 1건", source)
+        self.assertIn("primary and detail", source)
+        self.assertIn("기본 메시지와 상세 메시지", source)
+        self.assertIn("group: youtube-to-discord", source)
+        self.assertIn("'youtube_to_discord.yml'", source)
+        self.assertIn("'youtube-manual-test.yml'", source)
+        self.assertIn("name: youtube_database", source)
+        self.assertIn("if: always()", source)
+
+    def test_manual_resume_stops_after_one_pending_video(self):
+        module = load_youtube_script()
+        delivered = []
+
+        with mock.patch.object(
+            module,
+            "pending_youtube_video_ids",
+            return_value=["oldest-pending", "newer-pending"],
+        ), mock.patch.object(
+            module,
+            "deliver_queued_video",
+            side_effect=delivered.append,
+        ):
+            resumed = module.resume_pending_deliveries(max_videos=1)
+
+        self.assertEqual(1, resumed)
+        self.assertEqual(["oldest-pending"], delivered)
+
+    def test_manual_resume_does_not_continue_to_a_fresh_video(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        section = source[source.index("def fetch_and_post_videos(") :]
+
+        self.assertIn("resumed_count = resume_pending_deliveries(", section)
+        self.assertIn("if YOUTUBE_MANUAL_TEST_MODE and resumed_count:", section)
+        self.assertLess(
+            section.index("if YOUTUBE_MANUAL_TEST_MODE and resumed_count:"),
+            section.index("fetch_configured_video_data("),
+        )
 
     def test_state_upload_runs_even_when_delivery_fails(self):
         source = self.source()

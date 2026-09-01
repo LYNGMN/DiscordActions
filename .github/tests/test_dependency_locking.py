@@ -63,7 +63,9 @@ class DependencyLockingTests(unittest.TestCase):
     def test_all_python_workflows_use_python_312_and_hashed_locks(self):
         expected_locks = {
             "googlenews-to-discord.yml": ".github/requirements.txt",
+            "googlenews-manual-test.yml": ".github/requirements.txt",
             "youtube_to_discord.yml": ".github/requirements-youtube.txt",
+            "youtube-manual-test.yml": ".github/requirements-youtube.txt",
             "test.yml": ".github/requirements-youtube.txt",
         }
 

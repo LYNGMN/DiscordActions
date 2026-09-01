@@ -252,6 +252,35 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             }
             self.assertTrue(other_secret_names.isdisjoint(child_env))
 
+    def test_profile_selection_supports_all_or_one_exact_profile(self):
+        self.assertEqual(
+            self.profiles,
+            self.dispatcher.select_profiles(self.profiles, None),
+        )
+        selected = self.dispatcher.select_profiles(self.profiles, "top_kr")
+        self.assertEqual(["top_kr"], [profile.profile_id for profile in selected])
+
+    def test_unknown_profile_id_fails_before_webhook_preflight(self):
+        with mock.patch.object(
+            self.dispatcher, "load_profiles", return_value=self.profiles
+        ), mock.patch.object(self.dispatcher, "run_dispatch") as run_dispatch:
+            exit_code = self.dispatcher.main(
+                [
+                    "--state-dir",
+                    self.state_dir,
+                    "--manual-test",
+                    "--profile-id",
+                    "missing_profile",
+                ]
+            )
+
+        self.assertEqual(1, exit_code)
+        run_dispatch.assert_not_called()
+        payload = json.loads(
+            (Path(self.state_dir) / "run-summary.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("unknown_profile_id", payload["error_code"])
+
     def test_validation_mode_skips_webhook_preflight_and_marks_child_environments(self):
         calls = []
         session = QueueSession([])

@@ -1,8 +1,9 @@
-name: YouTube to Discord Notification
+name: YouTube Manual Delivery Test
+
+run-name: YouTube manual test — one video / 영상 1건
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -17,6 +18,7 @@ env:
 
 jobs:
   notify-discord:
+    name: One video; primary and detail may both send / 영상 1건의 기본 메시지와 상세 메시지 전송 가능
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -103,7 +105,7 @@ jobs:
           python -m pip install --require-hashes -r .github/requirements-youtube.txt
           python -m pip check
 
-      - name: Notify Discord of New YouTube Videos
+      - name: Notify Discord of one YouTube video
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_SOURCE: ${{ vars.YOUTUBE_SOURCE || 'api' }}
@@ -118,7 +120,7 @@ jobs:
           YOUTUBE_RUN_SUMMARY_PATH: youtube-run-summary.json
           INITIALIZE_MODE_YOUTUBE: ${{ env.INITIALIZE_MODE_YOUTUBE }}
           YOUTUBE_BASELINE_ONLY: ${{ steps.state.outputs.restored != 'true' }}
-          YOUTUBE_MANUAL_TEST_MODE: 'false'
+          YOUTUBE_MANUAL_TEST_MODE: 'true'
           ADVANCED_FILTER_YOUTUBE: ${{ secrets.ADVANCED_FILTER_YOUTUBE }}
           DATE_FILTER_YOUTUBE: ${{ secrets.DATE_FILTER_YOUTUBE }}
           LANGUAGE_YOUTUBE: ${{ secrets.LANGUAGE_YOUTUBE }}
@@ -147,7 +149,7 @@ jobs:
             }
             const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
             await core.summary
-              .addHeading('YouTube')
+              .addHeading('YouTube Manual Delivery Test')
               .addRaw(`Status: ${summary.status}\n`)
               .addRaw(`Pending deliveries: ${summary.pending_count}\n`)
               .addRaw(`Ambiguous retries: ${summary.ambiguous_retry_count}\n`)

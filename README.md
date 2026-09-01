@@ -16,10 +16,28 @@ Discord Actions checks Google News and YouTube with GitHub Actions and sends new
 1. Fork this repository or create a repository from the template.
 2. Open **Settings → Secrets and variables → Actions**.
 3. Add only the Secrets and Variables required by the service you use. Never paste their values into documentation, issues, or Actions logs.
-4. Open **Actions**, choose the workflow, and use **Run workflow** first. With `manual_test=true`, each channel sends at most one current item and baselines the rest.
-5. After the manual test, leave the workflow enabled. Scheduled runs then continue automatically; no separate enable variable is required.
+4. Open **Actions** and run **Google News Manual Delivery Test** or **YouTube Manual Delivery Test** first. These workflows send real Discord messages; the scheduled operating workflows no longer have a **Run workflow** button.
+5. Leave the two scheduled operating workflows enabled after the test. They continue automatically every 15 minutes; no separate enable variable is required.
 
-The maintained Actions list contains **Google News to Discord**, **YouTube to Discord Notification**, and **Python Tests**. The former separate Top, Topic, and Keyword Google News workflows were replaced by the unified profile workflow. Historical runs remain as operational evidence even after an obsolete workflow file is removed.
+The maintained Actions list contains two scheduled operating workflows (**Google News to Discord** and **YouTube to Discord Notification**), two actual-delivery test workflows (**Google News Manual Delivery Test** and **YouTube Manual Delivery Test**), and **Python Tests**. The former separate Top, Topic, and Keyword Google News workflows were replaced by the unified profile workflow. Historical runs remain as operational evidence even after an obsolete workflow file is removed.
+
+### Dedicated manual delivery tests
+
+- **Google News Manual Delivery Test** defaults to `top_kr`. Selecting one profile sends at most one article to that profile's configured Discord webhook. Selecting `all` processes all 11 profiles and can therefore send at most 11 articles, one per profile.
+- **YouTube Manual Delivery Test** sends at most one video. When the optional detail webhook is enabled, the same video can produce one primary message and one detail message.
+- Both tests perform real delivery. They restore the newest unexpired service state produced by either the scheduled or manual workflow, then upload the updated state even if delivery fails. The scheduled workflow uses the same state pool on its next run, so a test does not create a separate delivery history.
+- A first YouTube manual test with no saved state sends the newest current video and stores the other current videos as the initial baseline. A later scheduled run therefore does not flood Discord with older videos.
+- The shared concurrency group prevents the scheduled and manual workflow for the same service from changing its SQLite state at the same time.
+
+Google News profile choices correspond to these configured destinations:
+
+| Choice | Destination |
+| --- | --- |
+| `top_us`, `top_kr`, `top_jp`, `top_cn` | Top news for the United States, Korea, Japan, or China |
+| `topic_korea`, `topic_seoul` | Korea or Seoul news |
+| `topic_ent`, `topic_tech`, `topic_scitech` | Entertainment, technology, or science/technology news |
+| `keyword_nocode`, `keyword_iu` | No-code or IU keyword news |
+| `all` | Every profile above; at most one article per profile |
 
 ## Shared date and keyword filters
 
@@ -290,9 +308,9 @@ https://youtu.be/EsKmhBMmqIM
 
 #### Run and verify the RSS setup
 
-1. Open **Actions → YouTube to Discord Notification → Run workflow**.
-2. Keep `manual_test=true` for the first run. It sends at most the newest matching item and stores the other current items as a baseline, preventing an old-video flood.
-3. Confirm that the run succeeds and that Discord receives no more than one test message. Leave the workflow enabled; later scheduled runs check every 15 minutes and send every newly discovered item in feed order, oldest position first by default.
+1. Open **Actions → YouTube Manual Delivery Test → Run workflow**.
+2. Run the test. It sends at most the newest matching video and stores the other current items as a baseline, preventing an old-video flood.
+3. Confirm that the run succeeds. The primary channel receives at most one message; if the optional detail webhook is enabled, that same video can also produce one detail message. Leave **YouTube to Discord Notification** enabled; later scheduled runs check every 15 minutes and send every newly discovered item in feed order, oldest position first by default.
 
 Common RSS errors are deliberate configuration checks:
 
@@ -360,7 +378,7 @@ Scheduled GitHub Actions runs can start late. Weekly and monthly examples are ca
 
 - Check the Actions result and its uploaded SQLite state artifact first.
 - Never publish webhook URLs, API keys, or tokens in logs or support posts.
-- A successful manual test does not disable scheduling. If no scheduled run appears, confirm that the workflow is enabled and that the five-field `schedule` exists on the default branch.
+- A successful manual test does not disable scheduling. If no scheduled run appears, confirm that **Google News to Discord** or **YouTube to Discord Notification** is enabled and that its five-field `schedule` exists on the default branch. Use the separate workflow whose name ends in **Manual Delivery Test** when you need another actual-delivery test.
 - GitHub can automatically disable scheduled workflows in a public repository after 60 days without repository activity. Re-enable the affected workflow from **Actions** when GitHub shows that notice. This project does not use an automated keepalive workaround for that platform policy. See [GitHub's workflow enable/disable documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 - Distinguish GitHub scheduling delays and external API limits from code failures. Saved incomplete deliveries resume in sequence on the next run.
 

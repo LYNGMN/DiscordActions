@@ -5,6 +5,7 @@ from pathlib import Path
 
 WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
 WORKFLOW = WORKFLOWS_DIR / "googlenews-to-discord.yml"
+MANUAL_WORKFLOW = WORKFLOWS_DIR / "googlenews-manual-test.yml"
 CI_WORKFLOW = WORKFLOWS_DIR / "test.yml"
 EXPECTED_WEBHOOK_SECRETS = (
     "DISCORD_WEBHOOK_GN_TOP_US",
@@ -46,15 +47,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
     def source(self):
         return WORKFLOW.read_text(encoding="utf-8")
 
-    def test_schedule_manual_input_and_concurrency_are_safe(self):
+    def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
         source = self.source()
         self.assertIn("cron: '*/15 * * * *'", source)
         self.assertNotIn("timezone:", source)
         self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
-        self.assertIn("manual_test:", source)
+        self.assertNotIn("workflow_dispatch:", source)
+        self.assertNotIn("manual_test:", source)
+        self.assertNotIn("--manual-test", source)
         self.assertNotIn("validate_only:", source)
-        self.assertIn("type: boolean", source)
-        self.assertEqual(1, source.count("default: true"))
         self.assertIn("group: google-news-to-discord", source)
         self.assertIn("cancel-in-progress: false", source)
         self.assertNotIn("GOOGLE_NEWS_SCHEDULE_ENABLED", source)
@@ -97,11 +98,14 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertNotIn("googlenews-top_to_discord.py", source)
         self.assertNotIn("googlenews-topic_to_discord.py", source)
         self.assertNotIn("googlenews-keyword_to_discord.py", source)
-        self.assertIn("--manual-test", source)
+        self.assertNotIn("--manual-test", source)
 
     def test_restore_uses_latest_completed_run_with_a_state_artifact(self):
         source = self.source()
         self.assertIn("status: 'completed'", source)
+        self.assertIn("'googlenews-to-discord.yml'", source)
+        self.assertIn("'googlenews-manual-test.yml'", source)
+        self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
         self.assertIn("google-news-state", source)
         self.assertIn("artifact-id", source)
         self.assertIn("actions/download-artifact@v5", source)
@@ -121,7 +125,8 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             "const { data: runPage } = await github.rest.actions.listWorkflowRuns",
             source,
         )
-        self.assertIn("const runs = runPage.workflow_runs;", source)
+        self.assertIn("const runs = [];", source)
+        self.assertIn("runs.push(...runPage.workflow_runs);", source)
         self.assertNotIn(
             "github.paginate(\n              github.rest.actions.listWorkflowRuns",
             source,

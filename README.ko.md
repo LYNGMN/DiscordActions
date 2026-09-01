@@ -16,10 +16,28 @@ GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으
 1. 이 저장소를 Fork하거나 Template을 사용해 새 저장소를 만듭니다.
 2. 저장소의 **Settings → Secrets and variables → Actions**로 이동합니다.
 3. 사용할 서비스에 필요한 Secret과 Variable만 등록합니다. 설정값은 README, 이슈, Actions 로그에 붙여 넣지 마세요.
-4. **Actions**에서 워크플로를 선택하고 **Run workflow**로 먼저 시험합니다. `manual_test=true`이면 채널별로 현재 항목을 최대 1건만 전송하고, 나머지는 초기 기준 상태로 저장합니다.
-5. 수동 시험을 마친 뒤에는 워크플로를 활성 상태로 둡니다. 별도의 활성화 Variable 없이 예약 실행이 자동으로 이어집니다.
+4. **Actions**에서 **Google News Manual Delivery Test** 또는 **YouTube Manual Delivery Test**를 먼저 실행합니다. 두 워크플로는 Discord로 실제 메시지를 전송합니다. 운영 예약 워크플로에서는 **Run workflow** 버튼을 제거했습니다.
+5. 시험을 마친 뒤에는 두 운영 예약 워크플로를 활성 상태로 둡니다. 별도의 활성화 Variable 없이 15분마다 자동으로 실행됩니다.
 
-현재 관리하는 Actions 목록은 **Google News to Discord**, **YouTube to Discord Notification**, **Python Tests**입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
+현재 관리하는 Actions 목록은 운영 예약 워크플로 2개(**Google News to Discord**, **YouTube to Discord Notification**), 실제 전송 시험 워크플로 2개(**Google News Manual Delivery Test**, **YouTube Manual Delivery Test**), **Python Tests**입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
+
+### 전용 수동 전송 시험
+
+- **Google News Manual Delivery Test**의 기본 프로필은 `top_kr`입니다. 프로필 하나를 선택하면 해당 프로필에 설정된 Discord 웹훅으로 기사를 최대 1건 전송합니다. `all`을 선택하면 11개 프로필을 모두 처리하므로 프로필마다 최대 1건, 전체 최대 11건이 전송될 수 있습니다.
+- **YouTube Manual Delivery Test**는 영상을 최대 1건 전송합니다. 선택 기능인 상세 웹훅을 사용하면 같은 영상의 기본 메시지 1개와 상세 메시지 1개가 각각 전송될 수 있습니다.
+- 두 시험은 모두 실제 Discord 전송입니다. 예약 또는 수동 워크플로가 만든 상태 중 만료되지 않은 최신 상태를 복원하고, 전송에 실패해도 갱신된 상태를 다시 보관합니다. 다음 예약 실행도 같은 상태를 사용하므로 시험용 전송 이력이 따로 분리되지 않습니다.
+- 저장된 상태가 전혀 없는 첫 YouTube 수동 시험에서는 현재 최신 영상 1건을 전송하고 나머지 현재 영상은 초기 기준 상태로 저장합니다. 이후 예약 실행에서 기존 영상이 한꺼번에 전송되는 것을 막기 위한 동작입니다.
+- 서비스별 예약·수동 워크플로는 같은 동시 실행 그룹을 사용합니다. 같은 서비스의 두 실행이 동시에 SQLite 상태를 바꾸지 않습니다.
+
+Google News 프로필 선택값은 다음 전송 대상과 연결됩니다.
+
+| 선택값 | 전송 대상 |
+| --- | --- |
+| `top_us`, `top_kr`, `top_jp`, `top_cn` | 미국·한국·일본·중국 주요 뉴스 |
+| `topic_korea`, `topic_seoul` | 한국·서울 뉴스 |
+| `topic_ent`, `topic_tech`, `topic_scitech` | 연예·기술·과학/기술 뉴스 |
+| `keyword_nocode`, `keyword_iu` | 노코드·아이유 키워드 뉴스 |
+| `all` | 위 모든 프로필. 프로필별 기사 최대 1건 |
 
 ## 공통 날짜·키워드 필터
 
@@ -281,9 +299,9 @@ https://youtu.be/EsKmhBMmqIM
 
 #### RSS 설정 실행 및 확인
 
-1. **Actions → YouTube to Discord Notification → Run workflow**를 엽니다.
-2. 첫 실행에서는 `manual_test=true`를 유지합니다. 조건에 맞는 최신 항목을 최대 1건만 전송하고, 나머지 현재 항목은 초기 기준 상태로 저장해 과거 영상이 한꺼번에 전송되는 것을 막습니다.
-3. Actions 실행이 성공했고 Discord에 시험 알림이 1개 이하로 도착했는지 확인합니다. 워크플로는 활성 상태로 두세요. 이후 예약 실행은 15분마다 새 항목을 확인하고, 기본값에서는 오래된 항목부터 새 항목 순으로 모든 신규 영상을 전송합니다.
+1. **Actions → YouTube Manual Delivery Test → Run workflow**를 엽니다.
+2. 시험을 실행합니다. 조건에 맞는 최신 영상은 최대 1건만 전송하고, 나머지 현재 영상은 초기 기준 상태로 저장해 과거 영상이 한꺼번에 전송되는 것을 막습니다.
+3. Actions 실행이 성공했는지 확인합니다. 기본 채널에는 메시지가 최대 1개 전송되며, 선택 기능인 상세 웹훅을 사용하면 같은 영상의 상세 메시지 1개가 추가로 전송될 수 있습니다. **YouTube to Discord Notification**은 활성 상태로 두세요. 이후 예약 실행은 15분마다 새 항목을 확인하고, 기본값에서는 오래된 항목부터 새 항목 순으로 모든 신규 영상을 전송합니다.
 
 다음 오류는 잘못된 설정을 조기에 알려 주는 정상적인 검증 결과입니다.
 
@@ -345,7 +363,7 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 �
 
 - 먼저 Actions 실행 결과와 업로드된 SQLite 상태 아티팩트를 확인합니다.
 - 웹훅 URL, API 키, 토큰은 로그나 문의 글에 공개하지 마세요.
-- 수동 시험이 성공해도 예약 실행은 꺼지지 않습니다. 예약 실행이 보이지 않으면 워크플로가 활성 상태인지, 기본 브랜치의 `schedule`에 다섯 칸으로 작성한 cron 표현식이 있는지 확인합니다.
+- 수동 시험이 성공해도 예약 실행은 꺼지지 않습니다. 예약 실행이 보이지 않으면 **Google News to Discord** 또는 **YouTube to Discord Notification**이 활성 상태인지, 기본 브랜치의 `schedule`에 다섯 칸으로 작성한 cron 표현식이 있는지 확인합니다. 실제 전송을 다시 시험할 때는 이름이 **Manual Delivery Test**로 끝나는 별도 워크플로를 사용합니다.
 - 공개 저장소에 60일 동안 저장소 활동이 없으면 GitHub가 예약 워크플로를 자동으로 비활성화할 수 있습니다. Actions 화면에 해당 안내가 나타나면 워크플로를 다시 활성화하세요. 이 프로젝트는 GitHub의 이 정책을 우회하는 자동 Keepalive 방식을 사용하지 않습니다. 자세한 내용은 [GitHub 워크플로 활성화·비활성화 문서](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)를 참고하세요.
 - GitHub Actions의 예약 지연과 외부 API의 일시적 제한을 코드 오류와 구분하세요. 저장해 둔 미완료 전송은 다음 실행에서 기록된 순번부터 이어집니다.
 
