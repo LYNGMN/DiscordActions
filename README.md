@@ -365,4 +365,4 @@ Scheduled GitHub Actions runs can start late. Weekly and monthly examples are ca
 
 Use [Discussions](https://github.com/LYNGMN/DiscordActions/discussions) for feature ideas and [Issues](https://github.com/LYNGMN/DiscordActions/issues) for reproducible defects. This project is available under the [MIT License](LICENSE).
 
-*한국어 문서: [README_KR.md](README_KR.md)*
+*한국어 문서: [README.ko.md](README.ko.md)*

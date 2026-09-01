@@ -91,7 +91,7 @@ to use the localized title returned by the YouTube API when one is available.
 The legacy `LANGUAGE_YOUTUBE` setting remains a fallback only when
 `DISPLAY_LANGUAGE` is not set.
 
-`README.md` and `README_KR.md` will show separate RSS channel, RSS playlist, and
+`README.md` and `README.ko.md` will show separate RSS channel, RSS playlist, and
 API examples. The comparison table and nearby guidance will explicitly state
 that duration and category require API mode and are unavailable in RSS mode.
 
