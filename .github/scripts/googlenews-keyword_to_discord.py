@@ -40,6 +40,11 @@ from google_news_keyword_matcher import (
     extract_keyword_query,
 )
 from google_news_profile_result import write_profile_result
+from google_news_publisher_names import (
+    normalize_article_title,
+    normalize_message_publisher_names,
+    normalize_publisher_name,
+)
 from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
@@ -325,7 +330,7 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     if VALIDATE_ONLY:
         logging.info("검증 모드: Discord 전송을 생략합니다.")
         return "0"
-    payload = {"content": message}
+    payload = {"content": normalize_message_publisher_names(message)}
     
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
@@ -410,6 +415,7 @@ def extract_news_items(description, resolver):
             if link is None:
                 continue
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            press = normalize_publisher_name(press, link)
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
 
@@ -430,6 +436,7 @@ def parse_html_description(html_desc, resolver, main_title, main_link):
 
 def format_discord_message(news_item, keyword, country_code):
     """Format one keyword notification using the selected locale."""
+    display_title = normalize_article_title(news_item['title'], news_item['link'])
     config = country_configs.get(country_code, country_configs['US'])
     service_language, _, _, service_country_name, _, flag, service_timezone, _ = config
     service_display_language = resolve_display_language(
@@ -457,7 +464,7 @@ def format_discord_message(news_item, keyword, country_code):
     )
     message = (
         f"`{google_news} - {keyword} - {country_name} {flag}`\n"
-        f"**{news_item['title']}**\n{news_item['link']}"
+        f"**{display_title}**\n{news_item['link']}"
     )
     if news_item['description']:
         message += f"\n{news_item['description']}"

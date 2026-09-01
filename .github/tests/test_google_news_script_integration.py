@@ -495,6 +495,93 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     items[0]["link"],
                 )
 
+    def test_all_scripts_normalize_related_korean_publisher_names(self):
+        description = "<ul>{}</ul>".format(
+            "".join(
+                '<li><a href="https://news.google.com/rss/articles/{}">Story {}</a>'
+                '<font color="#6f6f6f">{}</font></li>'.format(index, index, press)
+                for index, press in enumerate(
+                    (
+                        "v.daum.net",
+                        "koreadaily.com",
+                        "mydaily.co.kr",
+                        "Chosunbiz",
+                        "xportsnews.com",
+                    )
+                )
+            )
+        )
+        urls = (
+            "https://v.daum.net/v/20260901123456789",
+            "https://www.koreadaily.com/article/202609010001",
+            "https://www.mydaily.co.kr/page/view/2026090112345678901",
+            "https://biz.chosun.com/entertainment/2026/09/01/story/",
+            "https://www.xportsnews.com/article/1234567",
+        )
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                resolver = SequenceResolver(urls)
+
+                items = module.extract_news_items(description, resolver)
+
+                self.assertEqual(
+                    ["다음", "미주중앙일보", "마이데일리", "조선비즈", "엑스포츠뉴스"],
+                    [item["press"] for item in items],
+                )
+
+    def test_all_scripts_normalize_main_title_publisher_name(self):
+        item = {
+            "title": "테스트 기사 - mydaily.co.kr",
+            "link": "https://www.mydaily.co.kr/page/view/2026090112345678901",
+            "description": "",
+            "pub_date": "Mon, 31 Aug 2026 08:41:00 GMT",
+        }
+        keyword = load_script(SCRIPT_PATHS[0])
+        top = load_script(SCRIPT_PATHS[1])
+        topic = load_script(SCRIPT_PATHS[2])
+
+        messages = (
+            keyword.format_discord_message(item, "아이유", "KR"),
+            top.format_discord_message(item, None, "Asia/Seoul", "%Y-%m-%d %H:%M:%S"),
+            topic.format_discord_message(
+                item,
+                "Google 뉴스",
+                "기술 뉴스",
+                "과학/기술",
+                "🇰🇷",
+                "KR",
+            ),
+        )
+
+        for message in messages:
+            self.assertIn("**테스트 기사 - 마이데일리**", message)
+            self.assertNotIn("**테스트 기사 - mydaily.co.kr**", message)
+
+    def test_all_scripts_normalize_publisher_names_in_stored_queue_messages(self):
+        stored_message = (
+            "**메인 기사 - mydaily.co.kr**\n"
+            "https://www.mydaily.co.kr/page/view/1\n"
+            ">>> - [연관 기사](<https://v.daum.net/v/1>) | v.daum.net"
+        )
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                module = load_script(script_path)
+                module.VALIDATE_ONLY = False
+                with mock.patch.object(
+                    module,
+                    "send_webhook_message",
+                    return_value="123456789012345678",
+                ) as send:
+                    module.send_discord_message("redacted", stored_message)
+
+                payload = send.call_args.args[1]
+                self.assertIn("**메인 기사 - 마이데일리**", payload["content"])
+                self.assertIn("| 다음", payload["content"])
+                self.assertNotIn("v.daum.net", payload["content"].split(" | ")[-1])
+
     def test_all_scripts_keep_every_related_link_with_safe_fallback(self):
         description = "<ul>{}</ul>".format(
             "".join(

@@ -38,6 +38,11 @@ from feed_localization import (
 )
 from feed_filters import resolve_feed_timezone
 from google_news_profile_result import write_profile_result
+from google_news_publisher_names import (
+    normalize_article_title,
+    normalize_message_publisher_names,
+    normalize_publisher_name,
+)
 from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
@@ -1018,6 +1023,7 @@ def parse_pub_date(pub_date_str):
 
 def format_discord_message(news_item, news_prefix, category, topic_name, country_emoji, country_code):
     """Discord 메시지를 포맷팅합니다."""
+    display_title = normalize_article_title(news_item['title'], news_item['link'])
     display_language = resolve_display_language(
         DISPLAY_LANGUAGE,
         country_code=country_code,
@@ -1035,7 +1041,7 @@ def format_discord_message(news_item, news_prefix, category, topic_name, country
 
     discord_source = f"`{news_prefix} - {category} - {topic_name} {country_emoji}`"
 
-    message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
+    message = f"{discord_source}\n**{display_title}**\n{news_item['link']}"
     
     if news_item['description']:
         message += f"\n>>> {news_item['description']}\n\n"
@@ -1050,7 +1056,7 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     if VALIDATE_ONLY:
         logging.info("검증 모드: Discord 전송을 생략합니다.")
         return "0"
-    payload = {"content": message}
+    payload = {"content": normalize_message_publisher_names(message)}
     
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
@@ -1135,6 +1141,7 @@ def extract_news_items(description, resolver):
             if link is None:
                 continue
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            press = normalize_publisher_name(press, link)
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
 
