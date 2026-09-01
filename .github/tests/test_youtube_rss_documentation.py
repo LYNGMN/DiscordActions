@@ -4,7 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 README_EN = ROOT / "README.md"
-README_KO = ROOT / "README_KR.md"
+README_KO = ROOT / "README.ko.md"
+LEGACY_README_KO = ROOT / ("README_" + "KR.md")
 
 CHANNEL_PAGE = "https://www.youtube.com/channel/UCtKtCiaWRz-d3EZn2xd1mdA"
 CHANNEL_FEED = (
@@ -26,6 +27,29 @@ YOUTUBE_ICON = (
     "https://discordactions.github.io/logo/media/original/youtube/"
     "youtube_social_circle_red.png"
 )
+
+
+class KoreanReadmeFilenameTests(unittest.TestCase):
+    def test_korean_readme_uses_language_code_filename(self):
+        self.assertTrue(README_KO.is_file())
+        self.assertFalse(LEGACY_README_KO.exists())
+        self.assertIn(
+            "[README.ko.md](README.ko.md)",
+            README_EN.read_text(encoding="utf-8"),
+        )
+
+    def test_tracked_text_has_no_legacy_readme_reference(self):
+        legacy_name = LEGACY_README_KO.name
+        remaining = []
+        text_suffixes = {".json", ".md", ".py", ".toml", ".yaml", ".yml"}
+        for path in ROOT.rglob("*"):
+            if not path.is_file() or path.suffix not in text_suffixes:
+                continue
+            if ".git" in path.parts:
+                continue
+            if legacy_name in path.read_text(encoding="utf-8"):
+                remaining.append(str(path.relative_to(ROOT)))
+        self.assertEqual([], remaining)
 
 
 class YouTubeRssDocumentationTests(unittest.TestCase):

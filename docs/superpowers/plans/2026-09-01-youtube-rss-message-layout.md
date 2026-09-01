@@ -164,7 +164,7 @@ git commit -m "fix: clarify YouTube RSS notification details"
 **Files:**
 - Modify: `.github/tests/test_youtube_rss_documentation.py`
 - Modify: `README.md`
-- Modify: `README_KR.md`
+- Modify: `README.ko.md`
 
 **Interfaces:**
 - Consumes: the exact layouts produced by Task 1.
@@ -241,7 +241,7 @@ Expected: all `YouTubeRssDocumentationTests` pass.
 - [ ] **Step 6: Commit the bilingual documentation**
 
 ```bash
-git add .github/tests/test_youtube_rss_documentation.py README.md README_KR.md
+git add .github/tests/test_youtube_rss_documentation.py README.md README.ko.md
 git commit -m "docs: explain YouTube RSS and API message fields"
 ```
 
@@ -256,7 +256,7 @@ git commit -m "docs: explain YouTube RSS and API message fields"
 - Modify: `.github/scripts/youtube_to_discord.py`
 - Modify: `.github/tests/test_youtube_rss_documentation.py`
 - Modify: `README.md`
-- Modify: `README_KR.md`
+- Modify: `README.ko.md`
 
 **Interfaces:**
 - Consumes: `normalize_display_language(language)` and `labels_for(language)` from `feed_localization.py`.
@@ -349,7 +349,7 @@ Expected: all feed-localization and YouTube workflow tests pass.
 
 - [ ] **Step 6: Add failing documentation assertions, then update both READMEs**
 
-Require `README.md` and `README_KR.md` to state that API detail embed field and
+Require `README.md` and `README.ko.md` to state that API detail embed field and
 link labels follow `DISPLAY_LANGUAGE`, source values are not translated, and
 detail embeds remain API-only. Update both documents with equivalent English
 and Korean explanations, then run:
@@ -370,7 +370,7 @@ git add .github/tests/test_feed_localization.py \
   .github/scripts/feed_localization.py \
   .github/scripts/youtube_to_discord.py \
   .github/tests/test_youtube_rss_documentation.py \
-  README.md README_KR.md
+  README.md README.ko.md
 git commit -m "fix: localize YouTube detail labels"
 ```
 

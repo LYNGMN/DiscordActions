@@ -13,7 +13,7 @@ Let a keyword profile use a complex Google News search expression while showing 
 - Configure `keyword_nocode` with `KEYWORD_DISPLAY_NAME: 노코드` while retaining `KEYWORD: 노코드 OR "no-code" OR nocode`.
 - Configure `topic_ent` with `FEED_KEYWORD_FILTER: NOT 운세` and `FEED_KEYWORD_SCOPE: title`.
 - The entertainment exclusion checks only the main RSS title. A related-news headline containing `운세` does not exclude an otherwise valid main item.
-- Document the distinction in both `README.md` and `README_KR.md` with equivalent meaning.
+- Document the distinction in both `README.md` and `README.ko.md` with equivalent meaning.
 
 ## Data Flow
 

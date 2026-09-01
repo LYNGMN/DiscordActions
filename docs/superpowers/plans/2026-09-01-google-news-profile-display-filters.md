@@ -130,7 +130,7 @@ Expected: all tests pass using the existing shared filter engine.
 
 **Files:**
 - Modify: `README.md`
-- Modify: `README_KR.md`
+- Modify: `README.ko.md`
 - Test: `.github/tests/test_youtube_rss_documentation.py`
 
 **Interfaces:**
