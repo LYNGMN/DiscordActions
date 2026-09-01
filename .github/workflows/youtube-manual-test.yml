@@ -23,11 +23,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Find latest completed database artifact
         id: previous_state
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -74,7 +74,7 @@ jobs:
 
       - name: Restore previous database
         if: env.INITIALIZE_MODE_YOUTUBE != 'true' && steps.previous_state.outputs.artifact-id != ''
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .
@@ -94,7 +94,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -138,7 +138,7 @@ jobs:
 
       - name: Write safe run summary
         if: always()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -157,7 +157,7 @@ jobs:
 
       - name: Upload updated database
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: youtube_database
           path: |

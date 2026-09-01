@@ -5,11 +5,11 @@ from pathlib import Path
 
 WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
 NODE24_ACTION_MAJORS = {
-    "actions/checkout": "5",
-    "actions/setup-python": "6",
-    "actions/github-script": "8",
-    "actions/download-artifact": "5",
-    "actions/upload-artifact": "5",
+    "actions/checkout": "7",
+    "actions/setup-python": "7",
+    "actions/github-script": "9",
+    "actions/download-artifact": "8",
+    "actions/upload-artifact": "7",
 }
 ACTION_REFERENCE = re.compile(
     r"uses:\s+(actions/(?:checkout|setup-python|github-script|download-artifact|upload-artifact))@v(\d+)"
