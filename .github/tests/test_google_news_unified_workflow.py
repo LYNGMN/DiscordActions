@@ -52,11 +52,41 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertNotIn("timezone:", source)
         self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
         self.assertIn("manual_test:", source)
+        self.assertIn("validate_only:", source)
         self.assertIn("type: boolean", source)
-        self.assertIn("default: true", source)
+        self.assertGreaterEqual(source.count("default: true"), 2)
         self.assertIn("group: google-news-to-discord", source)
         self.assertIn("cancel-in-progress: false", source)
         self.assertNotIn("GOOGLE_NEWS_SCHEDULE_ENABLED", source)
+
+    def test_validation_only_never_restores_or_uploads_production_state(self):
+        source = self.source()
+
+        self.assertIn("GOOGLE_NEWS_VALIDATE_ONLY", source)
+        self.assertIn("--validate-only", source)
+        self.assertIn(".google-news-validation-state", source)
+        self.assertRegex(
+            source,
+            re.compile(
+                r"- name: Restore previous state\n"
+                r"\s+if: env\.GOOGLE_NEWS_VALIDATE_ONLY != 'true'"
+            ),
+        )
+        self.assertRegex(
+            source,
+            re.compile(
+                r"- name: Upload updated state\n"
+                r"\s+if: always\(\) && env\.GOOGLE_NEWS_VALIDATE_ONLY != 'true'"
+            ),
+        )
+
+    def test_validation_step_receives_no_discord_webhook_secrets(self):
+        source = self.source()
+        validation_start = source.index("- name: Validate Google News without delivery")
+        dispatcher_start = source.index("- name: Run unified Google News dispatcher")
+        validation_section = source[validation_start:dispatcher_start]
+
+        self.assertNotIn("secrets.DISCORD_WEBHOOK", validation_section)
 
     def test_unified_workflow_maps_all_webhook_secrets(self):
         source = self.source()
@@ -90,9 +120,9 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         for secret_name in EXPECTED_WEBHOOK_SECRETS:
             self.assertIn("secrets.{}".format(secret_name), dispatcher_section)
 
-    def test_dispatcher_is_the_only_google_news_execution_command(self):
+    def test_dispatcher_is_the_only_google_news_runtime_entrypoint(self):
         source = self.source()
-        self.assertEqual(1, source.count(".github/scripts/google_news_dispatcher.py"))
+        self.assertEqual(2, source.count(".github/scripts/google_news_dispatcher.py"))
         self.assertNotIn("googlenews-top_to_discord.py", source)
         self.assertNotIn("googlenews-topic_to_discord.py", source)
         self.assertNotIn("googlenews-keyword_to_discord.py", source)

@@ -5,8 +5,13 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
+      validate_only:
+        description: 'Check feeds and configuration without sending Discord messages'
+        required: true
+        default: true
+        type: boolean
       manual_test:
-        description: '채널마다 최신 기사 1개만 전송하고 나머지는 기준선으로 저장'
+        description: 'Send at most one current item per profile and baseline the rest'
         required: true
         default: true
         type: boolean
@@ -23,16 +28,20 @@ jobs:
   deliver:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      GOOGLE_NEWS_VALIDATE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_only == true }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
 
       - name: Prepare state directory
+        if: env.GOOGLE_NEWS_VALIDATE_ONLY != 'true'
         run: |
           mkdir -p .google-news-state
           touch .google-news-state/state-placeholder.txt
 
       - name: Find latest completed state artifact
+        if: env.GOOGLE_NEWS_VALIDATE_ONLY != 'true'
         id: previous_state
         uses: actions/github-script@v8
         with:
@@ -71,7 +80,7 @@ jobs:
             core.setOutput('source-run-id', sourceRunId);
 
       - name: Restore previous state
-        if: steps.previous_state.outputs.artifact-id != ''
+        if: env.GOOGLE_NEWS_VALIDATE_ONLY != 'true' && steps.previous_state.outputs.artifact-id != ''
         uses: actions/download-artifact@v5
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
@@ -91,7 +100,26 @@ jobs:
       - name: Install Dependencies
         run: pip install -r .github/requirements.txt
 
+      - name: Validate Google News without delivery
+        if: env.GOOGLE_NEWS_VALIDATE_ONLY == 'true'
+        env:
+          MANUAL_TEST_MODE: ${{ inputs.manual_test == true }}
+          GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
+          FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
+          FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
+          FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
+          FEED_TIMEZONE: ${{ vars.FEED_TIMEZONE }}
+          FEED_COUNTRY: ${{ vars.FEED_COUNTRY }}
+          DISPLAY_LANGUAGE: ${{ vars.DISPLAY_LANGUAGE }}
+        run: |
+          manual_test_arg=()
+          if [[ "$MANUAL_TEST_MODE" == "true" ]]; then
+            manual_test_arg=(--manual-test)
+          fi
+          python .github/scripts/google_news_dispatcher.py --state-dir .google-news-validation-state --validate-only "${manual_test_arg[@]}"
+
       - name: Run unified Google News dispatcher
+        if: env.GOOGLE_NEWS_VALIDATE_ONLY != 'true'
         env:
           MANUAL_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.manual_test == true }}
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
@@ -123,10 +151,12 @@ jobs:
       - name: Write safe run summary
         if: always()
         uses: actions/github-script@v8
+        env:
+          SUMMARY_PATH: ${{ env.GOOGLE_NEWS_VALIDATE_ONLY == 'true' && '.google-news-validation-state/run-summary.json' || '.google-news-state/run-summary.json' }}
         with:
           script: |
             const fs = require('fs');
-            const path = '.google-news-state/run-summary.json';
+            const path = process.env.SUMMARY_PATH;
             if (!fs.existsSync(path)) {
               await core.summary.addHeading('Google News').addRaw('No run summary was produced.').write();
               return;
@@ -137,13 +167,14 @@ jobs:
             await core.summary
               .addHeading('Google News')
               .addRaw(`Status: ${summary.status}\n`)
+              .addRaw(`Validation only: ${summary.validate_only}\n`)
               .addRaw(`Profiles: ${summary.profiles.length}\n`)
               .addRaw(`Pending deliveries: ${pending}\n`)
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
               .write();
 
       - name: Upload updated state
-        if: always()
+        if: always() && env.GOOGLE_NEWS_VALIDATE_ONLY != 'true'
         uses: actions/upload-artifact@v5
         with:
           name: google-news-state
