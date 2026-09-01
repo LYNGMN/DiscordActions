@@ -55,6 +55,22 @@ _BABEL_LOCALES = {
     "id": "id",
 }
 
+_ENGLISH_MONTH_NAMES = (
+    "",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
 _LABELS = {
     "ko": {
         "channel": "채널명",
@@ -317,6 +333,45 @@ def format_feed_datetime(value: str, language: str, timezone_name: str) -> str:
         tzinfo=zone,
         locale=_BABEL_LOCALES[normalized],
     )
+
+
+def format_google_news_datetime(
+    value: str,
+    country_code: str,
+    timezone_name: str,
+    fallback_language: str = "en",
+) -> str:
+    country = country_code.strip().upper() if isinstance(country_code, str) else ""
+    zone = _timezone(timezone_name)
+    local_dt = _aware_datetime(value).astimezone(zone)
+    timezone_abbreviation = local_dt.tzname()
+
+    if country == "KR":
+        period = "오전" if local_dt.hour < 12 else "오후"
+        hour = local_dt.hour % 12 or 12
+        return (
+            f"{local_dt.year:04d}년 {local_dt.month:02d}월 {local_dt.day:02d}일 "
+            f"{period} {hour:02d}:{local_dt.minute:02d}:{local_dt.second:02d} "
+            f"({timezone_abbreviation})"
+        )
+
+    if country in {"JP", "CN"}:
+        return (
+            f"{local_dt.year:04d}年{local_dt.month:02d}月{local_dt.day:02d}日 "
+            f"{local_dt.hour:02d}:{local_dt.minute:02d}:{local_dt.second:02d} "
+            f"({timezone_abbreviation})"
+        )
+
+    if country == "US":
+        period = "AM" if local_dt.hour < 12 else "PM"
+        hour = local_dt.hour % 12 or 12
+        return (
+            f"{_ENGLISH_MONTH_NAMES[local_dt.month]} {local_dt.day:02d}, "
+            f"{local_dt.year:04d}, {hour:02d}:{local_dt.minute:02d}:"
+            f"{local_dt.second:02d} {period} ({timezone_abbreviation})"
+        )
+
+    return format_feed_datetime(value, fallback_language, timezone_name)
 
 
 def localized_country_name(country_code: str, language: str) -> str:
