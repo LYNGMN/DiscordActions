@@ -18,6 +18,11 @@ from urllib.parse import urlparse
 import requests
 
 from google_news_profile_result import ERROR_CODE, STATUSES
+from google_news_publisher_names import PublisherRegistry, load_default_registry
+from google_news_publisher_review import (
+    export_unmapped_publishers,
+    unmapped_publisher_keys,
+)
 from google_news_profiles import (
     GoogleNewsProfile,
     build_handler_environment,
@@ -83,6 +88,8 @@ class DispatchSummary:
     started_at: str
     finished_at: str
     profiles: Sequence[ProfileRunResult]
+    unmapped_publisher_count: int = 0
+    new_unmapped_publisher_count: int = 0
 
     def to_dict(self):
         return {
@@ -93,6 +100,8 @@ class DispatchSummary:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "profiles": [profile.to_dict() for profile in self.profiles],
+            "unmapped_publisher_count": self.unmapped_publisher_count,
+            "new_unmapped_publisher_count": self.new_unmapped_publisher_count,
         }
 
 
@@ -173,10 +182,20 @@ def run_profiles(
     validate_only: bool = False,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
+    publisher_registry: Optional[PublisherRegistry] = None,
+    profile_databases: Optional[Mapping[str, str]] = None,
 ) -> DispatchSummary:
     started_at = _utc_timestamp()
     state_path = Path(state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
+    registry = publisher_registry or load_default_registry()
+    database_map = dict(
+        profile_databases
+        or {profile.profile_id: profile.state_db for profile in profiles}
+    )
+    before_unmapped = unmapped_publisher_keys(
+        state_path, database_map, registry
+    )
     resolver_db = str(state_path / "resolver.db")
     circuit_reader = GoogleNewsRequestGuard(requests.Session(), resolver_db)
     results: List[ProfileRunResult] = []
@@ -224,6 +243,12 @@ def run_profiles(
                 sleep(1.0)
 
     status = "failed" if any(result.status == "failed" for result in results) else "success"
+    review_payload = export_unmapped_publishers(
+        state_path, database_map, registry
+    )
+    after_unmapped = unmapped_publisher_keys(
+        state_path, database_map, registry
+    )
     summary = DispatchSummary(
         status=status,
         manual_test=bool(manual_test),
@@ -232,6 +257,12 @@ def run_profiles(
         started_at=started_at,
         finished_at=_utc_timestamp(),
         profiles=tuple(results),
+        unmapped_publisher_count=review_payload[
+            "unmapped_publisher_count"
+        ],
+        new_unmapped_publisher_count=len(
+            after_unmapped - before_unmapped
+        ),
     )
     _write_summary(state_path / "run-summary.json", summary)
     return summary
@@ -246,11 +277,19 @@ def run_dispatch(
     session: Optional[requests.Session] = None,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
+    publisher_registry: Optional[PublisherRegistry] = None,
+    profile_databases: Optional[Mapping[str, str]] = None,
 ) -> DispatchSummary:
+    registry = publisher_registry or load_default_registry()
+    database_map = dict(
+        profile_databases
+        or {profile.profile_id: profile.state_db for profile in profiles}
+    )
     for profile in profiles:
         merged_environment = dict(env)
         merged_environment.update(profile.environment)
         validate_common_feed_environment(merged_environment)
+    export_unmapped_publishers(state_dir, database_map, registry)
     if not validate_only:
         validate_webhooks(profiles, env, session or requests.Session())
     return run_profiles(
@@ -261,6 +300,8 @@ def run_dispatch(
         validate_only=validate_only,
         subprocess_runner=subprocess_runner,
         sleep=sleep,
+        publisher_registry=registry,
+        profile_databases=database_map,
     )
 
 
@@ -355,15 +396,18 @@ def main(argv=None) -> int:
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     try:
-        profiles = select_profiles(
-            load_profiles(arguments.profiles), arguments.profile_id
-        )
+        all_profiles = load_profiles(arguments.profiles)
+        profiles = select_profiles(all_profiles, arguments.profile_id)
         summary = run_dispatch(
             profiles,
             os.environ,
             arguments.state_dir,
             arguments.manual_test,
             validate_only=arguments.validate_only,
+            profile_databases={
+                profile.profile_id: profile.state_db
+                for profile in all_profiles
+            },
         )
     except (OSError, ValueError, RuntimeError) as error:
         error_code = str(error)

@@ -171,6 +171,8 @@ jobs:
               .addRaw(`Processed articles: ${processed}\n`)
               .addRaw(`Pending deliveries: ${pending}\n`)
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
+              .addRaw(`Unmapped publishers: ${summary.unmapped_publisher_count ?? 0}\n`)
+              .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`)
               .write();
 
       - name: Upload updated state
@@ -181,4 +183,13 @@ jobs:
           path: .google-news-state/
           if-no-files-found: error
           include-hidden-files: true
+          retention-days: 90
+
+      - name: Upload unmapped publisher review
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-news-unmapped-publishers
+          path: .google-news-state/unmapped-google-news-publishers.json
+          if-no-files-found: error
           retention-days: 90

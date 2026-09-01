@@ -125,6 +125,28 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual([], session.calls)
         runner.assert_not_called()
 
+    def test_invalid_publisher_registry_stops_before_webhook_network(self):
+        session = QueueSession([])
+        runner = mock.Mock()
+
+        with mock.patch.object(
+            self.dispatcher,
+            "load_default_registry",
+            side_effect=ValueError("invalid publisher registry"),
+        ), self.assertRaisesRegex(ValueError, "invalid publisher registry"):
+            self.dispatcher.run_dispatch(
+                self.profiles,
+                self.env,
+                self.state_dir,
+                manual_test=True,
+                session=session,
+                subprocess_runner=runner,
+                sleep=lambda _: None,
+            )
+
+        self.assertEqual([], session.calls)
+        runner.assert_not_called()
+
     def test_preflight_rejects_missing_or_non_https_secrets_before_network(self):
         cases = (
             (None, "missing_webhook"),
@@ -251,6 +273,54 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                 profile.webhook_env
             }
             self.assertTrue(other_secret_names.isdisjoint(child_env))
+
+    def test_run_profiles_exports_safe_unmapped_publisher_counts(self):
+        calls = []
+        profile = self.profiles[0]
+        registry = self.dispatcher.load_default_registry()
+        review = load_module("google_news_publisher_review")
+
+        def runner(command, env, check):
+            calls.append((command, env, check))
+            resolution = registry.resolve(
+                "news.example.com",
+                "https://news.example.com/private/path?secret=value",
+            )
+            review.record_unmapped_publisher(
+                env["GOOGLE_NEWS_DB_PATH"],
+                env["GOOGLE_NEWS_PROFILE_ID"],
+                "private-guid:related:0",
+                "related",
+                resolution,
+            )
+            self.result_module.write_profile_result(
+                env["GOOGLE_NEWS_RESULT_PATH"],
+                env["GOOGLE_NEWS_PROFILE_ID"],
+                "success",
+                1,
+                0,
+            )
+            return SimpleNamespace(returncode=0)
+
+        summary = self.dispatcher.run_profiles(
+            [profile],
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=runner,
+            sleep=lambda _: None,
+            publisher_registry=registry,
+        )
+
+        self.assertEqual(1, summary.unmapped_publisher_count)
+        self.assertEqual(1, summary.new_unmapped_publisher_count)
+        review_path = Path(self.state_dir) / "unmapped-google-news-publishers.json"
+        payload = json.loads(review_path.read_text(encoding="utf-8"))
+        self.assertEqual(1, payload["unmapped_publisher_count"])
+        serialized = review_path.read_text(encoding="utf-8")
+        self.assertNotIn("private/path", serialized)
+        self.assertNotIn("secret=value", serialized)
+        self.assertNotIn("private-guid", serialized)
 
     def test_profile_selection_supports_all_or_one_exact_profile(self):
         self.assertEqual(

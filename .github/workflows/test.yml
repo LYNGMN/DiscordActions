@@ -46,6 +46,8 @@ jobs:
           .github/scripts/google_news_manual_test.py
           .github/scripts/google_news_profile_result.py
           .github/scripts/google_news_profiles.py
+          .github/scripts/google_news_publisher_names.py
+          .github/scripts/google_news_publisher_review.py
           .github/scripts/google_news_related_links.py
           .github/scripts/google_news_request_guard.py
           .github/scripts/google_news_url_resolver.py
@@ -59,3 +61,8 @@ jobs:
           .github/scripts/youtube_messages.py
           .github/scripts/youtube_video_source.py
           .github/scripts/youtube_to_discord.py
+
+      - name: Validate JSON configuration
+        run: |
+          python -m json.tool .github/config/google_news_profiles.json > /dev/null
+          python -m json.tool .github/config/google_news_publishers.json > /dev/null

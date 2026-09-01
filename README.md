@@ -196,6 +196,33 @@ Filtered items retain a configuration fingerprint. They are skipped under the sa
 
 The main story and every related story attempt original-URL resolution. A related story that cannot be resolved uses only a validated Google News article fallback. Long related-story lists are split into follow-up messages without changing order.
 
+### Publisher display names and review artifact
+
+The main story and every related story use the shared publisher registry in
+[`.github/config/google_news_publishers.json`](.github/config/google_news_publishers.json).
+Known domains and aliases are shown with the configured publisher name; for example,
+`v.daum.net` becomes `다음` and `news.nate.com` becomes `네이트`. Matching accepts an
+exact hostname or its real subdomain, never a look-alike suffix such as
+`v.daum.net.evil.example`.
+
+New messages are normalized before they enter the delivery queue. A message that
+was queued by an older run is normalized again immediately before delivery without
+rewriting its stored SQLite content. Messages already sent to Discord are not
+edited.
+
+An unrecognized domain-like publisher remains visible as received and is recorded
+without its article title, GUID, URL path, query, or webhook data. At the end of
+each scheduled or manual Google News run, open that run in **Actions**, scroll to
+**Artifacts**, and download `google-news-unmapped-publishers`. The JSON artifact is
+retained for 90 days and contains only the label, hostname, occurrence count,
+profiles, main/related locations, and first/last observation times. The Actions
+summary shows counts only.
+
+For maintenance, give this artifact to an AI assistant or maintainer. They should
+verify each publisher name from public sources, then update the mapping JSON,
+tests, and PR together. Adding a verified mapping automatically removes that publisher
+from the current review list while preserving its historical database record.
+
 ## YouTube
 
 Set the Repository Variable `YOUTUBE_SOURCE` to `rss` or `api`. Existing setups that omit it continue to use `api`.

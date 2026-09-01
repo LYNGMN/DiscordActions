@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "publishers": [
+    {
+      "canonical_name": "다음",
+      "domains": [
+        "daum.net"
+      ],
+      "aliases": [
+        "Daum",
+        "v.daum.net",
+        "news.daum.net"
+      ]
+    },
+    {
+      "canonical_name": "네이트",
+      "domains": [
+        "nate.com"
+      ],
+      "aliases": [
+        "Nate",
+        "news.nate.com"
+      ]
+    },
+    {
+      "canonical_name": "미주중앙일보",
+      "domains": [
+        "koreadaily.com"
+      ],
+      "aliases": [
+        "Korea Daily"
+      ]
+    },
+    {
+      "canonical_name": "마이데일리",
+      "domains": [
+        "mydaily.co.kr"
+      ],
+      "aliases": [
+        "MyDaily"
+      ]
+    },
+    {
+      "canonical_name": "조선비즈",
+      "domains": [
+        "biz.chosun.com"
+      ],
+      "aliases": [
+        "Chosunbiz",
+        "Chosun Biz"
+      ]
+    },
+    {
+      "canonical_name": "엑스포츠뉴스",
+      "domains": [
+        "xportsnews.com"
+      ],
+      "aliases": [
+        "XportsNews",
+        "Xports News"
+      ]
+    }
+  ]
+}

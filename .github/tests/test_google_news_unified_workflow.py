@@ -30,6 +30,8 @@ NEW_MODULES = (
     "google_news_manual_test.py",
     "google_news_profile_result.py",
     "google_news_profiles.py",
+    "google_news_publisher_names.py",
+    "google_news_publisher_review.py",
     "google_news_related_links.py",
     "google_news_request_guard.py",
     "google_news_url_resolver.py",
@@ -140,6 +142,21 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("retention-days: 90", upload_section)
         self.assertIn("path: .google-news-state/", upload_section)
         self.assertIn("include-hidden-files: true", upload_section)
+
+    def test_scheduled_and_manual_workflows_upload_safe_publisher_review(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn(
+                    "name: google-news-unmapped-publishers", source
+                )
+                self.assertIn(
+                    "path: .google-news-state/unmapped-google-news-publishers.json",
+                    source,
+                )
+                self.assertIn("retention-days: 90", source)
+                self.assertIn("Unmapped publishers:", source)
+                self.assertIn("New unmapped publishers:", source)
 
     def test_ci_compiles_every_new_runtime_module_on_python_312(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
