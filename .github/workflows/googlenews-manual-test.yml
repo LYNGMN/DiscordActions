@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Prepare state directory
         run: |
@@ -48,7 +48,7 @@ jobs:
 
       - name: Find latest completed state artifact
         id: previous_state
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -95,7 +95,7 @@ jobs:
 
       - name: Restore previous state
         if: steps.previous_state.outputs.artifact-id != ''
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .google-news-state
@@ -105,7 +105,7 @@ jobs:
           run-id: ${{ steps.previous_state.outputs.source-run-id }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -151,7 +151,7 @@ jobs:
 
       - name: Write safe run summary
         if: always()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -175,7 +175,7 @@ jobs:
 
       - name: Upload updated state
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: google-news-state
           path: .google-news-state/
