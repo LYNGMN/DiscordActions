@@ -170,14 +170,12 @@ class YouTubeRssDocumentationTests(unittest.TestCase):
         )
         self.assertIn("[YouTube 아이콘]({})".format(YOUTUBE_ICON), korean)
 
-    def test_readmes_explain_safe_google_news_validation_and_inactivity(self):
+    def test_readmes_explain_scheduled_workflow_inactivity(self):
         english, korean = self.readmes()
 
-        self.assertIn("`validate_only=true`", english)
-        self.assertIn("does not send Discord messages", english)
+        self.assertNotIn("`validate_only=true`", english)
         self.assertIn("60 days", english)
-        self.assertIn("`validate_only=true`", korean)
-        self.assertIn("Discord 메시지를 전송하지 않습니다", korean)
+        self.assertNotIn("`validate_only=true`", korean)
         self.assertIn("60일", korean)
 
 

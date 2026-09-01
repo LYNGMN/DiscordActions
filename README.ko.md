@@ -16,9 +16,8 @@ GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으
 1. 이 저장소를 Fork하거나 Template을 사용해 새 저장소를 만듭니다.
 2. 저장소의 **Settings → Secrets and variables → Actions**로 이동합니다.
 3. 사용할 서비스에 필요한 Secret과 Variable만 등록합니다. 설정값은 README, 이슈, Actions 로그에 붙여 넣지 마세요.
-4. Google News는 먼저 **Actions → Google News to Discord → Run workflow**에서 `validate_only=true`, `manual_test=true`로 실행합니다. 설정된 피드를 확인합니다. Discord 메시지를 전송하지 않습니다. 운영 전송 상태도 변경하지 않습니다.
-5. Google News의 실제 전송을 시험할 때만 `validate_only=false`, `manual_test=true`로 한 번 더 실행합니다. YouTube의 첫 실행에서는 `manual_test=true`를 유지합니다. 실제 전송 시험은 설정된 전송 대상마다 현재 항목을 최대 1건만 보내고, 나머지 현재 항목은 초기 기준 상태로 저장합니다.
-6. 수동 시험을 마친 뒤에는 워크플로를 활성 상태로 둡니다. 별도의 활성화 Variable 없이 예약 실행이 자동으로 이어집니다.
+4. **Actions**에서 워크플로를 선택하고 **Run workflow**로 먼저 시험합니다. `manual_test=true`이면 채널별로 현재 항목을 최대 1건만 전송하고, 나머지는 초기 기준 상태로 저장합니다.
+5. 수동 시험을 마친 뒤에는 워크플로를 활성 상태로 둡니다. 별도의 활성화 Variable 없이 예약 실행이 자동으로 이어집니다.
 
 현재 관리하는 Actions 목록은 **Google News to Discord**, **YouTube to Discord Notification**, **Python Tests**입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
 

@@ -13,13 +13,13 @@ REMOVED_WORKFLOWS = (
 
 
 class GoogleNewsManualWorkflowTests(unittest.TestCase):
-    def test_unified_workflow_exposes_safe_manual_test_inputs(self):
+    def test_unified_workflow_exposes_only_existing_manual_test_input(self):
         source = UNIFIED_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("manual_test:", source)
-        self.assertIn("validate_only:", source)
-        self.assertGreaterEqual(source.count("type: boolean"), 2)
-        self.assertGreaterEqual(source.count("default: true"), 2)
+        self.assertNotIn("validate_only:", source)
+        self.assertEqual(1, source.count("type: boolean"))
+        self.assertEqual(1, source.count("default: true"))
 
     def test_ci_compiles_manual_test_module(self):
         source = (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
