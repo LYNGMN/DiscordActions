@@ -16,8 +16,11 @@ Discord Actions checks Google News and YouTube with GitHub Actions and sends new
 1. Fork this repository or create a repository from the template.
 2. Open **Settings → Secrets and variables → Actions**.
 3. Add only the Secrets and Variables required by the service you use. Never paste their values into documentation, issues, or Actions logs.
-4. Open **Actions**, choose the workflow, and use **Run workflow** first. With `manual_test=true`, each channel sends at most one current item and baselines the rest.
-5. After the manual test, leave the workflow enabled. Scheduled runs then continue automatically; no separate enable variable is required.
+4. For Google News, first use **Actions → Google News to Discord → Run workflow** with `validate_only=true` and `manual_test=true`. It checks the configured feeds, does not send Discord messages, and does not change the saved production delivery state.
+5. To test actual Google News delivery, run it once more with `validate_only=false` and `manual_test=true`. For YouTube, keep `manual_test=true` on the first run. Each delivery test sends at most one current item per configured destination and stores the remaining current items as the initial baseline.
+6. After the manual test, leave the workflow enabled. Scheduled runs then continue automatically; no separate enable variable is required.
+
+The maintained Actions list contains **Google News to Discord**, **YouTube to Discord Notification**, and **Python Tests**. The former separate Top, Topic, and Keyword Google News workflows were replaced by the unified profile workflow. Historical runs remain as operational evidence even after an obsolete workflow file is removed.
 
 ## Shared date and keyword filters
 
@@ -359,6 +362,7 @@ Scheduled GitHub Actions runs can start late. Weekly and monthly examples are ca
 - Check the Actions result and its uploaded SQLite state artifact first.
 - Never publish webhook URLs, API keys, or tokens in logs or support posts.
 - A successful manual test does not disable scheduling. If no scheduled run appears, confirm that the workflow is enabled and that the five-field `schedule` exists on the default branch.
+- GitHub can automatically disable scheduled workflows in a public repository after 60 days without repository activity. Re-enable the affected workflow from **Actions** when GitHub shows that notice. This project does not use an automated keepalive workaround for that platform policy. See [GitHub's workflow enable/disable documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 - Distinguish GitHub scheduling delays and external API limits from code failures. Saved incomplete deliveries resume in sequence on the next run.
 
 ## Contributing and license
