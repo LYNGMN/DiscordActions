@@ -90,10 +90,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.8'
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/requirements-youtube.txt
 
       - name: Install Dependencies
-        run: pip install --upgrade -r .github/requirements.txt google-api-python-client isodate
+        run: |
+          python -m pip install --require-hashes -r .github/requirements-youtube.txt
+          python -m pip check
 
       - name: Notify Discord of New YouTube Videos
         env:
