@@ -1,0 +1,3 @@
+-r requirements.in
+google-api-python-client==2.199.0
+isodate==0.7.2

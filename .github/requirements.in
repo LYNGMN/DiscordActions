@@ -1,0 +1,5 @@
+requests==2.34.2
+python-dateutil==2.9.0.post0
+beautifulsoup4==4.15.0
+pytz==2026.3.post1
+Babel==2.18.0

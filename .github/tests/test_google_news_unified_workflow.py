@@ -136,9 +136,9 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("path: .google-news-state/", upload_section)
         self.assertIn("include-hidden-files: true", upload_section)
 
-    def test_ci_compiles_every_new_runtime_module_on_python_38(self):
+    def test_ci_compiles_every_new_runtime_module_on_python_312(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("python-version: '3.8'", source)
+        self.assertIn("python-version: '3.12'", source)
         for module_name in NEW_MODULES:
             self.assertIn(".github/scripts/{}".format(module_name), source)
 

@@ -54,6 +54,18 @@ Every Pull Request must contain:
 
 Do not add a mandatory `Not included` list. If a scope boundary is essential to prevent a concrete misunderstanding, explain it briefly in Operational notes. Track separately planned work in its own Issue.
 
+### Python dependency maintenance
+
+Runtime workflows use Python 3.12. Common direct dependencies belong in `.github/requirements.in`; YouTube-only direct dependencies belong in `.github/requirements-youtube.in`. Generated `.txt` files contain the complete dependency graph and SHA-256 hashes. Do not edit a generated lock file by hand.
+
+Use Python 3.12 with `pip-tools==7.6.1`, then run:
+
+```bash
+PYTHON_BIN=python3.12 .github/scripts/compile_requirements.sh
+```
+
+After regeneration, install `.github/requirements-youtube.txt` in a clean Python 3.12 environment with `--require-hashes`, run `python -m pip check`, and verify that running the script again produces no Git diff.
+
 # 한국어
 
 ## 기여 절차
@@ -109,3 +121,15 @@ Pull Request는 실제로 구현한 변경을 기록합니다. 연결된 Issue, 
 - 검토자나 운영자가 알아야 할 내용이 있을 때만 운영 참고사항
 
 `포함하지 않은 내용`을 필수 목록으로 만들지 않습니다. 구체적인 오해를 막기 위해 범위를 설명해야 할 때만 운영 참고사항에 짧게 작성합니다. 별도로 계획한 작업은 별도 Issue에서 관리합니다.
+
+### Python 종속성 관리
+
+실행 워크플로는 Python 3.12를 사용합니다. 공통 직접 종속성은 `.github/requirements.in`에, YouTube 전용 직접 종속성은 `.github/requirements-youtube.in`에 작성합니다. 생성된 `.txt` 파일에는 전체 하위 종속성과 SHA-256 해시가 들어 있습니다. 생성된 잠금 파일을 직접 수정하지 않습니다.
+
+Python 3.12 환경에 `pip-tools==7.6.1`을 설치한 뒤 다음 명령을 실행합니다.
+
+```bash
+PYTHON_BIN=python3.12 .github/scripts/compile_requirements.sh
+```
+
+재생성 후에는 깨끗한 Python 3.12 환경에 `.github/requirements-youtube.txt`를 `--require-hashes` 옵션으로 설치합니다. 이어서 `python -m pip check`를 실행하고, 재생성 스크립트를 한 번 더 실행해 Git diff가 생기지 않는지 확인합니다.

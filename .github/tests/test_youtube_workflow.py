@@ -385,7 +385,10 @@ class YouTubeWorkflowTests(unittest.TestCase):
     def test_workflow_maps_new_source_filter_language_and_timezone_settings(self):
         source = self.source()
 
-        self.assertIn("pip install --upgrade -r .github/requirements.txt", source)
+        self.assertIn(
+            "python -m pip install --require-hashes -r .github/requirements-youtube.txt",
+            source,
+        )
         self.assertIn("YOUTUBE_SOURCE:", source)
         self.assertIn("YOUTUBE_PLAYLIST_LAYOUT:", source)
         self.assertIn("FEED_DATE_FILTER:", source)
