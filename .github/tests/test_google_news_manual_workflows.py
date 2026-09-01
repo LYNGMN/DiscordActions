@@ -97,6 +97,20 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
         self.assertIn("실제 Discord", korean)
         self.assertIn("기본 메시지 1개와 상세 메시지 1개", korean)
 
+    def test_guides_explain_unmapped_publisher_review_artifact(self):
+        english = (ROOT / "README.md").read_text(encoding="utf-8")
+        korean = (ROOT / "README.ko.md").read_text(encoding="utf-8")
+
+        for source in (english, korean):
+            self.assertIn("google-news-unmapped-publishers", source)
+            self.assertIn("google_news_publishers.json", source)
+            self.assertIn("90", source)
+        self.assertIn("public sources", english)
+        self.assertIn("mapping JSON", english)
+        self.assertIn("tests, and PR together", english)
+        self.assertIn("공개 자료", korean)
+        self.assertIn("매핑 JSON·테스트·PR", korean)
+
 
 if __name__ == "__main__":
     unittest.main()

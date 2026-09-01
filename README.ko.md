@@ -196,6 +196,34 @@ Google News 검색에는 복합 표현식이 필요하지만 Discord 메시지�
 
 메인 기사와 모든 연관뉴스는 먼저 원문 URL 변환을 시도합니다. 원문 URL을 확인하지 못한 연관뉴스는 검증된 Google News 기사 링크를 대신 사용합니다. 연관뉴스 목록이 Discord의 2,000자 한도를 넘으면 순서를 유지한 채 후속 메시지로 나눠 전송합니다.
 
+### 언론사 표시 이름과 검토용 Artifact
+
+메인 기사와 모든 연관뉴스의 언론사명은
+[`.github/config/google_news_publishers.json`](.github/config/google_news_publishers.json)
+공통 매핑을 사용합니다. 등록된 도메인과 별칭은 설정된 이름으로
+표시됩니다. 예를 들어 `v.daum.net`은 `다음`, `news.nate.com`은
+`네이트`로 표시됩니다. 정확히 같은 호스트명과 실제 하위 도메인만
+인정하므로 `v.daum.net.evil.example` 같은 비슷한 주소는 `다음`으로
+바꾸지 않습니다.
+
+새 메시지는 전송 대기열에 저장하기 전에 표준화합니다. 이전 실행에서
+이미 대기열에 들어간 미전송 메시지도 Discord로 보내기 직전에 다시
+표준화하지만, SQLite에 저장된 원본 내용은 바꾸지 않습니다. 이미 Discord에
+전송한 메시지는 수정하지 않습니다.
+
+등록되지 않은 도메인 형태의 언론사명은 받은 표기를 그대로 보여 주며,
+기사 제목·GUID·URL 경로·Query·웹훅 정보 없이 기록합니다. 예약 또는 수동
+Google News 실행이 끝나면 **Actions**에서 해당 실행을 열고, 하단의
+**Artifacts**에서 `google-news-unmapped-publishers`를 내려받을 수 있습니다.
+이 JSON Artifact는 90일간 보존되며 label, hostname, 발견 횟수, 프로필,
+메인/연관 위치, 처음·최근 발견 시각만 담습니다. Actions 요약에는 도메인
+목록 대신 개수만 표시합니다.
+
+유지보수할 때는 이 Artifact를 AI 도우미나 관리자에게 제공합니다. 각 언론사명을
+공개 자료로 확인한 뒤 매핑 JSON·테스트·PR을 함께 수정해야 합니다. 검증된
+매핑을 추가하면 과거 감사 기록은 보존하면서 현재 검토 목록에서는 해당
+언론사가 자동으로 빠집니다.
+
 ## YouTube 설정
 
 Repository Variable `YOUTUBE_SOURCE`를 `rss` 또는 `api`로 설정합니다. 기존 설정에 `YOUTUBE_SOURCE`가 없으면 기존 동작과 같이 `api`를 사용합니다.

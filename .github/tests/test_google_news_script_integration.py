@@ -113,6 +113,17 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                         "INSERT INTO google_news_url_cache VALUES (?, ?)",
                         ("cached-id", "https://publisher.example/cached"),
                     )
+                unknown_publisher = module.PUBLISHER_REGISTRY.resolve(
+                    "news.example.com",
+                    "https://news.example.com/story",
+                )
+                module.record_unmapped_publisher(
+                    module.DB_PATH,
+                    "reset_test",
+                    "old-guid:main",
+                    "main",
+                    unknown_publisher,
+                )
 
                 module.init_db(reset=True)
 
@@ -128,7 +139,12 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                             "google_news_delivery_messages",
                         ),
                     ).fetchall()
+                    publisher_count = connection.execute(
+                        "SELECT COUNT(*) FROM "
+                        "google_news_unmapped_publisher_occurrences"
+                    ).fetchone()[0]
                 self.assertEqual(1, cache_count)
+                self.assertEqual(1, publisher_count)
                 self.assertEqual([], state_tables)
                 self.assertTrue(
                     module.reserve_delivery_with_messages(
@@ -583,6 +599,134 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     "https://publisher.example/resolved-story",
                     items[0]["link"],
                 )
+
+    def test_all_scripts_normalize_related_publisher_names_and_collect_unknown_domains(self):
+        description = (
+            '<ul><li><a href="https://news.google.com/rss/articles/known">Known</a>'
+            '<font color="#6f6f6f">v.daum.net</font></li>'
+            '<li><a href="https://news.google.com/rss/articles/unknown">Unknown</a>'
+            '<font color="#6f6f6f">news.example.com</font></li></ul>'
+        )
+        urls = (
+            "https://v.daum.net/v/202609020001",
+            "https://news.example.com/story?private=query",
+        )
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as directory:
+                module = load_script(script_path)
+                module.DB_PATH = str(Path(directory) / "profile.db")
+                module.PROFILE_ID = "test_profile"
+                resolver = SequenceResolver(urls)
+
+                items = module.extract_news_items(description, resolver, "article-guid")
+
+                self.assertEqual(["다음", "news.example.com"], [item["press"] for item in items])
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    rows = connection.execute(
+                        "SELECT display_label, hostname, location FROM "
+                        "google_news_unmapped_publisher_occurrences"
+                    ).fetchall()
+                self.assertEqual(
+                    [("news.example.com", "news.example.com", "related")],
+                    rows,
+                )
+
+    def test_unmapped_publisher_record_failure_stops_item_preparation(self):
+        description = (
+            '<ul><li><a href="https://news.google.com/rss/articles/unknown">'
+            'Unknown</a><font color="#6f6f6f">news.example.com</font>'
+            '</li></ul>'
+        )
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as directory:
+                module = load_script(script_path)
+                module.DB_PATH = str(Path(directory) / "profile.db")
+                module.PROFILE_ID = "test_profile"
+                resolver = SequenceResolver(
+                    ["https://news.example.com/story"]
+                )
+
+                with mock.patch.object(
+                    module,
+                    "record_unmapped_publisher",
+                    side_effect=sqlite3.OperationalError("write failed"),
+                ), self.assertRaises(sqlite3.OperationalError):
+                    module.extract_news_items(
+                        description, resolver, "article-guid"
+                    )
+
+    def test_all_scripts_normalize_main_publisher_title(self):
+        item = {
+            "title": "테스트 기사 - news.nate.com",
+            "link": "https://news.nate.com/view/20260902n00001",
+            "description": "",
+            "pub_date": "Tue, 01 Sep 2026 08:41:00 GMT",
+        }
+        keyword = load_script(SCRIPT_PATHS[0])
+        top = load_script(SCRIPT_PATHS[1])
+        topic = load_script(SCRIPT_PATHS[2])
+
+        messages = (
+            keyword.format_discord_message(item, "아이유", "KR"),
+            top.format_discord_message(item, None, "Asia/Seoul", "%Y-%m-%d %H:%M:%S"),
+            topic.format_discord_message(
+                item,
+                "Google 뉴스",
+                "기술 뉴스",
+                "과학/기술",
+                "🇰🇷",
+                "KR",
+            ),
+        )
+
+        for message in messages:
+            self.assertIn("**테스트 기사 - 네이트**", message)
+            self.assertNotIn("**테스트 기사 - news.nate.com**", message)
+
+    def test_all_scripts_normalize_pending_payload_without_rewriting_stored_content(self):
+        stored_message = (
+            "**메인 기사 - mydaily.co.kr**\n"
+            "https://www.mydaily.co.kr/page/view/1\n"
+            "> - [연관 기사](<https://v.daum.net/v/1>) | v.daum.net"
+        )
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as directory:
+                module = load_script(script_path)
+                module.VALIDATE_ONLY = False
+                module.DB_PATH = str(Path(directory) / "profile.db")
+                module.PROFILE_ID = "test_profile"
+                module.DISCORD_WEBHOOK_KEYWORD = "redacted"
+                module.DISCORD_WEBHOOK_TOP = "redacted"
+                module.DISCORD_WEBHOOK_TOPIC = "redacted"
+                module.init_db(reset=False)
+                self.assertTrue(
+                    module.reserve_delivery_with_messages(
+                        module.DB_PATH,
+                        "pending-guid",
+                        "메인 기사 - mydaily.co.kr",
+                        "https://www.mydaily.co.kr/page/view/1",
+                        [stored_message],
+                    )
+                )
+                with mock.patch.object(
+                    module,
+                    "send_webhook_message",
+                    return_value="123456789012345678",
+                ) as send:
+                    module.deliver_reserved_item("pending-guid")
+
+                payload = send.call_args.args[1]
+                self.assertIn("**메인 기사 - 마이데일리**", payload["content"])
+                self.assertIn("| 다음", payload["content"])
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    stored_content = connection.execute(
+                        "SELECT content FROM google_news_delivery_messages "
+                        "WHERE guid = ? AND sequence = 0",
+                        ("pending-guid",),
+                    ).fetchone()[0]
+                self.assertEqual(stored_message, stored_content)
 
     def test_all_scripts_keep_every_related_link_with_safe_fallback(self):
         description = "<ul>{}</ul>".format(

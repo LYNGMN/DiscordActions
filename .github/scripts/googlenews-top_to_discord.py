@@ -38,9 +38,21 @@ from feed_localization import (
     resolve_display_language,
 )
 from google_news_profile_result import write_profile_result
+from google_news_publisher_names import (
+    load_default_registry,
+    normalize_article_title,
+    normalize_message_publisher_names,
+    publisher_label_from_title,
+)
+from google_news_publisher_review import (
+    backfill_unmapped_publishers,
+    record_unmapped_publisher,
+)
 from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
+
+PUBLISHER_REGISTRY = load_default_registry()
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -335,9 +347,11 @@ def replace_brackets(text):
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
 
-def parse_html_description(html_desc, resolver):
+def parse_html_description(html_desc, resolver, article_guid=""):
     """HTML 설명을 파싱하여 뉴스 항목을 추출합니다."""
-    return render_related_items(extract_news_items(html_desc, resolver))
+    return render_related_items(
+        extract_news_items(html_desc, resolver, article_guid)
+    )
 
 
 def render_related_items(news_items):
@@ -363,10 +377,13 @@ def format_discord_message(news_item, discord_source, timezone, date_format):
         display_language,
     )
 
+    normalized_title = normalize_article_title(
+        news_item['title'], news_item['link'], PUBLISHER_REGISTRY
+    )
     if discord_source:
-        message = f"{discord_source}\n**{news_item['title']}**\n{news_item['link']}"
+        message = f"{discord_source}\n**{normalized_title}**\n{news_item['link']}"
     else:
-        message = f"**{news_item['title']}**\n{news_item['link']}"
+        message = f"**{normalized_title}**\n{news_item['link']}"
     
     if news_item['description']:
         message += f"\n>>> {news_item['description']}\n\n"
@@ -381,7 +398,11 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     if VALIDATE_ONLY:
         logging.info("검증 모드: Discord 전송을 생략합니다.")
         return "0"
-    payload = {"content": message}
+    payload = {
+        "content": normalize_message_publisher_names(
+            message, PUBLISHER_REGISTRY
+        )
+    }
     
     if avatar_url and avatar_url.strip():
         payload["avatar_url"] = avatar_url
@@ -400,11 +421,11 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
         failure.attempt_count = getattr(error, "attempt_count", 1)
         raise failure from None
 
-def extract_news_items(description, resolver):
+def extract_news_items(description, resolver, article_guid=""):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
     soup = BeautifulSoup(description, 'html.parser')
     news_items = []
-    for li in soup.find_all('li'):
+    for index, li in enumerate(soup.find_all('li')):
         a_tag = li.find('a')
         if a_tag:
             title = replace_brackets(a_tag.text)
@@ -413,6 +434,16 @@ def extract_news_items(description, resolver):
             if link is None:
                 continue
             press = li.find('font', color="#6f6f6f").text if li.find('font', color="#6f6f6f") else ""
+            resolution = PUBLISHER_REGISTRY.resolve(press, link)
+            if article_guid:
+                record_unmapped_publisher(
+                    DB_PATH,
+                    PROFILE_ID or "top",
+                    "{}:related:{}".format(article_guid, index),
+                    "related",
+                    resolution,
+                )
+            press = resolution.display_name
             news_items.append({"title": title, "link": link, "press": press})
     return news_items
 
@@ -514,10 +545,22 @@ def process_news_item(item, resolver):
         title = replace_brackets(item.find('title').text)
         google_link = item.find('link').text
         link = resolver.resolve(google_link).url
+        publisher_label = publisher_label_from_title(title)
+        if publisher_label:
+            record_unmapped_publisher(
+                DB_PATH,
+                PROFILE_ID or "top",
+                "{}:main".format(guid),
+                "main",
+                PUBLISHER_REGISTRY.resolve(publisher_label, link),
+            )
+        title = normalize_article_title(title, link, PUBLISHER_REGISTRY)
         pub_date = item.find('pubDate').text
         description_html = item.find('description').text
         
-        related_news = extract_news_items(description_html, resolver)
+        related_news = extract_news_items(
+            description_html, resolver, guid
+        )
         description = render_related_items(related_news)
         related_news_json = json.dumps(related_news, ensure_ascii=False)
 
@@ -616,6 +659,9 @@ def main():
         filter_fingerprint = compiled_filter.fingerprint
 
         init_db(reset=INITIALIZE_TOP)
+        backfill_unmapped_publishers(
+            DB_PATH, PROFILE_ID or "top", PUBLISHER_REGISTRY
+        )
 
         resumed_count = resume_pending_deliveries()
         processed_count += resumed_count
