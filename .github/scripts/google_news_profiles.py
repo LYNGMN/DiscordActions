@@ -34,6 +34,7 @@ HANDLER_ENVIRONMENT = {
         "allowed": {
             "KEYWORD_MODE",
             "KEYWORD",
+            "KEYWORD_DISPLAY_NAME",
             "HL",
             "GL",
             "CEID",
@@ -123,6 +124,12 @@ def _validate_environment(handler: str, value: object, index: int) -> Mapping[st
                 index, ", ".join(sorted(unknown))
             )
         )
+    if (
+        handler == "keyword"
+        and "KEYWORD_DISPLAY_NAME" in value
+        and not value["KEYWORD_DISPLAY_NAME"].strip()
+    ):
+        raise ValueError("profile {} has invalid KEYWORD_DISPLAY_NAME".format(index))
     if handler == "keyword" and value.get("KEYWORD_MATCH_MODE", "title") not in {
         "title",
         "title_or_description",

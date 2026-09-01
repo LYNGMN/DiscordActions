@@ -93,6 +93,39 @@ class GoogleNewsFeedFilterTests(unittest.TestCase):
             ).matched
         )
 
+    def test_title_only_negative_filter_ignores_related_headlines(self):
+        compiled = self.module.compile_google_news_feed_filter(
+            common_keyword="NOT 운세",
+            common_scope="title",
+            country_code="KR",
+            display_language="ko",
+        )
+        related_fortune = (
+            '<li><a href="https://example.com/fortune">오늘의 운세</a></li>'
+        )
+
+        self.assertFalse(
+            compiled.matches(
+                "Tue, 01 Sep 2026 00:00:00 GMT",
+                "오늘의 운세 - 언론사",
+                "",
+            ).matched
+        )
+        self.assertTrue(
+            compiled.matches(
+                "Tue, 01 Sep 2026 00:00:00 GMT",
+                "연예계 소식 - 언론사",
+                "",
+            ).matched
+        )
+        self.assertTrue(
+            compiled.matches(
+                "Tue, 01 Sep 2026 00:00:00 GMT",
+                "연예계 소식 - 언론사",
+                related_fortune,
+            ).matched
+        )
+
     def test_common_date_keyword_and_legacy_filter_all_must_match(self):
         compiled = self.module.compile_google_news_feed_filter(
             common_date="rolling:7d",

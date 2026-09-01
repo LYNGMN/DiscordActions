@@ -79,6 +79,50 @@ DISCORD_WEBHOOK_GN_KEYWORD_NOCODE
 DISCORD_WEBHOOK_GN_KEYWORD_IU
 ```
 
+### 프로필 파일 파라미터 안내
+
+모든 프로필에는 다음 7개 최상위 항목이 모두 필요합니다. 새 프로필을 만들 때는 같은 `handler` 종류의 기존 프로필을 복사한 뒤 필요한 값만 바꾸는 방법이 가장 안전합니다. 실제 Discord 웹훅 URL은 `webhook_env`에 적은 이름의 Actions Secret에 저장하고, 이 JSON 파일에는 절대 넣지 마세요.
+
+| 최상위 항목 | 필수 여부 | 용도와 규칙 |
+| --- | --- | --- |
+| `id` | 필수 | 영문 소문자로 시작하고 영문 소문자·숫자·밑줄만 사용하는 고유 내부 ID |
+| `handler` | 필수 | `top`, `topic`, `keyword` 중 사용할 처리 방식 선택 |
+| `webhook_env` | 필수 | `DISCORD_WEBHOOK_GN_*` 형식의 고유한 Actions Secret 이름 |
+| `expected_webhook_name` | 필수 | 워크플로의 설정 확인에 사용하는 고유한 Discord 웹훅 이름 |
+| `state_db` | 필수 | 영문 소문자·숫자·밑줄을 사용하고 `.db`로 끝나는 고유한 SQLite 파일명 |
+| `visible_username` | 필수 | Discord 봇 표시 이름이며 항상 `Google News`로 유지 |
+| `environment` | 필수 | 프로필 종류별 설정 묶음. `"true"`, `"false"`를 포함한 모든 값은 JSON 문자열로 입력 |
+
+`environment`에는 아래에 적힌 항목만 넣을 수 있습니다. 알 수 없는 항목, 인증정보로 보이는 이름이나 값, HTTPS가 아닌 URL, 지원하지 않는 필터 값, 빈 `KEYWORD_DISPLAY_NAME`이 있으면 전송 전에 설정 오류로 종료합니다.
+
+| `handler` | `environment` 필수 항목 | 조건부 필수 항목 | 해당 처리 방식의 선택 항목 |
+| --- | --- | --- | --- |
+| `top` | `TOP_MODE`, `TOP_COUNTRY` | `TOP_MODE="false"`이면 `RSS_URL_TOP` | `TOP_MODE="true"`일 때는 `RSS_URL_TOP`을 넣지 않음 |
+| `topic` | `TOPIC_MODE`, `TOPIC_KEYWORD`, `TOPIC_PARAMS` | `TOPIC_MODE="false"`이면 `RSS_URL_TOPIC` | `RSS_URL_TOPIC`은 사용자 지정 피드 방식에서만 사용 |
+| `keyword` | `KEYWORD_MODE`, `KEYWORD`, `HL`, `GL`, `CEID` | `KEYWORD_MODE="false"`이면 `RSS_URL_KEYWORD` | `KEYWORD_DISPLAY_NAME`, `WHEN`, `AFTER_DATE`, `BEFORE_DATE`, `RSS_URL_KEYWORD`, `KEYWORD_MATCH_MODE`, `KEYWORD_MATCH_ALIASES` |
+
+처리 방식별 주의사항은 다음과 같습니다.
+
+- `true` 같은 JSON 불리언이 아니라 `"true"`처럼 문자열로 입력합니다.
+- `TOP_MODE="true"`일 때 `TOP_COUNTRY`가 기본 제공 주요 뉴스의 국가·언어판을 선택합니다.
+- `TOPIC_MODE="true"`일 때 `TOPIC_KEYWORD`가 기본 제공 토픽을 선택하고 `TOPIC_PARAMS`가 `hl`, `gl`, `ceid` 쿼리 파라미터를 지정합니다.
+- `KEYWORD`는 Google News 검색식이면서 키워드 판정식입니다. `HL`, `GL`, `CEID`는 언어와 국가판을 정합니다.
+- `WHEN`은 `AFTER_DATE`, `BEFORE_DATE`와 함께 사용할 수 없습니다. 날짜는 `YYYY-MM-DD` 형식으로 입력합니다.
+- 사용자 지정 `RSS_URL_*`에는 HTTPS Google News RSS URL을 입력합니다. 사용자 지정 URL 방식을 선택해도 프로필 스키마에 정해진 해당 처리 방식의 필수 항목은 생략할 수 없습니다.
+
+세 가지 `handler`에서 공통으로 사용할 수 있는 선택 항목은 다음과 같습니다.
+
+| 선택 항목 | 기본값 | 용도 |
+| --- | --- | --- |
+| `DISPLAY_LANGUAGE` | 서비스·국가에서 결정한 언어, 결정할 수 없으면 `en` | Discord 고정 문구와 날짜 현지화 |
+| `FEED_COUNTRY` | 서비스 국가 | 시간대와 지역 설정을 정할 때 사용할 국가 |
+| `FEED_DATE_FILTER` | 비움 | 시작일과 종료일을 포함하는 공통 게시일 필터 |
+| `FEED_KEYWORD_FILTER` | 비움 | 공통 불리언 키워드 필터 |
+| `FEED_KEYWORD_SCOPE` | `title` | `title` 또는 `title_or_description` 선택 |
+| `FEED_TIMEZONE` | 서비스·국가 시간대, 결정할 수 없으면 `UTC` | `Asia/Seoul`과 같은 IANA 시간대 직접 지정 |
+
+프로필 안의 값은 같은 이름의 Repository Variable보다 먼저 적용됩니다. `KEYWORD_DISPLAY_NAME`은 표시만 바꾸는 선택 항목이며, 생략하면 Discord 제목에 `KEYWORD`가 표시됩니다. 파일 전체에서 `id`, `webhook_env`, `expected_webhook_name`, `state_db`는 각각 중복되지 않아야 합니다.
+
 워크플로가 활성 상태이면 Google News 예약 실행이 자동으로 이어집니다. 전송 순서를 바꾸려면 선택 Repository Variable인 `GOOGLE_NEWS_DELIVERY_ORDER`를 설정하세요.
 
 | 값 | 동작 |
@@ -89,6 +133,20 @@ DISCORD_WEBHOOK_GN_KEYWORD_IU
 ### 키워드 뉴스 판정 방식
 
 키워드 프로필의 기본 `KEYWORD_MATCH_MODE`는 `title`입니다. Google News가 연관 기사 때문에 피드에 포함한 항목이라도 메인 제목에 설정한 판정어가 없으면 기본적으로 전송하지 않습니다.
+
+Google News 검색에는 복합 표현식이 필요하지만 Discord 메시지에는 짧은 이름을 표시하고 싶다면 `KEYWORD_DISPLAY_NAME`을 사용하세요.
+
+```json
+{
+  "KEYWORD": "노코드 OR \"no-code\" OR nocode",
+  "KEYWORD_DISPLAY_NAME": "노코드",
+  "KEYWORD_MATCH_MODE": "title"
+}
+```
+
+`KEYWORD`는 검색과 키워드 판정에 계속 사용합니다. `KEYWORD_DISPLAY_NAME`은 Discord 메시지의 첫 줄에 표시할 이름만 바꿉니다. 위 한국 프로필의 메시지 첫 줄은 `` `Google 뉴스 - 노코드 - 한국 🇰🇷` ``로 표시됩니다. `KEYWORD_DISPLAY_NAME`을 생략하면 기존 설정과 호환되도록 `KEYWORD` 값을 그대로 표시합니다.
+
+별칭은 Discord에 표시할 이름을 바꾸지 않고 키워드 판정 범위만 늘릴 때 사용합니다.
 
 ```json
 {
@@ -102,6 +160,17 @@ DISCORD_WEBHOOK_GN_KEYWORD_IU
 - `OR`/`|`, `AND`/`&`/인접한 검색어, `NOT`/`!`/`-`, 괄호, `"완전 일치 구문"`을 사용할 수 있습니다.
 - `when:`, `after:`, `before:`같은 날짜 연산자는 키워드 판정식에서 제외합니다.
 - 판정식이 잘못되면 RSS를 가져오거나 Discord 메시지를 보내기 전에 설정 오류로 종료합니다.
+
+토픽 RSS URL을 바꾸지 않고도 공통 필터로 특정 제목을 제외할 수 있습니다. 현재 한국 엔터테인먼트 프로필은 다음과 같이 설정됩니다.
+
+```json
+{
+  "FEED_KEYWORD_FILTER": "NOT 운세",
+  "FEED_KEYWORD_SCOPE": "title"
+}
+```
+
+이 설정은 메인 RSS 제목에 `운세`가 들어 있을 때만 해당 항목을 제외합니다. 연관뉴스 제목에만 `운세`가 있는 경우에는 `title` 범위에 포함되지 않으므로 메인 엔터테인먼트 기사를 제외하지 않습니다.
 
 필터에서 제외한 항목은 현재 필터 설정을 구분하는 설정 식별값과 함께 저장합니다. 같은 설정에서는 다시 판정하지 않지만, 판정 모드나 별칭을 바꾸면 RSS에 아직 남아 있는 항목을 다시 판정합니다. `ADVANCED_FILTER_KEYWORD`는 이 판정을 통과한 항목을 한 번 더 좁히는 추가 조건으로 계속 적용합니다.
 

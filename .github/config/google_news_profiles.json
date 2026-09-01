@@ -99,6 +99,8 @@
       "TOPIC_KEYWORD": "entertainment",
       "TOPIC_PARAMS": "?hl=ko&gl=KR&ceid=KR%3Ako",
       "FEED_COUNTRY": "KR",
+      "FEED_KEYWORD_FILTER": "NOT 운세",
+      "FEED_KEYWORD_SCOPE": "title",
       "DISPLAY_LANGUAGE": "ko"
     }
   },
@@ -142,6 +144,7 @@
     "environment": {
       "KEYWORD_MODE": "true",
       "KEYWORD": "노코드 OR \"no-code\" OR nocode",
+      "KEYWORD_DISPLAY_NAME": "노코드",
       "HL": "ko",
       "GL": "KR",
       "CEID": "KR:ko",
