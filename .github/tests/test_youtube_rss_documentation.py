@@ -147,6 +147,96 @@ class YouTubeRssDocumentationTests(unittest.TestCase):
         self.assertIn("[YouTube 아이콘]({})".format(YOUTUBE_ICON), korean)
 
 
+class GoogleNewsProfileDocumentationTests(unittest.TestCase):
+    def readmes(self):
+        return (
+            README_EN.read_text(encoding="utf-8"),
+            README_KO.read_text(encoding="utf-8"),
+        )
+
+    def test_keyword_search_expression_and_discord_display_name_are_distinct(self):
+        english, korean = self.readmes()
+
+        for source in (english, korean):
+            self.assertIn('"KEYWORD": "노코드 OR \\"no-code\\" OR nocode"', source)
+            self.assertIn('"KEYWORD_DISPLAY_NAME": "노코드"', source)
+            self.assertIn('`Google 뉴스 - 노코드 - 한국 🇰🇷`', source)
+
+        self.assertIn(
+            "`KEYWORD` remains the search and matching expression",
+            english,
+        )
+        self.assertIn(
+            "`KEYWORD_DISPLAY_NAME` changes only the Discord header",
+            english,
+        )
+        self.assertIn(
+            "`KEYWORD`는 검색과 키워드 판정에 계속 사용합니다",
+            korean,
+        )
+        self.assertIn(
+            "`KEYWORD_DISPLAY_NAME`은 Discord 메시지의 첫 줄에 표시할 이름만 바꿉니다",
+            korean,
+        )
+
+    def test_entertainment_fortune_filter_documents_title_only_scope(self):
+        english, korean = self.readmes()
+
+        for source in (english, korean):
+            self.assertIn('"FEED_KEYWORD_FILTER": "NOT 운세"', source)
+            self.assertIn('"FEED_KEYWORD_SCOPE": "title"', source)
+
+        self.assertIn(
+            "excludes an item only when its main RSS title contains `운세`",
+            english,
+        )
+        self.assertIn(
+            "메인 RSS 제목에 `운세`가 들어 있을 때만 해당 항목을 제외합니다",
+            korean,
+        )
+
+    def test_profile_registry_documents_required_and_optional_parameters(self):
+        english, korean = self.readmes()
+
+        self.assertIn(
+            "Every profile requires all seven top-level fields",
+            english,
+        )
+        self.assertIn(
+            "모든 프로필에는 다음 7개 최상위 항목이 모두 필요합니다",
+            korean,
+        )
+        self.assertIn("### Profile file parameter reference", english)
+        self.assertIn("### 프로필 파일 파라미터 안내", korean)
+
+        for source in (english, korean):
+            for field in (
+                "`id`",
+                "`handler`",
+                "`webhook_env`",
+                "`expected_webhook_name`",
+                "`state_db`",
+                "`visible_username`",
+                "`environment`",
+            ):
+                self.assertIn(field, source)
+            for handler in ("`top`", "`topic`", "`keyword`"):
+                self.assertIn(handler, source)
+            self.assertIn("`KEYWORD_DISPLAY_NAME`", source)
+            self.assertIn("`FEED_DATE_FILTER`", source)
+            self.assertIn("`FEED_KEYWORD_FILTER`", source)
+            self.assertIn("`FEED_TIMEZONE`", source)
+
+        self.assertIn(
+            "The `environment` object accepts only the keys listed below",
+            english,
+        )
+        self.assertIn(
+            "`environment`에는 아래에 적힌 항목만 넣을 수 있습니다",
+            korean,
+        )
+
+
 class KoreanReadmeQualityTests(unittest.TestCase):
     def read_korean_readme(self):
         return README_KO.read_text(encoding="utf-8")

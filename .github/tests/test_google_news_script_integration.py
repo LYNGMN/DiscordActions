@@ -337,6 +337,60 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
         keyword_source = SCRIPT_PATHS[0].read_text(encoding="utf-8")
         self.assertEqual(1, keyword_source.count("def get_rss_url():"))
 
+    def test_keyword_handler_uses_display_name_only_in_discord_header(self):
+        published_at = format_datetime(datetime.now(timezone.utc), usegmt=True)
+        rss = (
+            "<rss><channel><item>"
+            "<guid>nocode-runtime-guid</guid>"
+            "<title>노코드 자동화 소식</title>"
+            "<link>https://news.google.com/rss/articles/nocode-runtime</link>"
+            "<pubDate>{}</pubDate>"
+            "<description>&lt;ul&gt;&lt;/ul&gt;</description>"
+            "</item></channel></rss>"
+        ).format(published_at).encode("utf-8")
+        search_expression = '노코드 OR "no-code" OR nocode'
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            module = load_script(SCRIPT_PATHS[0])
+            module.DB_PATH = str(Path(temp_dir) / "articles.db")
+            module.RESOLVER_DB_PATH = str(Path(temp_dir) / "resolver.db")
+            module.RESULT_PATH = str(Path(temp_dir) / "result.json")
+            module.PROFILE_ID = "keyword_nocode_display"
+            module.MANUAL_TEST_MODE = True
+            module.INITIALIZE_KEYWORD = False
+            module.DISCORD_WEBHOOK_KEYWORD = "redacted"
+            module.DISCORD_USERNAME_KEYWORD = "Google News"
+            module.KEYWORD_MODE = True
+            module.KEYWORD = search_expression
+            module.KEYWORD_DISPLAY_NAME = "노코드"
+            module.MAX_NETWORK_RESOLUTIONS = 1
+            module.GoogleNewsRequestGuard = OpenCircuitGuard
+            module.GoogleNewsUrlResolver = RuntimeResolver
+
+            with mock.patch.object(
+                module,
+                "get_rss_url",
+                return_value=("redacted-rss", search_expression, "KR"),
+            ), mock.patch.object(
+                module, "fetch_rss_feed", return_value=rss
+            ), mock.patch.object(
+                module,
+                "send_discord_message",
+                return_value="123456789012345678",
+            ) as send:
+                exit_code = module.main()
+
+        self.assertEqual(0, exit_code)
+        sent_content = send.call_args.args[1]
+        self.assertIn("`Google 뉴스 - 노코드 - 한국 🇰🇷`", sent_content)
+        self.assertNotIn(search_expression, sent_content)
+
+    def test_keyword_display_name_falls_back_to_search_keyword(self):
+        module = load_script(SCRIPT_PATHS[0])
+        module.KEYWORD_DISPLAY_NAME = ""
+
+        self.assertEqual("아이유", module.get_keyword_display_name("아이유"))
+
     def test_discord_delivery_waits_for_and_returns_a_message_id(self):
         for script_path in SCRIPT_PATHS:
             with self.subTest(script=script_path.name):

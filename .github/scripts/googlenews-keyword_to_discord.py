@@ -66,6 +66,7 @@ ORIGIN_LINK_KEYWORD = ORIGIN_LINK_KEYWORD not in ['false', 'f', '0', 'no', 'n']
 MANUAL_TEST_MODE = os.environ.get('MANUAL_TEST_MODE', 'false').lower() == 'true'
 KEYWORD_MODE = os.environ.get('KEYWORD_MODE', 'false').lower() == 'true'
 KEYWORD = os.environ.get('KEYWORD', '')
+KEYWORD_DISPLAY_NAME = os.environ.get('KEYWORD_DISPLAY_NAME', '').strip()
 RSS_URL_KEYWORD = os.environ.get('RSS_URL_KEYWORD', '')
 PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
 RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
@@ -552,6 +553,11 @@ def is_within_date_range(pub_date, since_date, until_date, past_date):
     logging.info(f"모든 날짜 필터를 통과함")
     return True
 
+def get_keyword_display_name(keyword):
+    """Return the presentation label without changing the search expression."""
+    return KEYWORD_DISPLAY_NAME or keyword
+
+
 def get_rss_url():
     rss_base_url = "https://news.google.com/rss/search"
     
@@ -724,7 +730,7 @@ def main():
                         "description": description,
                         "pub_date": pub_date,
                     },
-                    keyword,
+                    get_keyword_display_name(keyword),
                     country_code,
                 )
 

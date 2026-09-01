@@ -145,8 +145,20 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual("korea", profiles["topic_korea"].environment["TOPIC_KEYWORD"])
         self.assertEqual("서울", profiles["topic_seoul"].environment["KEYWORD"])
         self.assertEqual(
+            "NOT 운세",
+            profiles["topic_ent"].environment["FEED_KEYWORD_FILTER"],
+        )
+        self.assertEqual(
+            "title",
+            profiles["topic_ent"].environment["FEED_KEYWORD_SCOPE"],
+        )
+        self.assertEqual(
             '노코드 OR "no-code" OR nocode',
             profiles["keyword_nocode"].environment["KEYWORD"],
+        )
+        self.assertEqual(
+            "노코드",
+            profiles["keyword_nocode"].environment["KEYWORD_DISPLAY_NAME"],
         )
         self.assertEqual(
             "아이유",
@@ -244,6 +256,19 @@ class GoogleNewsProfileTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "KEYWORD_MATCH_MODE"):
             self.module.validate_profile_data(invalid)
+
+    def test_keyword_display_name_is_optional_but_not_blank(self):
+        configured = valid_registry()
+        configured[1]["environment"]["KEYWORD_DISPLAY_NAME"] = "아이유"
+
+        profiles = self.module.validate_profile_data(configured)
+
+        self.assertEqual("아이유", profiles[1].environment["KEYWORD_DISPLAY_NAME"])
+
+        blank = valid_registry()
+        blank[1]["environment"]["KEYWORD_DISPLAY_NAME"] = "   "
+        with self.assertRaisesRegex(ValueError, "KEYWORD_DISPLAY_NAME"):
+            self.module.validate_profile_data(blank)
 
     def test_common_filter_language_and_timezone_settings_are_allowed_per_profile(self):
         data = valid_registry()

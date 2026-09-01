@@ -79,6 +79,50 @@ DISCORD_WEBHOOK_GN_KEYWORD_NOCODE
 DISCORD_WEBHOOK_GN_KEYWORD_IU
 ```
 
+### Profile file parameter reference
+
+Every profile requires all seven top-level fields. Copy an existing profile of the same `handler` type and change only the values you need. Store the actual Discord webhook URL in the Actions Secret named by `webhook_env`; never put a webhook URL in this JSON file.
+
+| Top-level field | Required | Purpose and rules |
+| --- | --- | --- |
+| `id` | Yes | Unique internal ID using lowercase letters, numbers, and underscores; it must start with a letter |
+| `handler` | Yes | Selects one of `top`, `topic`, or `keyword` |
+| `webhook_env` | Yes | Unique Actions Secret name in the form `DISCORD_WEBHOOK_GN_*` |
+| `expected_webhook_name` | Yes | Unique expected Discord webhook name used by the workflow's configuration check |
+| `state_db` | Yes | Unique SQLite filename using lowercase letters, numbers, and underscores and ending in `.db` |
+| `visible_username` | Yes | Discord bot display name; it must remain `Google News` |
+| `environment` | Yes | Handler-specific settings object; all values must be JSON strings, including `"true"` and `"false"` |
+
+The `environment` object accepts only the keys listed below. Unknown keys, credential-like names or values, plain HTTP URLs, unsupported filter values, and blank `KEYWORD_DISPLAY_NAME` values fail validation before delivery.
+
+| Handler | Required `environment` keys | Conditionally required | Optional handler-specific keys |
+| --- | --- | --- | --- |
+| `top` | `TOP_MODE`, `TOP_COUNTRY` | `RSS_URL_TOP` when `TOP_MODE="false"` | `RSS_URL_TOP` is omitted when `TOP_MODE="true"` |
+| `topic` | `TOPIC_MODE`, `TOPIC_KEYWORD`, `TOPIC_PARAMS` | `RSS_URL_TOPIC` when `TOPIC_MODE="false"` | `RSS_URL_TOPIC` is used only for custom-feed mode |
+| `keyword` | `KEYWORD_MODE`, `KEYWORD`, `HL`, `GL`, `CEID` | `RSS_URL_KEYWORD` when `KEYWORD_MODE="false"` | `KEYWORD_DISPLAY_NAME`, `WHEN`, `AFTER_DATE`, `BEFORE_DATE`, `RSS_URL_KEYWORD`, `KEYWORD_MATCH_MODE`, `KEYWORD_MATCH_ALIASES` |
+
+Mode-specific notes:
+
+- Use string values such as `"true"`, not JSON booleans such as `true`.
+- `TOP_COUNTRY` selects the built-in top-news locale when `TOP_MODE="true"`.
+- `TOPIC_KEYWORD` selects a built-in topic and `TOPIC_PARAMS` supplies its `hl`, `gl`, and `ceid` query parameters when `TOPIC_MODE="true"`.
+- `KEYWORD` is the Google News query and matching expression. `HL`, `GL`, and `CEID` select its language and edition.
+- `WHEN` is mutually exclusive with `AFTER_DATE` and `BEFORE_DATE`. Dates use `YYYY-MM-DD`.
+- Each custom `RSS_URL_*` value must be an HTTPS Google News RSS URL. The mode-specific keys remain required by the profile schema even when a custom URL mode is selected.
+
+Every handler may also use these optional common keys:
+
+| Optional key | Default | Purpose |
+| --- | --- | --- |
+| `DISPLAY_LANGUAGE` | Derived from the service/country, then `en` | Fixed Discord labels and localized dates |
+| `FEED_COUNTRY` | Service country | Country fallback for timezone and locale decisions |
+| `FEED_DATE_FILTER` | Empty | Shared inclusive publication-date filter |
+| `FEED_KEYWORD_FILTER` | Empty | Shared Boolean keyword filter |
+| `FEED_KEYWORD_SCOPE` | `title` | `title` or `title_or_description` |
+| `FEED_TIMEZONE` | Service/country timezone, then `UTC` | Explicit IANA timezone such as `Asia/Seoul` |
+
+Profile values override Repository Variables with the same names. `KEYWORD_DISPLAY_NAME` is presentation-only and is optional; omitting it keeps `KEYWORD` as the Discord heading. Keep every `id`, `webhook_env`, `expected_webhook_name`, and `state_db` unique across the file.
+
 Scheduled delivery continues automatically while the workflow is enabled. The optional `GOOGLE_NEWS_DELIVERY_ORDER` variable accepts:
 
 | Value | Behavior |
@@ -89,6 +133,20 @@ Scheduled delivery continues automatically while the workflow is enabled. The op
 ### Accurate keyword matching
 
 Keyword profiles default to `KEYWORD_MATCH_MODE: title`. A main item whose title does not contain the configured expression is therefore filtered even when Google included it only because a related story matched.
+
+Use `KEYWORD_DISPLAY_NAME` when the search expression is useful for Google News but too long for the Discord heading:
+
+```json
+{
+  "KEYWORD": "노코드 OR \"no-code\" OR nocode",
+  "KEYWORD_DISPLAY_NAME": "노코드",
+  "KEYWORD_MATCH_MODE": "title"
+}
+```
+
+`KEYWORD` remains the search and matching expression. `KEYWORD_DISPLAY_NAME` changes only the Discord header, producing `` `Google 뉴스 - 노코드 - 한국 🇰🇷` `` for this Korean profile. If `KEYWORD_DISPLAY_NAME` is omitted, the header continues to use `KEYWORD` for backward compatibility.
+
+Aliases can extend the same keyword decision without changing its displayed name:
 
 ```json
 {
@@ -102,6 +160,17 @@ Keyword profiles default to `KEYWORD_MATCH_MODE: title`. A main item whose title
 - Supported syntax: `OR`/`|`, `AND`/`&`/adjacent terms, `NOT`/`!`/`-`, parentheses, and `"exact phrases"`.
 - Date operators such as `when:`, `after:`, and `before:` are removed from the match expression.
 - Invalid expressions stop before fetching RSS or sending Discord messages.
+
+Topic profiles can use the common filter settings without changing their Google News topic URL. The Korean entertainment profile uses:
+
+```json
+{
+  "FEED_KEYWORD_FILTER": "NOT 운세",
+  "FEED_KEYWORD_SCOPE": "title"
+}
+```
+
+This excludes an item only when its main RSS title contains `운세`. An occurrence in a related-story headline alone does not exclude the main entertainment item because the configured scope is `title`.
 
 Filtered items retain a configuration fingerprint. They are skipped under the same setting and re-evaluated while still present in RSS after the mode or aliases change. `ADVANCED_FILTER_KEYWORD` remains an additional narrowing condition after this match.
 
