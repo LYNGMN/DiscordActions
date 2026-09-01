@@ -9,7 +9,6 @@ import json
 import sqlite3
 import sys
 import pytz
-from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
 from dateutil import parser
 from dateutil.tz import gettz
@@ -32,7 +31,7 @@ from google_news_delivery_state import (
 from google_news_discord_delivery import send_webhook_message, split_discord_content
 from google_news_feed_filter import compile_google_news_feed_filter
 from feed_localization import (
-    format_feed_datetime,
+    format_google_news_datetime,
     labels_for,
     localized_country_name,
     resolve_display_language,
@@ -321,20 +320,6 @@ def replace_brackets(text):
     text = re.sub(r'〉(?!\s)', '〉 ', text)
     return text
 
-def convert_to_local_time(pub_date, country_code):
-    try:
-        utc_time = parsedate_to_datetime(pub_date)
-    except ValueError:
-        return pub_date
-
-    _, _, _, _, _, _, timezone, date_format = country_configs.get(country_code, country_configs['US'])
-
-    local_time = utc_time.astimezone(pytz.timezone(timezone))
-    return local_time.strftime(date_format)
-
-def parse_rss_date(pub_date, country_code='KR'):
-    return convert_to_local_time(pub_date, country_code)
-
 def send_discord_message(webhook_url, message, avatar_url=None, username=None):
     """Discord 웹훅 전송 결과의 메시지 ID를 반환합니다."""
     if VALIDATE_ONLY:
@@ -464,8 +449,11 @@ def format_discord_message(news_item, keyword, country_code):
         else localized_country_name(country_code, display_language)
     )
     timezone_name = FEED_TIMEZONE or service_timezone
-    formatted_date = format_feed_datetime(
-        news_item['pub_date'], display_language, timezone_name
+    formatted_date = format_google_news_datetime(
+        news_item['pub_date'],
+        FEED_COUNTRY or country_code,
+        timezone_name,
+        display_language,
     )
     message = (
         f"`{google_news} - {keyword} - {country_name} {flag}`\n"

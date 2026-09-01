@@ -143,6 +143,152 @@ class FeedLocalizationTests(unittest.TestCase):
             ),
         )
 
+    def test_google_news_datetime_uses_country_specific_formats(self):
+        cases = (
+            (
+                "2026-08-31T08:41:00Z",
+                "KR",
+                "Asia/Seoul",
+                "ko",
+                "2026년 08월 31일 오후 05:41:00 (KST)",
+            ),
+            (
+                "2026-09-01T04:51:11Z",
+                "JP",
+                "Asia/Tokyo",
+                "ja",
+                "2026年09月01日 13:51:11 (JST)",
+            ),
+            (
+                "2026-09-01T01:50:00Z",
+                "CN",
+                "Asia/Shanghai",
+                "zh-CN",
+                "2026年09月01日 09:50:00 (CST)",
+            ),
+            (
+                "2026-08-31T21:41:00Z",
+                "US",
+                "America/New_York",
+                "en",
+                "August 31, 2026, 05:41:00 PM (EDT)",
+            ),
+        )
+
+        for value, country, timezone_name, language, expected in cases:
+            with self.subTest(country=country):
+                actual = self.localization.format_google_news_datetime(
+                    value,
+                    country,
+                    timezone_name,
+                    language,
+                )
+                self.assertEqual(expected, actual)
+                self.assertNotIn("\n", actual)
+
+    def test_google_news_datetime_handles_korean_periods_and_us_dst(self):
+        self.assertEqual(
+            "2026년 01월 02일 오전 12:03:04 (KST)",
+            self.localization.format_google_news_datetime(
+                "2026-01-01T15:03:04Z",
+                "KR",
+                "Asia/Seoul",
+                "ko",
+            ),
+        )
+        self.assertEqual(
+            "2026년 01월 02일 오후 12:03:04 (KST)",
+            self.localization.format_google_news_datetime(
+                "2026-01-02T03:03:04Z",
+                "KR",
+                "Asia/Seoul",
+                "ko",
+            ),
+        )
+        self.assertEqual(
+            "January 02, 2026, 05:03:04 AM (EST)",
+            self.localization.format_google_news_datetime(
+                "2026-01-02T10:03:04Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+        self.assertEqual(
+            "July 02, 2026, 06:03:04 AM (EDT)",
+            self.localization.format_google_news_datetime(
+                "2026-07-02T10:03:04Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+
+    def test_us_google_news_datetime_switches_to_edt_at_dst_start(self):
+        self.assertEqual(
+            "March 08, 2026, 01:59:59 AM (EST)",
+            self.localization.format_google_news_datetime(
+                "2026-03-08T06:59:59Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+        self.assertEqual(
+            "March 08, 2026, 03:00:00 AM (EDT)",
+            self.localization.format_google_news_datetime(
+                "2026-03-08T07:00:00Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+
+    def test_us_google_news_datetime_switches_to_est_at_dst_end(self):
+        self.assertEqual(
+            "November 01, 2026, 01:59:59 AM (EDT)",
+            self.localization.format_google_news_datetime(
+                "2026-11-01T05:59:59Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+        self.assertEqual(
+            "November 01, 2026, 01:00:00 AM (EST)",
+            self.localization.format_google_news_datetime(
+                "2026-11-01T06:00:00Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+
+    def test_google_news_datetime_falls_back_without_changing_general_dates(self):
+        published = "2026-06-28T15:30:00Z"
+
+        self.assertEqual(
+            self.localization.format_feed_datetime(
+                published,
+                "fr",
+                "Europe/Paris",
+            ),
+            self.localization.format_google_news_datetime(
+                published,
+                "FR",
+                "Europe/Paris",
+                "fr",
+            ),
+        )
+        self.assertEqual(
+            "2026년 6월 29일",
+            self.localization.format_feed_date(
+                published,
+                "ko",
+                "Asia/Seoul",
+            ),
+        )
+
     def test_korean_api_channel_message_matches_requested_markdown(self):
         message = self.messages.build_youtube_message(
             self.video,
