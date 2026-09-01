@@ -1,8 +1,28 @@
-name: Google News to Discord
+name: Google News Manual Delivery Test
+
+run-name: Google News manual test — ${{ inputs.profile }}
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Select one profile (max 1 article) or all (up to 11 articles). / 프로필 1개(기사 최대 1건) 또는 all(최대 11건)을 선택합니다.'
+        required: true
+        default: top_kr
+        type: choice
+        options:
+          - top_kr
+          - all
+          - top_us
+          - top_jp
+          - top_cn
+          - topic_korea
+          - topic_seoul
+          - topic_ent
+          - topic_tech
+          - topic_scitech
+          - keyword_nocode
+          - keyword_iu
 
 permissions:
   actions: read
@@ -14,6 +34,7 @@ concurrency:
 
 jobs:
   deliver:
+    name: Deliver real Discord test message / 실제 Discord 시험 메시지 전송
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -60,8 +81,7 @@ jobs:
                 run_id: run.id,
                 per_page: 100,
               });
-              const artifacts = artifactPage.artifacts;
-              const state = artifacts.find(
+              const state = artifactPage.artifacts.find(
                 artifact => artifact.name === 'google-news-state' && !artifact.expired
               );
               if (state) {
@@ -96,8 +116,9 @@ jobs:
           python -m pip install --require-hashes -r .github/requirements.txt
           python -m pip check
 
-      - name: Run unified Google News dispatcher
+      - name: Run selected Google News profile
         env:
+          SELECTED_PROFILE: ${{ inputs.profile }}
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
           FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
           FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
@@ -117,7 +138,16 @@ jobs:
           DISCORD_WEBHOOK_GN_TOPIC_SCITECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SCITECH }}
           DISCORD_WEBHOOK_GN_KEYWORD_NOCODE: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_NOCODE }}
           DISCORD_WEBHOOK_GN_KEYWORD_IU: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_IU }}
-        run: python .github/scripts/google_news_dispatcher.py --state-dir .google-news-state
+        shell: bash
+        run: |
+          profile_args=()
+          if [[ "$SELECTED_PROFILE" != "all" ]]; then
+            profile_args=(--profile-id "$SELECTED_PROFILE")
+          fi
+          python .github/scripts/google_news_dispatcher.py \
+            --state-dir .google-news-state \
+            --manual-test \
+            "${profile_args[@]}"
 
       - name: Write safe run summary
         if: always()
@@ -131,12 +161,14 @@ jobs:
               return;
             }
             const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const processed = summary.profiles.reduce((total, item) => total + item.processed_count, 0);
             const pending = summary.profiles.reduce((total, item) => total + item.pending_count, 0);
             const ambiguous = summary.profiles.reduce((total, item) => total + item.ambiguous_retry_count, 0);
             await core.summary
-              .addHeading('Google News')
+              .addHeading('Google News Manual Delivery Test')
               .addRaw(`Status: ${summary.status}\n`)
               .addRaw(`Profiles: ${summary.profiles.length}\n`)
+              .addRaw(`Processed articles: ${processed}\n`)
               .addRaw(`Pending deliveries: ${pending}\n`)
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
               .write();

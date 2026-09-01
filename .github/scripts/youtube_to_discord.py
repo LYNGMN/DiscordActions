@@ -295,12 +295,21 @@ def deliver_queued_video(video_id):
         raise RuntimeError("youtube_delivery_not_complete")
 
 
-def resume_pending_deliveries():
+def resume_pending_deliveries(max_videos=None):
     pending_ids = pending_youtube_video_ids(DB_PATH)
+    if max_videos is not None:
+        if (
+            isinstance(max_videos, bool)
+            or not isinstance(max_videos, int)
+            or max_videos < 1
+        ):
+            raise ValueError("invalid pending delivery limit")
+        pending_ids = pending_ids[:max_videos]
     if pending_ids:
         logging.info("미완료 YouTube 전송 재개: %s개", len(pending_ids))
     for video_id in pending_ids:
         deliver_queued_video(video_id)
+    return len(pending_ids)
 
 
 def write_run_summary(status):
@@ -589,7 +598,12 @@ def fetch_and_post_videos(youtube):
         initialize_delivery_state(DB_PATH)
 
     # 저장된 payload를 먼저 처리하므로 피드에서 사라진 항목도 누락되지 않습니다.
-    resume_pending_deliveries()
+    resumed_count = resume_pending_deliveries(
+        max_videos=1 if YOUTUBE_MANUAL_TEST_MODE else None
+    )
+    if YOUTUBE_MANUAL_TEST_MODE and resumed_count:
+        logging.info("수동 테스트는 미완료 영상 1건을 재개한 뒤 종료합니다.")
+        return
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
