@@ -19,6 +19,8 @@ GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으
 4. **Actions**에서 워크플로를 선택하고 **Run workflow**로 먼저 시험합니다. `manual_test=true`이면 채널별로 현재 항목을 최대 1건만 전송하고, 나머지는 초기 기준 상태로 저장합니다.
 5. 수동 시험을 마친 뒤에는 워크플로를 활성 상태로 둡니다. 별도의 활성화 Variable 없이 예약 실행이 자동으로 이어집니다.
 
+현재 관리하는 Actions 목록은 **Google News to Discord**, **YouTube to Discord Notification**, **Python Tests**입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
+
 ## 공통 날짜·키워드 필터
 
 Google News와 YouTube는 선택 사항인 공통 Repository Variable을 사용합니다. Google News 프로필의 `.github/config/google_news_profiles.json`에 값이 있으면 해당 프로필에서는 저장소 공통 값보다 먼저 적용합니다.
@@ -344,6 +346,7 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 �
 - 먼저 Actions 실행 결과와 업로드된 SQLite 상태 아티팩트를 확인합니다.
 - 웹훅 URL, API 키, 토큰은 로그나 문의 글에 공개하지 마세요.
 - 수동 시험이 성공해도 예약 실행은 꺼지지 않습니다. 예약 실행이 보이지 않으면 워크플로가 활성 상태인지, 기본 브랜치의 `schedule`에 다섯 칸으로 작성한 cron 표현식이 있는지 확인합니다.
+- 공개 저장소에 60일 동안 저장소 활동이 없으면 GitHub가 예약 워크플로를 자동으로 비활성화할 수 있습니다. Actions 화면에 해당 안내가 나타나면 워크플로를 다시 활성화하세요. 이 프로젝트는 GitHub의 이 정책을 우회하는 자동 Keepalive 방식을 사용하지 않습니다. 자세한 내용은 [GitHub 워크플로 활성화·비활성화 문서](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)를 참고하세요.
 - GitHub Actions의 예약 지연과 외부 API의 일시적 제한을 코드 오류와 구분하세요. 저장해 둔 미완료 전송은 다음 실행에서 기록된 순번부터 이어집니다.
 
 ## 기여와 라이선스

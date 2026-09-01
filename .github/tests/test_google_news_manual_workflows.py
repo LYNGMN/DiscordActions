@@ -3,30 +3,23 @@ from pathlib import Path
 
 
 WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
-WORKFLOW_PATHS = (
-    WORKFLOWS_DIR / "googlenews-keyword_to_discord.yml",
-    WORKFLOWS_DIR / "googlenews-top_to_discord.yml",
-    WORKFLOWS_DIR / "googlenews-topic_to_discord.yml",
-)
-MANUAL_TEST_EXPRESSION = (
-    "${{ github.event_name == 'workflow_dispatch' "
-    "&& inputs.manual_test == true }}"
+UNIFIED_WORKFLOW = WORKFLOWS_DIR / "googlenews-to-discord.yml"
+REMOVED_WORKFLOWS = (
+    "googlenews-keyword_to_discord.yml",
+    "googlenews-top_to_discord.yml",
+    "googlenews-topic_to_discord.yml",
+    "keepalive.yml",
 )
 
 
 class GoogleNewsManualWorkflowTests(unittest.TestCase):
-    def test_all_workflows_expose_safe_manual_test_input(self):
-        for workflow_path in WORKFLOW_PATHS:
-            with self.subTest(workflow=workflow_path.name):
-                source = workflow_path.read_text(encoding="utf-8")
+    def test_unified_workflow_exposes_only_existing_manual_test_input(self):
+        source = UNIFIED_WORKFLOW.read_text(encoding="utf-8")
 
-                self.assertIn("manual_test:", source)
-                self.assertIn("type: boolean", source)
-                self.assertIn("default: true", source)
-                self.assertIn(
-                    f"MANUAL_TEST_MODE: {MANUAL_TEST_EXPRESSION}",
-                    source,
-                )
+        self.assertIn("manual_test:", source)
+        self.assertNotIn("validate_only:", source)
+        self.assertEqual(1, source.count("type: boolean"))
+        self.assertEqual(1, source.count("default: true"))
 
     def test_ci_compiles_manual_test_module(self):
         source = (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
@@ -36,27 +29,17 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             source,
         )
 
-    def test_legacy_google_news_workflows_are_manual_only(self):
-        for workflow_path in WORKFLOW_PATHS:
-            with self.subTest(workflow=workflow_path.name):
-                source = workflow_path.read_text(encoding="utf-8")
+    def test_obsolete_and_blocked_workflows_are_removed(self):
+        for workflow_name in REMOVED_WORKFLOWS:
+            with self.subTest(workflow=workflow_name):
+                self.assertFalse((WORKFLOWS_DIR / workflow_name).exists())
 
-                self.assertIn("workflow_dispatch:", source)
-                self.assertNotIn("schedule:", source)
-                self.assertNotIn("cron:", source)
+    def test_unified_google_news_workflow_prevents_overlapping_runs(self):
+        source = UNIFIED_WORKFLOW.read_text(encoding="utf-8")
 
-    def test_google_news_workflows_prevent_overlapping_runs(self):
-        concurrency_policy = (
-            "concurrency:\n"
-            "  group: ${{ github.workflow }}\n"
-            "  cancel-in-progress: false"
-        )
-
-        for workflow_path in WORKFLOW_PATHS:
-            with self.subTest(workflow=workflow_path.name):
-                source = workflow_path.read_text(encoding="utf-8")
-
-                self.assertIn(concurrency_policy, source)
+        self.assertIn("concurrency:", source)
+        self.assertIn("group: google-news-to-discord", source)
+        self.assertIn("cancel-in-progress: false", source)
 
 
 if __name__ == "__main__":

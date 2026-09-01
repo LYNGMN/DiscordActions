@@ -166,6 +166,103 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
         self.assertFalse(message_id.ambiguous_retry)
         self.assertEqual(2, post.call_count)
 
+    def test_rate_limit_uses_reset_header_and_retries_until_success(self):
+        rate_limited = []
+        for _index in range(2):
+            response = FakeResponse()
+            response.status_code = 429
+            response.headers = {"X-RateLimit-Reset-After": "0.25"}
+            response.json = mock.Mock(return_value={"message": "rate limited"})
+            response.raise_for_status = mock.Mock(
+                side_effect=requests.HTTPError("unsafe response detail")
+            )
+            rate_limited.append(response)
+        sleeps = []
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            side_effect=rate_limited + [FakeResponse()],
+        ) as post:
+            message_id = self.delivery.send_webhook_message(
+                "https://example.com/webhook",
+                {"content": "safe"},
+                sleep=sleeps.append,
+            )
+
+        self.assertEqual("1234567890", message_id)
+        self.assertEqual(3, post.call_count)
+        self.assertEqual([0.25, 0.25], sleeps)
+
+    def test_successful_exhausted_bucket_waits_before_next_message(self):
+        exhausted = FakeResponse()
+        exhausted.headers = {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset-After": "0.75",
+        }
+        sleeps = []
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            return_value=exhausted,
+        ):
+            self.delivery.send_webhook_message(
+                "https://example.com/webhook",
+                {"content": "safe"},
+                sleep=sleeps.append,
+            )
+
+        self.assertEqual([0.75], sleeps)
+
+    def test_unrecoverable_http_error_records_safe_status_code(self):
+        bad_request = FakeResponse()
+        bad_request.status_code = 400
+        bad_request.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            return_value=bad_request,
+        ):
+            with self.assertRaises(requests.HTTPError) as raised:
+                self.delivery.send_webhook_message(
+                    "https://example.com/webhook",
+                    {"content": "safe"},
+                    sleep=lambda _seconds: None,
+                )
+
+        self.assertEqual("discord_http_400", raised.exception.error_code)
+        self.assertNotIn("unsafe response detail", raised.exception.error_code)
+
+    def test_rate_limit_failure_preserves_prior_response_unknown_evidence(self):
+        rate_limited = FakeResponse()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "0"}
+        rate_limited.json = mock.Mock(return_value={"retry_after": 0.0})
+        rate_limited.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            side_effect=[requests.Timeout("response unknown")]
+            + [rate_limited] * 5,
+        ) as post:
+            with self.assertRaises(requests.HTTPError) as raised:
+                self.delivery.send_webhook_message(
+                    "https://example.com/webhook",
+                    {"content": "safe"},
+                    sleep=lambda _seconds: None,
+                )
+
+        self.assertEqual("ambiguous_retry", raised.exception.error_code)
+        self.assertEqual(6, raised.exception.attempt_count)
+        self.assertEqual(6, post.call_count)
+
 
 if __name__ == "__main__":
     unittest.main()
