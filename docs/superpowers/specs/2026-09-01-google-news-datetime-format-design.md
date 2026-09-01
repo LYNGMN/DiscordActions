@@ -65,8 +65,8 @@ preserves current behavior outside the four explicitly specified countries.
 - Start with failing unit tests for all four exact output formats.
 - Test one-digit month, day, and hour values to prove zero padding.
 - Test Korean morning, afternoon, midnight, and noon behavior.
-- Test a US winter instant that renders `EST` and a summer instant that renders
-  `EDT`.
+- Test the instants immediately before and after the 2026 US daylight-saving
+  start and end boundaries, including `EST` and `EDT` output.
 - Test that every result is exactly one line and does not add a country name or
   flag.
 - Test that Top, Keyword, and Topic use the shared Google News formatter.
@@ -142,7 +142,8 @@ Google 뉴스의 게시 시각을 해당 프로필에서 선택한 국가의 표
 - 네 국가의 정확한 출력 문자열을 먼저 실패 테스트로 작성합니다.
 - 한 자리 월·일·시를 사용해 앞자리 0이 붙는지 확인합니다.
 - 한국의 오전·오후·자정·정오를 확인합니다.
-- 미국 겨울 시각은 `EST`, 여름 시각은 `EDT`로 표시되는지 확인합니다.
+- 2026년 미국 서머타임 시작·종료 직전과 직후 시각을 검사하여 `EST`와
+  `EDT`가 실제 전환 경계에 맞게 표시되는지 확인합니다.
 - 모든 결과가 한 줄이며 국가명이나 국기가 추가되지 않는지 확인합니다.
 - Top, Keyword, Topic이 공통 Google 뉴스 전용 함수를 사용하는지
   확인합니다.

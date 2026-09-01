@@ -34,7 +34,7 @@
 
 - [ ] **Step 1: Write failing exact-format and compatibility tests**
 
-Add a parameterized subtest for the four country formats, dedicated Korean morning/noon assertions, US winter/summer assertions, and an unchanged YouTube/general formatter assertion:
+Add a parameterized subtest for the four country formats, dedicated Korean morning/noon assertions, exact 2026 US daylight-saving boundary assertions, and an unchanged YouTube/general formatter assertion:
 
 ```python
 def test_google_news_datetime_uses_country_specific_formats(self):
@@ -78,6 +78,10 @@ def test_google_news_datetime_handles_korean_periods_and_us_dst(self):
         ),
     )
 ```
+
+Add separate assertions for `2026-03-08T06:59:59Z` and
+`2026-03-08T07:00:00Z`, then for `2026-11-01T05:59:59Z` and
+`2026-11-01T06:00:00Z`, to verify the exact `EST`/`EDT` transition moments.
 
 - [ ] **Step 2: Run the focused tests and confirm the missing-interface failure**
 
@@ -264,8 +268,8 @@ git commit -m "fix: use country dates in Google News messages"
 ## 한국어 실행 요약
 
 1. 공통 현지화 모듈에 Google 뉴스 전용 날짜·시간 함수를 추가합니다.
-2. 한국·일본·중국·미국의 정확한 출력과 미국 `EST`·`EDT` 자동 전환을
-   실패 테스트부터 검증합니다.
+2. 한국·일본·중국·미국의 정확한 출력과 미국 서머타임 시작·종료 경계의
+   `EST`·`EDT` 자동 전환을 실패 테스트부터 검증합니다.
 3. Google 뉴스 Top, Keyword, Topic이 같은 함수를 사용하도록 연결합니다.
 4. 기존 YouTube 날짜 형식이 바뀌지 않는지 포함해 전체 테스트를 다시
    실행합니다.

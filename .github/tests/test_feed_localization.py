@@ -224,6 +224,46 @@ class FeedLocalizationTests(unittest.TestCase):
             ),
         )
 
+    def test_us_google_news_datetime_switches_to_edt_at_dst_start(self):
+        self.assertEqual(
+            "March 08, 2026, 01:59:59 AM (EST)",
+            self.localization.format_google_news_datetime(
+                "2026-03-08T06:59:59Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+        self.assertEqual(
+            "March 08, 2026, 03:00:00 AM (EDT)",
+            self.localization.format_google_news_datetime(
+                "2026-03-08T07:00:00Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+
+    def test_us_google_news_datetime_switches_to_est_at_dst_end(self):
+        self.assertEqual(
+            "November 01, 2026, 01:59:59 AM (EDT)",
+            self.localization.format_google_news_datetime(
+                "2026-11-01T05:59:59Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+        self.assertEqual(
+            "November 01, 2026, 01:00:00 AM (EST)",
+            self.localization.format_google_news_datetime(
+                "2026-11-01T06:00:00Z",
+                "US",
+                "America/New_York",
+                "en",
+            ),
+        )
+
     def test_google_news_datetime_falls_back_without_changing_general_dates(self):
         published = "2026-06-28T15:30:00Z"
 
