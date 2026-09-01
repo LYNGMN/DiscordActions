@@ -7,7 +7,9 @@ from typing import Callable, Dict, List, Optional
 import requests
 
 
-MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
+MAX_RATE_LIMIT_WAIT_SECONDS = 300.0
+MAX_RATE_LIMIT_RETRIES = 4
+DEFAULT_RATE_LIMIT_WAIT_SECONDS = 1.0
 MAX_DISCORD_CONTENT_CHARACTERS = 2000
 GOOGLE_NEWS_USERNAME = "Google News"
 GOOGLE_NEWS_AVATAR_URL = (
@@ -112,7 +114,7 @@ def send_webhook_message(
     sleep: Callable[[float], None] = time.sleep,
     max_rate_limit_wait_seconds: float = MAX_RATE_LIMIT_WAIT_SECONDS,
 ) -> str:
-    """Post with one bounded retry and preserve response-unknown evidence."""
+    """Post with bounded retries and preserve response-unknown evidence."""
     safe_payload = dict(payload)
     safe_payload["username"] = GOOGLE_NEWS_USERNAME
     safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
@@ -121,7 +123,11 @@ def send_webhook_message(
         safe_payload["content"] = _limit_content(content)
 
     ambiguous_retry = False
-    for attempt in range(2):
+    transient_retry_used = False
+    rate_limit_retries = 0
+    attempt_count = 0
+    while True:
+        attempt_count += 1
         try:
             response = requests.post(
                 webhook_url,
@@ -131,22 +137,43 @@ def send_webhook_message(
                 timeout=(5.0, 15.0),
             )
         except requests.RequestException as error:
-            if attempt == 0:
+            if not transient_retry_used:
                 ambiguous_retry = True
+                transient_retry_used = True
                 sleep(2.0)
                 continue
-            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            _annotate_delivery_error(error, ambiguous_retry, attempt_count)
             raise
-        if response.status_code == 429 and attempt == 0:
+
+        if response.status_code == 429:
             retry_after = _retry_after_seconds(response)
+            if retry_after is None:
+                retry_after = DEFAULT_RATE_LIMIT_WAIT_SECONDS
             if (
-                retry_after is None
-                or retry_after > max_rate_limit_wait_seconds
+                rate_limit_retries < MAX_RATE_LIMIT_RETRIES
+                and retry_after <= max_rate_limit_wait_seconds
             ):
+                rate_limit_retries += 1
+                sleep(retry_after)
+                continue
+            try:
                 response.raise_for_status()
-            sleep(retry_after)
-            continue
-        if response.status_code >= 500 and attempt == 0:
+            except requests.RequestException as error:
+                error_code = (
+                    "discord_rate_limit_wait_exceeded"
+                    if retry_after > max_rate_limit_wait_seconds
+                    else "discord_rate_limited"
+                )
+                _annotate_delivery_error(
+                    error,
+                    ambiguous_retry,
+                    attempt_count,
+                    error_code=error_code,
+                )
+                raise
+
+        if response.status_code >= 500 and not transient_retry_used:
+            transient_retry_used = True
             sleep(2.0)
             continue
 
@@ -154,23 +181,34 @@ def send_webhook_message(
             response.raise_for_status()
             body = response.json()
         except (requests.RequestException, TypeError, ValueError) as error:
-            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            status_code = getattr(response, "status_code", None)
+            error_code = None
+            if isinstance(status_code, int) and 400 <= status_code <= 599:
+                error_code = "discord_http_{}".format(status_code)
+            _annotate_delivery_error(
+                error,
+                ambiguous_retry,
+                attempt_count,
+                error_code=error_code,
+            )
             raise
         message_id = body.get("id") if isinstance(body, dict) else None
         if not isinstance(message_id, str) or not message_id.isdigit():
             error = ValueError("invalid message id")
-            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            _annotate_delivery_error(error, ambiguous_retry, attempt_count)
             raise error
-        return DiscordMessageId(message_id, ambiguous_retry, attempt + 1)
-
-    raise requests.RequestException("discord_delivery_failed")
+        bucket_wait = _exhausted_bucket_wait_seconds(response)
+        if bucket_wait is not None:
+            sleep(min(bucket_wait, max_rate_limit_wait_seconds))
+        return DiscordMessageId(message_id, ambiguous_retry, attempt_count)
 
 
 def _retry_after_seconds(response) -> Optional[float]:
     values = []
-    header_value = response.headers.get("Retry-After")
-    if header_value is not None:
-        values.append(header_value)
+    for header_name in ("Retry-After", "X-RateLimit-Reset-After"):
+        header_value = response.headers.get(header_name)
+        if header_value is not None:
+            values.append(header_value)
     try:
         body = response.json()
     except (TypeError, ValueError):
@@ -191,10 +229,31 @@ def _retry_after_seconds(response) -> Optional[float]:
     return max(parsed_values) if parsed_values else None
 
 
+def _exhausted_bucket_wait_seconds(response) -> Optional[float]:
+    remaining = response.headers.get("X-RateLimit-Remaining")
+    try:
+        exhausted = float(remaining) <= 0
+    except (TypeError, ValueError, OverflowError):
+        exhausted = False
+    if not exhausted:
+        return None
+    reset_after = response.headers.get("X-RateLimit-Reset-After")
+    try:
+        parsed = float(reset_after)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(parsed) or parsed < 0:
+        return None
+    return parsed
+
+
 def _annotate_delivery_error(
     error: Exception,
     ambiguous_retry: bool,
     attempt_count: int,
+    error_code: Optional[str] = None,
 ) -> None:
-    error.error_code = "ambiguous_retry" if ambiguous_retry else "final_failure"
+    error.error_code = error_code or (
+        "ambiguous_retry" if ambiguous_retry else "final_failure"
+    )
     error.attempt_count = int(attempt_count)

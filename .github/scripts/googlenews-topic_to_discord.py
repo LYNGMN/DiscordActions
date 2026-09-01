@@ -1108,6 +1108,8 @@ def deliver_reserved_item(guid):
 
 def resume_pending_deliveries():
     pending_guids = pending_delivery_guids(DB_PATH)
+    if MANUAL_TEST_MODE:
+        pending_guids = pending_guids[:1]
     for guid in pending_guids:
         try:
             deliver_reserved_item(guid)
