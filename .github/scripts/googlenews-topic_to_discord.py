@@ -1080,7 +1080,11 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
         payload["username"] = username
     
     try:
-        message_id = send_webhook_message(webhook_url, payload)
+        message_id = send_webhook_message(
+            webhook_url,
+            payload,
+            resolver_db_path=RESOLVER_DB_PATH,
+        )
         logging.info("Discord에 메시지 게시 완료")
         return message_id
     except (requests.RequestException, TypeError, ValueError) as error:
@@ -1373,6 +1377,7 @@ def main():
         category = get_topic_category(TOPIC_KEYWORD, display_language) if TOPIC_MODE else labels_for(display_language)["topics"]
 
         profile_failed = False
+        profile_failure_code = "profile_run_failed"
         queued_items = []
         for item in news_items:
             current_guid = "unknown"
@@ -1435,6 +1440,9 @@ def main():
 
             except Exception as error:
                 profile_failed = True
+                profile_failure_code = getattr(
+                    error, "error_code", "profile_run_failed"
+                )
                 logging.error("뉴스 대기열 준비 실패 (오류 유형: %s)", type(error).__name__)
                 print("::warning title=Google News queue preparation failed::No Discord delivery was started")
                 notify_admin(
@@ -1454,6 +1462,9 @@ def main():
                     logging.info(f"뉴스 항목 처리 완료: {title}")
                 except Exception as error:
                     profile_failed = True
+                    profile_failure_code = getattr(
+                        error, "error_code", "profile_run_failed"
+                    )
                     logging.error("뉴스 항목 전송 실패 (오류 유형: %s)", type(error).__name__)
                     print("::warning title=Google News delivery failed::A queued delivery remains pending")
                     notify_admin(
@@ -1465,14 +1476,16 @@ def main():
                     )
                     break
 
+        if profile_failed:
+            failure = RuntimeError("profile_run_failed")
+            failure.error_code = profile_failure_code
+            raise failure
         validate_manual_test_result(
             MANUAL_TEST_MODE,
             manual_test_expected_count,
             processed_count,
             already_known_count,
         )
-        if profile_failed:
-            raise RuntimeError("profile_run_failed")
         logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
         logging.info("Google News URL 변환 요약: %s", resolver.get_stats())
         record_profile_result("success", processed_count)
@@ -1484,7 +1497,11 @@ def main():
         return 1
     except Exception as error:
         logging.error("프로필 실행 실패 (오류 유형: %s)", type(error).__name__)
-        record_profile_result("failed", processed_count, "profile_run_failed")
+        record_profile_result(
+            "failed",
+            processed_count,
+            getattr(error, "error_code", "profile_run_failed"),
+        )
         return 1
 
 if __name__ == "__main__":

@@ -555,6 +555,49 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
 
                 self.assertEqual(5, post.call_count)
 
+    def test_all_handlers_preserve_safe_discord_rejection_codes(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as directory:
+                module = load_script(script_path)
+                module.RESOLVER_DB_PATH = str(Path(directory) / "resolver.db")
+                blocked = SimpleNamespace(
+                    status_code=400,
+                    headers={},
+                    raise_for_status=mock.Mock(
+                        side_effect=module.requests.HTTPError("unsafe response detail")
+                    ),
+                    json=lambda: {"code": 240000, "message": "unsafe response detail"},
+                )
+
+                with mock.patch.object(
+                    module.requests,
+                    "post",
+                    return_value=blocked,
+                ), self.assertRaisesRegex(
+                    RuntimeError, "discord_delivery_failed"
+                ) as raised:
+                    module.send_discord_message(
+                        "https://discord.com/api/webhooks/redacted",
+                        "safe message",
+                        username="Google News",
+                    )
+
+                self.assertEqual(
+                    "discord_http_400_api_240000",
+                    raised.exception.error_code,
+                )
+
+    def test_all_handlers_pass_resolver_cache_and_propagate_profile_error_code(self):
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name):
+                source = script_path.read_text(encoding="utf-8")
+                self.assertIn("resolver_db_path=RESOLVER_DB_PATH", source)
+                self.assertIn("profile_failure_code", source)
+                self.assertIn(
+                    'getattr(error, "error_code", "profile_run_failed")',
+                    source,
+                )
+
     def test_validation_mode_never_calls_discord(self):
         for script_path in SCRIPT_PATHS:
             with self.subTest(script=script_path.name):

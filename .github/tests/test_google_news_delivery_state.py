@@ -306,6 +306,34 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         )
         self.assertEqual(1, self.module.count_ambiguous_retries(self.db_path))
 
+    def test_failed_discord_status_code_is_preserved_while_remaining_pending(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "guid-http", "Title", "", ["message"]
+            )
+        )
+        failure = RuntimeError("discord rejected the request")
+        failure.error_code = "discord_http_400_api_240000"
+        failure.attempt_count = 1
+
+        with self.assertRaises(RuntimeError):
+            self.module.deliver_queued_item(
+                self.db_path,
+                "guid-http",
+                lambda _content: (_ for _ in ()).throw(failure),
+            )
+
+        with sqlite3.connect(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT status, attempt_count, last_error_code "
+                "FROM google_news_delivery_messages WHERE guid = ?",
+                ("guid-http",),
+            ).fetchone()
+        self.assertEqual(
+            ("pending", 1, "discord_http_400_api_240000"),
+            row,
+        )
+
     def test_existing_queued_content_is_not_replaced_during_resume(self):
         self.assertTrue(self.module.reserve_delivery(self.db_path, "guid-1"))
         self.module.enqueue_delivery_messages(self.db_path, "guid-1", ["original"])

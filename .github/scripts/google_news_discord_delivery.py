@@ -1,8 +1,12 @@
 """Bounded Discord webhook delivery shared by Google News handlers."""
 
 import math
+import os
+import re
+import sqlite3
 import time
 from typing import Callable, Dict, List, Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -11,12 +15,14 @@ MAX_RATE_LIMIT_WAIT_SECONDS = 300.0
 MAX_RATE_LIMIT_RETRIES = 4
 DEFAULT_RATE_LIMIT_WAIT_SECONDS = 1.0
 MAX_DISCORD_CONTENT_CHARACTERS = 2000
+DISCORD_HARMFUL_LINK_CODE = 240000
 GOOGLE_NEWS_USERNAME = "Google News"
 GOOGLE_NEWS_AVATAR_URL = (
     "https://discordactions.github.io/logo/media/original/news/googlenews.png"
 )
 TRUNCATION_MARKER = "\n…"
 DATE_MARKER = "\n📅 "
+URL_TOKEN = re.compile(r"https?://[^\s<>]+")
 
 
 class DiscordMessageId(str):
@@ -25,10 +31,12 @@ class DiscordMessageId(str):
         value: str,
         ambiguous_retry: bool = False,
         attempt_count: int = 1,
+        google_news_fallback: bool = False,
     ):
         instance = str.__new__(cls, value)
         instance.ambiguous_retry = bool(ambiguous_retry)
         instance.attempt_count = int(attempt_count)
+        instance.google_news_fallback = bool(google_news_fallback)
         return instance
 
 
@@ -113,6 +121,7 @@ def send_webhook_message(
     payload: Dict[str, str],
     sleep: Callable[[float], None] = time.sleep,
     max_rate_limit_wait_seconds: float = MAX_RATE_LIMIT_WAIT_SECONDS,
+    resolver_db_path: Optional[str] = None,
 ) -> str:
     """Post with bounded retries and preserve response-unknown evidence."""
     safe_payload = dict(payload)
@@ -126,6 +135,7 @@ def send_webhook_message(
     transient_retry_used = False
     rate_limit_retries = 0
     attempt_count = 0
+    google_news_fallback = False
     while True:
         attempt_count += 1
         try:
@@ -177,6 +187,20 @@ def send_webhook_message(
             sleep(2.0)
             continue
 
+        discord_api_code = _discord_api_code(response)
+        if (
+            response.status_code == 400
+            and discord_api_code == DISCORD_HARMFUL_LINK_CODE
+            and not google_news_fallback
+        ):
+            fallback_payload = _payload_with_google_news_fallback(
+                safe_payload, resolver_db_path
+            )
+            if fallback_payload is not None:
+                safe_payload = fallback_payload
+                google_news_fallback = True
+                continue
+
         try:
             response.raise_for_status()
             body = response.json()
@@ -185,11 +209,15 @@ def send_webhook_message(
             error_code = None
             if isinstance(status_code, int) and 400 <= status_code <= 599:
                 error_code = "discord_http_{}".format(status_code)
+                if discord_api_code is not None:
+                    error_code += "_api_{}".format(discord_api_code)
             _annotate_delivery_error(
                 error,
                 ambiguous_retry,
                 attempt_count,
                 error_code=error_code,
+                http_status_code=status_code,
+                discord_api_code=discord_api_code,
             )
             raise
         message_id = body.get("id") if isinstance(body, dict) else None
@@ -200,7 +228,113 @@ def send_webhook_message(
         bucket_wait = _exhausted_bucket_wait_seconds(response)
         if bucket_wait is not None:
             sleep(min(bucket_wait, max_rate_limit_wait_seconds))
-        return DiscordMessageId(message_id, ambiguous_retry, attempt_count)
+        return DiscordMessageId(
+            message_id,
+            ambiguous_retry,
+            attempt_count,
+            google_news_fallback,
+        )
+
+
+def _discord_api_code(response) -> Optional[int]:
+    try:
+        body = response.json()
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    code = body.get("code")
+    if isinstance(code, bool) or not isinstance(code, int):
+        return None
+    return code
+
+
+def _payload_with_google_news_fallback(
+    payload: Dict[str, str],
+    resolver_db_path: Optional[str],
+) -> Optional[Dict[str, str]]:
+    content = payload.get("content")
+    if (
+        not isinstance(content, str)
+        or not content
+        or not isinstance(resolver_db_path, str)
+        or not os.path.isfile(resolver_db_path)
+    ):
+        return None
+
+    content_urls = sorted(set(URL_TOKEN.findall(content)))
+    if not content_urls:
+        return None
+    placeholders = ", ".join("?" for _value in content_urls)
+    try:
+        with sqlite3.connect(resolver_db_path) as connection:
+            rows = connection.execute(
+                "SELECT resolved_url, google_url FROM google_news_url_cache "
+                "WHERE status = 'resolved' AND resolved_url IN ({}) "
+                "ORDER BY article_id".format(
+                    placeholders
+                ),
+                content_urls,
+            ).fetchall()
+    except sqlite3.Error:
+        return None
+
+    replacements = {}
+    for resolved_url, google_url in rows:
+        if not _valid_original_url(resolved_url):
+            continue
+        if not _valid_google_news_url(google_url):
+            continue
+        replacements.setdefault(resolved_url, google_url)
+    if not replacements:
+        return None
+
+    fallback_content = URL_TOKEN.sub(
+        lambda match: replacements.get(match.group(0), match.group(0)),
+        content,
+    )
+    if fallback_content == content:
+        return None
+
+    fallback_payload = dict(payload)
+    fallback_payload["content"] = _limit_content(fallback_content)
+    return fallback_payload
+
+
+def _valid_original_url(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+    except ValueError:
+        return False
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(hostname)
+        and hostname != "news.google.com"
+        and not hostname.endswith(".news.google.com")
+        and not parsed.username
+        and not parsed.password
+        and not any(character.isspace() for character in value)
+    )
+
+
+def _valid_google_news_url(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "news.google.com"
+        and parsed.netloc == "news.google.com"
+        and not parsed.username
+        and not parsed.password
+        and not any(character.isspace() for character in value)
+    )
 
 
 def _retry_after_seconds(response) -> Optional[float]:
@@ -252,8 +386,14 @@ def _annotate_delivery_error(
     ambiguous_retry: bool,
     attempt_count: int,
     error_code: Optional[str] = None,
+    http_status_code: Optional[int] = None,
+    discord_api_code: Optional[int] = None,
 ) -> None:
     error.error_code = (
         "ambiguous_retry" if ambiguous_retry else error_code or "final_failure"
     )
     error.attempt_count = int(attempt_count)
+    if isinstance(http_status_code, int):
+        error.http_status_code = http_status_code
+    if isinstance(discord_api_code, int) and not isinstance(discord_api_code, bool):
+        error.discord_api_code = discord_api_code
