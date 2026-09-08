@@ -1,5 +1,7 @@
 import importlib
+import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -236,6 +238,181 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
 
         self.assertEqual("discord_http_400", raised.exception.error_code)
         self.assertNotIn("unsafe response detail", raised.exception.error_code)
+
+    def test_unrecoverable_http_error_records_safe_discord_api_code(self):
+        blocked = FakeResponse()
+        blocked.status_code = 400
+        blocked.json = mock.Mock(
+            return_value={
+                "code": 240000,
+                "message": "unsafe response detail",
+            }
+        )
+        blocked.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            return_value=blocked,
+        ):
+            with self.assertRaises(requests.HTTPError) as raised:
+                self.delivery.send_webhook_message(
+                    "https://example.com/webhook",
+                    {"content": "safe"},
+                    sleep=lambda _seconds: None,
+                )
+
+        self.assertEqual(
+            "discord_http_400_api_240000",
+            raised.exception.error_code,
+        )
+        self.assertEqual(240000, raised.exception.discord_api_code)
+        self.assertEqual(400, raised.exception.http_status_code)
+        self.assertNotIn("unsafe response detail", raised.exception.error_code)
+
+    def test_harmful_original_link_uses_cached_google_news_fallback_once(self):
+        blocked = FakeResponse()
+        blocked.status_code = 400
+        blocked.json = mock.Mock(
+            return_value={"code": 240000, "message": "blocked"}
+        )
+        blocked.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+        payload = {
+            "content": (
+                "**Headline**\n"
+                "https://publisher.example/article\n\n"
+                "📅 date"
+            )
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            resolver_db = str(Path(directory) / "resolver.db")
+            with sqlite3.connect(resolver_db) as connection:
+                connection.execute(
+                    "CREATE TABLE google_news_url_cache ("
+                    "article_id TEXT PRIMARY KEY, google_url TEXT NOT NULL, "
+                    "resolved_url TEXT, status TEXT NOT NULL, "
+                    "attempt_count INTEGER NOT NULL DEFAULT 0, "
+                    "last_error_code TEXT, next_retry_at TEXT, updated_at TEXT NOT NULL)"
+                )
+                connection.execute(
+                    "INSERT INTO google_news_url_cache "
+                    "(article_id, google_url, resolved_url, status, updated_at) "
+                    "VALUES (?, ?, ?, 'resolved', ?)",
+                    (
+                        "article-id",
+                        "https://news.google.com/rss/articles/article-id?oc=5",
+                        "https://publisher.example/article",
+                        "2026-09-02T00:00:00+00:00",
+                    ),
+                )
+
+            with mock.patch.object(
+                self.delivery.requests,
+                "post",
+                side_effect=[blocked, FakeResponse()],
+            ) as post:
+                message_id = self.delivery.send_webhook_message(
+                    "https://example.com/webhook",
+                    payload,
+                    sleep=lambda _seconds: None,
+                    resolver_db_path=resolver_db,
+                )
+
+        self.assertEqual("1234567890", message_id)
+        self.assertTrue(message_id.google_news_fallback)
+        self.assertEqual(2, message_id.attempt_count)
+        self.assertEqual(2, post.call_count)
+        fallback_content = post.call_args_list[1].kwargs["json"]["content"]
+        self.assertIn("https://news.google.com/rss/articles/article-id?oc=5", fallback_content)
+        self.assertNotIn("https://publisher.example/article", fallback_content)
+        self.assertIn("https://publisher.example/article", payload["content"])
+
+    def test_other_discord_400_codes_do_not_replace_original_links(self):
+        blocked = FakeResponse()
+        blocked.status_code = 400
+        blocked.json = mock.Mock(
+            return_value={"code": 50035, "message": "invalid form body"}
+        )
+        blocked.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            return_value=blocked,
+        ) as post:
+            with self.assertRaises(requests.HTTPError) as raised:
+                self.delivery.send_webhook_message(
+                    "https://example.com/webhook",
+                    {"content": "https://publisher.example/article"},
+                    sleep=lambda _seconds: None,
+                    resolver_db_path="missing.db",
+                )
+
+        self.assertEqual("discord_http_400_api_50035", raised.exception.error_code)
+        self.assertEqual(1, post.call_count)
+
+    def test_fallback_requires_an_exact_url_and_trusted_google_hostname(self):
+        blocked = FakeResponse()
+        blocked.status_code = 400
+        blocked.json = mock.Mock(
+            return_value={"code": 240000, "message": "blocked"}
+        )
+        blocked.raise_for_status = mock.Mock(
+            side_effect=requests.HTTPError("unsafe response detail")
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            resolver_db = str(Path(directory) / "resolver.db")
+            with sqlite3.connect(resolver_db) as connection:
+                connection.execute(
+                    "CREATE TABLE google_news_url_cache ("
+                    "article_id TEXT PRIMARY KEY, google_url TEXT NOT NULL, "
+                    "resolved_url TEXT, status TEXT NOT NULL)"
+                )
+                connection.executemany(
+                    "INSERT INTO google_news_url_cache "
+                    "(article_id, google_url, resolved_url, status) "
+                    "VALUES (?, ?, ?, 'resolved')",
+                    (
+                        (
+                            "prefix",
+                            "https://news.google.com/rss/articles/prefix",
+                            "https://publisher.example/article",
+                        ),
+                        (
+                            "untrusted",
+                            "https://news.google.com.evil.example/article",
+                            "https://publisher.example/exact",
+                        ),
+                    ),
+                )
+
+            with mock.patch.object(
+                self.delivery.requests,
+                "post",
+                return_value=blocked,
+            ) as post:
+                with self.assertRaises(requests.HTTPError):
+                    self.delivery.send_webhook_message(
+                        "https://example.com/webhook",
+                        {
+                            "content": (
+                                "https://publisher.example/article-extra\n"
+                                "https://publisher.example/exact"
+                            )
+                        },
+                        sleep=lambda _seconds: None,
+                        resolver_db_path=resolver_db,
+                    )
+
+        self.assertEqual(1, post.call_count)
 
     def test_rate_limit_failure_preserves_prior_response_unknown_evidence(self):
         rate_limited = FakeResponse()

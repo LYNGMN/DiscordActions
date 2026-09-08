@@ -164,7 +164,8 @@ jobs:
             const processed = summary.profiles.reduce((total, item) => total + item.processed_count, 0);
             const pending = summary.profiles.reduce((total, item) => total + item.pending_count, 0);
             const ambiguous = summary.profiles.reduce((total, item) => total + item.ambiguous_retry_count, 0);
-            await core.summary
+            const failedProfiles = summary.profiles.filter(item => item.status === 'failed');
+            core.summary
               .addHeading('Google News Manual Delivery Test')
               .addRaw(`Status: ${summary.status}\n`)
               .addRaw(`Profiles: ${summary.profiles.length}\n`)
@@ -172,8 +173,24 @@ jobs:
               .addRaw(`Pending deliveries: ${pending}\n`)
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
               .addRaw(`Unmapped publishers: ${summary.unmapped_publisher_count ?? 0}\n`)
-              .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`)
-              .write();
+              .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`);
+            if (failedProfiles.length > 0) {
+              core.summary
+                .addHeading('Failed profiles', 2)
+                .addTable([
+                  [
+                    { data: 'Profile', header: true },
+                    { data: 'Error code', header: true },
+                    { data: 'Pending', header: true },
+                  ],
+                  ...failedProfiles.map(item => [
+                    item.profile_id,
+                    item.error_code ?? 'unknown_failure',
+                    String(item.pending_count),
+                  ]),
+                ]);
+            }
+            await core.summary.write();
 
       - name: Upload updated state
         if: always()

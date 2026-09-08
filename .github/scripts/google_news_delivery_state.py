@@ -15,6 +15,7 @@ from google_news_manual_test import prepare_baseline_item
 
 
 DISCORD_MESSAGE_ID = re.compile(r"^[0-9]+$")
+SAFE_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 TRACKING_QUERY_KEYS = {
     "dclid",
     "fbclid",
@@ -379,7 +380,7 @@ def mark_delivery_message_failed(
     error_code: str,
     attempt_count: int = 1,
 ) -> None:
-    if error_code not in {"ambiguous_retry", "final_failure"}:
+    if not isinstance(error_code, str) or not SAFE_ERROR_CODE.fullmatch(error_code):
         error_code = "final_failure"
     with sqlite3.connect(db_path) as connection:
         _ensure_message_table(connection)

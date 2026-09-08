@@ -158,6 +158,17 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("Unmapped publishers:", source)
                 self.assertIn("New unmapped publishers:", source)
 
+    def test_scheduled_and_manual_summaries_show_only_safe_failure_fields(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("Failed profiles", source)
+                self.assertIn("item.profile_id", source)
+                self.assertIn("item.error_code", source)
+                self.assertIn("item.pending_count", source)
+                self.assertNotIn("error.message", source)
+                self.assertNotIn("response.body", source)
+
     def test_ci_compiles_every_new_runtime_module_on_python_312(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python-version: '3.12'", source)
