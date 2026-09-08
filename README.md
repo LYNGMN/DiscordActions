@@ -70,6 +70,8 @@ Date filters are inclusive. They decide whether an item may be delivered; they n
 
 Some countries span multiple timezones. In that case, set `FEED_TIMEZONE` explicitly instead of relying on `FEED_COUNTRY`; for example, choose the timezone of the intended U.S. audience.
 
+Time conversion uses Python's standard-library `zoneinfo` with the pinned official `tzdata` package, so the same IANA rules apply on GitHub Actions and local machines. Country defaults are preserved in `.github/config/feed_country_timezones.json`; this preference map does not contain daylight-saving rules. Calendar boundaries retain the previous behavior: an ambiguous local time prefers the non-DST offset (or the later instant if both have the same DST status), and a nonexistent local time uses the offset before the clock change. Rolling periods are calculated in UTC and remain exact elapsed durations across clock changes. Existing country-specific date formats are unchanged.
+
 Keyword filters support `OR`/`|`, `AND`/`&`/adjacent terms, `NOT`/`!`/`-`, parentheses, and exact phrases such as `"Lee Ji-eun"`. When both date and keyword filters are set, an item must pass both. Examples:
 
 ```text

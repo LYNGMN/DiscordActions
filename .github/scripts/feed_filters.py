@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
-import pytz
+from feed_timezones import COUNTRY_TIMEZONES, get_timezone, localize_boundary
 from dateutil import parser as date_parser
 
 from google_news_keyword_matcher import CompiledKeywordMatch, compile_keyword_match
@@ -77,15 +77,11 @@ def resolve_feed_timezone(
     for candidate in (explicit_timezone, service_timezone):
         value = candidate.strip() if isinstance(candidate, str) else ""
         if value:
-            try:
-                pytz.timezone(value)
-            except pytz.UnknownTimeZoneError:
-                raise ValueError("invalid feed timezone") from None
+            get_timezone(value)
             return value
 
     country = country_code.strip().upper() if isinstance(country_code, str) else ""
-    zones = pytz.country_timezones.get(country, ())
-    return zones[0] if zones else "UTC"
+    return COUNTRY_TIMEZONES.get(country, "UTC")
 
 
 def resolve_feed_date_filter(new_value: str = "", legacy_value: str = "") -> str:
@@ -177,10 +173,7 @@ def compile_feed_filter(
     if normalized_scope not in KEYWORD_SCOPES:
         raise ValueError("invalid feed keyword scope")
 
-    try:
-        zone = pytz.timezone(timezone_name)
-    except (AttributeError, pytz.UnknownTimeZoneError):
-        raise ValueError("invalid feed timezone") from None
+    zone = get_timezone(timezone_name)
 
     reference = now or datetime.now(timezone.utc)
     if reference.tzinfo is None or reference.utcoffset() is None:
@@ -239,7 +232,7 @@ def _compile_date_window(
         if value <= 0:
             raise ValueError("invalid feed date filter")
         delta = timedelta(hours=value) if unit == "h" else timedelta(days=value)
-        return reference - delta, reference
+        return reference.astimezone(timezone.utc) - delta, reference
 
     tokens = expression.split()
     if not tokens or len(tokens) > 2:
@@ -281,11 +274,11 @@ def _subtract_calendar_months(value: date, months: int) -> date:
 
 
 def _local_midnight(zone, value: date) -> datetime:
-    return zone.localize(datetime.combine(value, time.min))
+    return localize_boundary(datetime.combine(value, time.min), zone)
 
 
 def _local_end_of_day(zone, value: date) -> datetime:
-    return zone.localize(datetime.combine(value, time.max))
+    return localize_boundary(datetime.combine(value, time.max), zone)
 
 
 def _parse_item_datetime(value: str) -> datetime:

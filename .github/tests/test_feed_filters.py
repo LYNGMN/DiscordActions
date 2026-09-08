@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytz
+from zoneinfo import ZoneInfo
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -31,7 +31,7 @@ class FeedFilterTests(unittest.TestCase):
             keyword_scope=scope,
             timezone_name="Asia/Seoul",
             display_language="ko",
-            now=now or datetime(2026, 9, 1, 12, 0, tzinfo=pytz.timezone("Asia/Seoul")),
+            now=now or datetime(2026, 9, 1, 12, 0, tzinfo=ZoneInfo("Asia/Seoul")),
         )
 
     def test_timezone_precedence_is_explicit_then_service_then_country_then_utc(self):
@@ -69,7 +69,7 @@ class FeedFilterTests(unittest.TestCase):
     def test_calendar_one_day_uses_local_midnight(self):
         compiled = self.compile(
             "calendar:1d",
-            now=pytz.timezone("Asia/Seoul").localize(datetime(2026, 9, 1, 12, 0)),
+            now=datetime(2026, 9, 1, 12, 0, tzinfo=ZoneInfo("Asia/Seoul")),
         )
 
         self.assertTrue(compiled.matches("2026-08-31T15:00:00Z", "title", "").matched)
@@ -78,21 +78,21 @@ class FeedFilterTests(unittest.TestCase):
     def test_calendar_seven_days_includes_today_and_six_previous_dates(self):
         compiled = self.compile(
             "calendar:7d",
-            now=pytz.timezone("Asia/Seoul").localize(datetime(2026, 9, 1, 12, 0)),
+            now=datetime(2026, 9, 1, 12, 0, tzinfo=ZoneInfo("Asia/Seoul")),
         )
 
         self.assertTrue(compiled.matches("2026-08-25T15:00:00Z", "title", "").matched)
         self.assertFalse(compiled.matches("2026-08-25T14:59:59Z", "title", "").matched)
 
     def test_calendar_month_clamps_month_end_and_leap_day(self):
-        seoul = pytz.timezone("Asia/Seoul")
+        seoul = ZoneInfo("Asia/Seoul")
         march_2026 = self.compile(
             "calendar:1mo",
-            now=seoul.localize(datetime(2026, 3, 31, 12, 0)),
+            now=datetime(2026, 3, 31, 12, 0, tzinfo=seoul),
         )
         march_2024 = self.compile(
             "calendar:1mo",
-            now=seoul.localize(datetime(2024, 3, 31, 12, 0)),
+            now=datetime(2024, 3, 31, 12, 0, tzinfo=seoul),
         )
 
         self.assertTrue(march_2026.matches("2026-02-27T15:00:00Z", "title", "").matched)

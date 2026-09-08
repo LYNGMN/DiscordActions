@@ -8,8 +8,7 @@ import logging
 import json
 import sqlite3
 import sys
-import pytz
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
@@ -541,17 +540,17 @@ def parse_date_filter(filter_string):
     until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
     
     if since_match:
-        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d').replace(tzinfo=pytz.UTC)
+        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d').replace(tzinfo=timezone.utc)
         logging.info(f"since_date 파싱 결과: {since_date}")
     if until_match:
-        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d').replace(tzinfo=pytz.UTC)
+        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d').replace(tzinfo=timezone.utc)
         logging.info(f"until_date 파싱 결과: {until_date}")
 
     past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
     if past_match:
         value = int(past_match.group(1))
         unit = past_match.group(2)
-        now = datetime.now(pytz.UTC)
+        now = datetime.now(timezone.utc)
         if unit == 'h':
             past_date = now - timedelta(hours=value)
         elif unit == 'd':
@@ -568,8 +567,8 @@ def parse_date_filter(filter_string):
     return since_date, until_date, past_date
 
 def is_within_date_range(pub_date, since_date, until_date, past_date):
-    pub_datetime = parser.parse(pub_date).replace(tzinfo=pytz.UTC)
-    now = datetime.now(pytz.UTC)
+    pub_datetime = parser.parse(pub_date).replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     
     logging.info(f"검사 중인 기사 날짜: {pub_datetime}")
     logging.info(f"현재 날짜: {now}")
