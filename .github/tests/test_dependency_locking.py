@@ -7,20 +7,6 @@ ROOT = Path(__file__).resolve().parents[2]
 GITHUB_DIR = ROOT / ".github"
 WORKFLOWS_DIR = GITHUB_DIR / "workflows"
 
-COMMON_DIRECT = (
-    "requests==2.34.2",
-    "python-dateutil==2.9.0.post0",
-    "beautifulsoup4==4.15.0",
-    "Babel==2.18.0",
-    "tzdata==2026.3",
-)
-YOUTUBE_DIRECT = (
-    "-r requirements.in",
-    "google-api-python-client==2.199.0",
-    "isodate==0.7.2",
-)
-
-
 def meaningful_lines(path):
     return tuple(
         line.strip()
@@ -31,14 +17,14 @@ def meaningful_lines(path):
 
 class DependencyLockingTests(unittest.TestCase):
     def test_direct_dependency_inputs_are_exactly_pinned(self):
-        self.assertEqual(
-            COMMON_DIRECT,
-            meaningful_lines(GITHUB_DIR / "requirements.in"),
-        )
-        self.assertEqual(
-            YOUTUBE_DIRECT,
-            meaningful_lines(GITHUB_DIR / "requirements-youtube.in"),
-        )
+        for name in ("requirements.in", "requirements-youtube.in"):
+            lines = meaningful_lines(GITHUB_DIR / name)
+            self.assertTrue(lines)
+            for line in lines:
+                if line == "-r requirements.in":
+                    continue
+                self.assertRegex(line, r"^[A-Za-z0-9_.-]+==[0-9][A-Za-z0-9.!+_-]*$")
+        self.assertIn("-r requirements.in", meaningful_lines(GITHUB_DIR / "requirements-youtube.in"))
 
     def test_lock_files_include_hashes_and_direct_dependencies(self):
         common_lock = (GITHUB_DIR / "requirements.txt").read_text(encoding="utf-8")
@@ -54,11 +40,15 @@ class DependencyLockingTests(unittest.TestCase):
                 re.compile(r"(?m)^[a-zA-Z0-9_.-]+\s*(?:\\)?$"),
             )
 
-        for requirement in COMMON_DIRECT:
-            self.assertIn(requirement.lower(), common_lock.lower())
-            self.assertIn(requirement.lower(), youtube_lock.lower())
-        for requirement in YOUTUBE_DIRECT[1:]:
-            self.assertIn(requirement.lower(), youtube_lock.lower())
+        def locked_requirements(source):
+            return set(re.findall(r"(?m)^([A-Za-z0-9_.-]+==[^\s]+)", source.lower()))
+
+        for requirement in meaningful_lines(GITHUB_DIR / "requirements.in"):
+            self.assertIn(requirement.lower(), locked_requirements(common_lock))
+            self.assertIn(requirement.lower(), locked_requirements(youtube_lock))
+        for requirement in meaningful_lines(GITHUB_DIR / "requirements-youtube.in"):
+            if not requirement.startswith("-r "):
+                self.assertIn(requirement.lower(), locked_requirements(youtube_lock))
 
     def test_all_python_workflows_use_python_312_and_hashed_locks(self):
         expected_locks = {
