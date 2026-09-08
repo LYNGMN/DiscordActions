@@ -2,7 +2,7 @@
 
 from typing import Dict
 
-import pytz
+from feed_timezones import get_timezone
 from babel import Locale
 from babel.dates import format_date, format_datetime
 from dateutil import parser as date_parser
@@ -305,10 +305,7 @@ def labels_for(language: str) -> Dict[str, str]:
 
 def format_feed_date(value: str, language: str, timezone_name: str) -> str:
     normalized = normalize_display_language(language)
-    try:
-        zone = pytz.timezone(timezone_name)
-    except (AttributeError, pytz.UnknownTimeZoneError):
-        raise ValueError("invalid feed timezone") from None
+    zone = get_timezone(timezone_name)
     try:
         parsed = date_parser.parse(value)
     except (TypeError, ValueError, OverflowError):
@@ -387,10 +384,7 @@ def localized_country_name(country_code: str, language: str) -> str:
 
 
 def _timezone(timezone_name: str):
-    try:
-        return pytz.timezone(timezone_name)
-    except (AttributeError, pytz.UnknownTimeZoneError):
-        raise ValueError("invalid feed timezone") from None
+    return get_timezone(timezone_name)
 
 
 def _aware_datetime(value: str):
