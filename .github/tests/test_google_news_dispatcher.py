@@ -30,6 +30,7 @@ class FakeResponse:
         self.status_code = status_code
         self.payload = payload
         self.json_error = json_error
+        self.headers = {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -103,6 +104,64 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                 sleep=lambda _: None,
             )
 
+        runner.assert_not_called()
+
+    def test_restored_global_deferral_blocks_preflight_and_handlers(self):
+        from discord_rate_limit_state import RateLimitStore
+        Path(self.state_dir).mkdir()
+        RateLimitStore(str(Path(self.state_dir) / 'resolver.db')).save('target', 600, 'global')
+        for manual in (False, True):
+            with self.subTest(manual=manual):
+                session, runner = mock.Mock(), mock.Mock()
+                summary = self.dispatcher.run_dispatch(
+                    self.profiles, self.env, self.state_dir, manual,
+                    session=session, subprocess_runner=runner)
+                session.get.assert_not_called()
+                runner.assert_not_called()
+                self.assertEqual(summary.status, 'failed' if manual else 'success')
+                self.assertEqual(len(summary.profiles), 11)
+                self.assertTrue(all(item.status == 'deferred' for item in summary.profiles))
+
+    def test_preflight_429_only_defers_affected_profile(self):
+        limited = FakeResponse(429, {'retry_after': 601})
+        session = QueueSession([limited] + [FakeResponse(payload={'name': p.expected_webhook_name})
+                                           for p in self.profiles[1:]])
+        calls = []
+        summary = self.dispatcher.run_dispatch(
+            self.profiles, self.env, self.state_dir, False, session=session,
+            subprocess_runner=self.successful_runner(calls), sleep=lambda _: None)
+        self.assertEqual(summary.status, 'success')
+        self.assertEqual(summary.profiles[0].status, 'deferred')
+        self.assertEqual(len(calls), 10)
+
+    def test_shared_webhook_and_actual_pending_count(self):
+        from discord_rate_limit_state import RateLimitStore
+        from google_news_delivery_state import reserve_delivery_with_messages
+        Path(self.state_dir).mkdir()
+        first, second = self.profiles[:2]
+        env = dict(self.env)
+        env[second.webhook_env] = env[first.webhook_env]
+        path = str(Path(self.state_dir) / first.state_db)
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE news_items (guid TEXT PRIMARY KEY, pub_date TEXT, title TEXT, link TEXT, related_news TEXT)')
+        reserve_delivery_with_messages(path, 'item', 'title', '', ['main', 'related'])
+        RateLimitStore(str(Path(self.state_dir) / 'resolver.db')).save(env[first.webhook_env], 601, 'shared')
+        runner = mock.Mock()
+        summary = self.dispatcher.run_profiles([first, second], env, self.state_dir, False, subprocess_runner=runner)
+        runner.assert_not_called()
+        self.assertEqual([p.pending_count for p in summary.profiles], [1, 0])
+        self.assertEqual([p.rate_limit_scope for p in summary.profiles], ['shared', 'shared'])
+
+    def test_preflight_short_limits_retry_four_times_then_defer(self):
+        limited = FakeResponse(429, {'retry_after': 1})
+        session = QueueSession([limited] * 5)
+        runner, sleep = mock.Mock(), mock.Mock()
+        summary = self.dispatcher.run_dispatch(
+            self.profiles[:1], self.env, self.state_dir, False, session=session,
+            subprocess_runner=runner, sleep=sleep)
+        self.assertEqual(summary.profiles[0].status, 'deferred')
+        self.assertEqual(sleep.call_count, 4)
+        self.assertEqual(len(session.calls), 5)
         runner.assert_not_called()
 
     def test_invalid_common_feed_settings_stop_before_webhook_network(self):

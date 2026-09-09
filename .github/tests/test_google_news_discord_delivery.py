@@ -352,7 +352,7 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
                     "https://example.com/webhook",
                     {"content": "https://publisher.example/article"},
                     sleep=lambda _seconds: None,
-                    resolver_db_path="missing.db",
+                    resolver_db_path=None,
                 )
 
         self.assertEqual("discord_http_400_api_50035", raised.exception.error_code)

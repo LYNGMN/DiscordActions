@@ -14,6 +14,7 @@ from dateutil import parser
 from dateutil.tz import gettz
 from bs4 import BeautifulSoup
 from delivery_admin_alert import notify_admin
+from discord_rate_limit_state import DeliveryDeferred
 from google_news_manual_test import (
     prepare_manual_test_items,
     validate_manual_test_result,
@@ -580,7 +581,7 @@ def process_news_item(item, resolver):
         return None
 
 
-def record_profile_result(status, processed_count, error_code=None):
+def record_profile_result(status, processed_count, error_code=None, deferred=None):
     if not RESULT_PATH:
         return
     write_profile_result(
@@ -591,6 +592,8 @@ def record_profile_result(status, processed_count, error_code=None):
         count_pending_deliveries(DB_PATH),
         error_code,
         ambiguous_retry_count=count_ambiguous_retries(DB_PATH),
+        retry_at=deferred.retry_at if deferred else None,
+        rate_limit_scope=deferred.rate_limit_scope if deferred else None,
     )
 
 
@@ -620,9 +623,12 @@ def resume_pending_deliveries():
     pending_guids = pending_delivery_guids(DB_PATH)
     if MANUAL_TEST_MODE:
         pending_guids = pending_guids[:1]
-    for guid in pending_guids:
+    for completed_count, guid in enumerate(pending_guids):
         try:
             deliver_reserved_item(guid)
+        except DeliveryDeferred as error:
+            error.processed_count = completed_count
+            raise
         except Exception as error:
             notify_admin(
                 DISCORD_WEBHOOK_ADMIN,
@@ -796,6 +802,8 @@ def main():
                     deliver_reserved_item(guid)
                     processed_count += 1
                     logging.info(f"뉴스 항목 처리 완료: {title}")
+                except DeliveryDeferred:
+                    raise
                 except Exception as error:
                     profile_failed = True
                     profile_failure_code = getattr(
@@ -827,6 +835,11 @@ def main():
         record_profile_result("success", processed_count)
         return 0
 
+    except DeliveryDeferred as error:
+        processed_count += getattr(error, "processed_count", 0)
+        record_profile_result("deferred", processed_count, error.error_code, error)
+        print("::warning title=Google News delivery deferred::Pending messages saved; automatic retry is scheduled")
+        return 1 if MANUAL_TEST_MODE else 0
     except BlockedRequestError as error:
         logging.error("Google News 요청이 차단되었습니다 (코드: %s)", error.error_code)
         record_profile_result("failed", processed_count, error.error_code)

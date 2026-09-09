@@ -6,6 +6,7 @@ import re
 from typing import Callable, Optional
 
 import requests
+from discord_rate_limit_state import RateLimitStore, retry_after_seconds, rate_limit_scope
 
 
 SAFE_LABEL = re.compile(r"[^A-Za-z0-9_. -]+")
@@ -46,12 +47,20 @@ def notify_admin(
     if run_url:
         lines.append("run: {}".format(run_url))
     try:
+        state_path = os.environ.get("GOOGLE_NEWS_RESOLVER_DB_PATH") if service == "Google News" else None
+        rate_limits = RateLimitStore(state_path) if state_path else None
+        if rate_limits:
+            rate_limits.check(webhook_url)
         response = post(
             webhook_url,
             json={"content": "\n".join(lines), "username": "Discord Actions"},
             headers={"Content-Type": "application/json"},
             timeout=(5.0, 15.0),
         )
+        if rate_limits and response.status_code == 429:
+            delay = retry_after_seconds(response)
+            if delay is not None:
+                rate_limits.save(webhook_url, delay, rate_limit_scope(response), 1)
         response.raise_for_status()
         return True
     except Exception:

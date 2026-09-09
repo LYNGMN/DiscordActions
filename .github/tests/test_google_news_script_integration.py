@@ -27,6 +27,9 @@ def load_script(path):
         spec = importlib.util.spec_from_file_location(module_name, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        state = tempfile.TemporaryDirectory()
+        unittest.addModuleCleanup(state.cleanup)
+        module.RESOLVER_DB_PATH = str(Path(state.name) / "resolver.db")
         return module
     finally:
         sys.path.pop(0)
@@ -89,6 +92,39 @@ class SequenceResolver(StubResolver):
 
 
 class GoogleNewsScriptIntegrationTests(unittest.TestCase):
+    def test_all_handlers_report_deferred_and_preserve_completed_resume_count(self):
+        from discord_rate_limit_state import DeliveryDeferred
+        for script_path in SCRIPT_PATHS:
+            for manual in (False, True):
+                with self.subTest(script=script_path.name, manual=manual), tempfile.TemporaryDirectory() as directory:
+                    module = load_script(script_path)
+                    module.DB_PATH = str(Path(directory) / 'news.db')
+                    module.RESULT_PATH = str(Path(directory) / 'result.json')
+                    module.PROFILE_ID = 'test_profile'
+                    module.MANUAL_TEST_MODE = manual
+                    module.INITIALIZE_TOP = module.INITIALIZE_TOPIC = module.INITIALIZE_KEYWORD = False
+                    module.init_db()
+                    for guid in ('first', 'second'):
+                        module.reserve_delivery_with_messages(module.DB_PATH, guid, guid, '', ['message'])
+                    if 'top_' in script_path.name:
+                        metadata = ('https://news.google.com/rss?gl=KR', None, 'UTC', '%Y')
+                    elif 'topic_' in script_path.name:
+                        metadata = ('https://news.google.com/rss?gl=KR', 'Topic', 'ko')
+                    else:
+                        metadata = ('https://news.google.com/rss?gl=KR', 'Keyword', 'KR')
+                    deferred = DeliveryDeferred(2000000000, 'shared', 1)
+                    effects = [deferred] if manual else ['123', deferred]
+                    with mock.patch.object(module, 'get_rss_url', return_value=metadata), \
+                            mock.patch.object(module, 'send_discord_message', side_effect=effects), \
+                            mock.patch.object(module, 'fetch_rss_feed') as fetch:
+                        self.assertEqual(module.main(), 1 if manual else 0)
+                    fetch.assert_not_called()
+                    result = json.loads(Path(module.RESULT_PATH).read_text())
+                    self.assertEqual(result['status'], 'deferred')
+                    self.assertEqual(result['processed_count'], 0 if manual else 1)
+                    self.assertEqual(result['pending_count'], 2 if manual else 1)
+                    self.assertEqual(result['rate_limit_scope'], 'shared')
+
     def test_reset_clears_delivery_state_but_preserves_url_cache(self):
         for script_path in SCRIPT_PATHS:
             with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as temp_dir:
@@ -519,7 +555,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 with mock.patch.object(
                     module.requests, "post", return_value=rate_limited
                 ) as post, self.assertRaisesRegex(
-                    RuntimeError, "discord_delivery_failed"
+                    RuntimeError, "discord_delivery_deferred"
                 ):
                     module.send_discord_message(
                         "https://discord.com/api/webhooks/redacted",
@@ -545,7 +581,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                     "post",
                     side_effect=[rate_limited] * 5,
                 ) as post, self.assertRaisesRegex(
-                    RuntimeError, "discord_delivery_failed"
+                    RuntimeError, "discord_delivery_deferred"
                 ):
                     module.send_discord_message(
                         "https://discord.com/api/webhooks/redacted",

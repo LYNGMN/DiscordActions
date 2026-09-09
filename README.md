@@ -405,6 +405,16 @@ Scheduled GitHub Actions runs can start late. Weekly and monthly examples are ca
 
 ## Troubleshooting
 
+### Google News delivery deferred by Discord
+
+Discord may ask the workflow to wait before sending more messages. Short limits are retried up to four times. If the requested wait exceeds 300 seconds, or those retries are exhausted, a valid retry time and the unsent queue are saved in the shared state artifact (`resolver.db` includes the cooldown table).
+
+A scheduled run with only safely saved deferrals finishes successfully **with a warning**, not a claim that everything was sent. The **Deferred deliveries** summary lists each profile, its actual pending article count, retry time in UTC, and rate-limit scope. The next eligible scheduled run resumes the first unsent message. Already confirmed messages are not resent. Keep the state artifact; deleting it loses recovery information.
+
+Limits apply to the affected webhook, including profiles sharing it. A global limit also suppresses other Discord requests and administrator alerts until it expires. An unknown scope is conservatively treated as a webhook limit. Webhook URLs and tokens are not stored in the cooldown table.
+
+A **manual delivery test** that is deferred saves the same recovery state but fails the test because actual delivery was not confirmed. Missing or invalid retry timing, state-storage errors, authentication errors, and configuration errors still fail the run. The 15-minute schedule and 25-minute job timeout are unchanged; GitHub scheduling delays can postpone the actual retry.
+
 - Check the Actions result and its uploaded SQLite state artifact first.
 - Never publish webhook URLs, API keys, or tokens in logs or support posts.
 - A failed Google News run lists only the profile ID, a safe error code, and the pending count under **Failed profiles**. A code such as `discord_http_400_api_240000` means Discord rejected message content because of a potentially harmful link. When the resolver cache contains an exact mapping, delivery automatically retries once with the validated `news.google.com` article URL. The saved message is not rewritten, and an unsuccessful item remains pending in order for the next run. Other Discord 4xx responses are not retried blindly. See [Discord API error codes](https://docs.discord.com/developers/topics/opcodes-and-status-codes).

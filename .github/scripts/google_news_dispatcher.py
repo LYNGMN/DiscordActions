@@ -17,7 +17,10 @@ from urllib.parse import urlparse
 
 import requests
 
-from google_news_profile_result import ERROR_CODE, STATUSES
+from google_news_profile_result import ERROR_CODE, STATUSES, valid_deferral
+from discord_rate_limit_state import RateLimitStore, retry_after_seconds, rate_limit_scope
+from google_news_delivery_state import count_pending_deliveries
+from google_news_discord_delivery import MAX_RATE_LIMIT_RETRIES, MAX_RATE_LIMIT_WAIT_SECONDS
 from google_news_publisher_names import PublisherRegistry, load_default_registry
 from google_news_publisher_review import (
     export_unmapped_publishers,
@@ -59,6 +62,8 @@ class ProfileRunResult:
     pending_count: int
     ambiguous_retry_count: int
     error_code: Optional[str]
+    retry_at: Optional[str] = None
+    rate_limit_scope: Optional[str] = None
 
     @classmethod
     def skipped(cls, profile_id: str, error_code: str) -> "ProfileRunResult":
@@ -69,7 +74,7 @@ class ProfileRunResult:
         return cls(profile_id, "failed", 0, 0, 0, error_code)
 
     def to_dict(self):
-        return {
+        payload = {
             "profile_id": self.profile_id,
             "status": self.status,
             "processed_count": self.processed_count,
@@ -77,6 +82,9 @@ class ProfileRunResult:
             "ambiguous_retry_count": self.ambiguous_retry_count,
             "error_code": self.error_code,
         }
+        if self.status == "deferred":
+            payload.update(retry_at=self.retry_at, rate_limit_scope=self.rate_limit_scope)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -105,10 +113,24 @@ class DispatchSummary:
         }
 
 
+def _preflight_response(session, webhook_url, rate_limits, sleep):
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        response = session.get(webhook_url, timeout=(5.0, 15.0))
+        if not rate_limits or response.status_code != 429:
+            return response, attempt + 1
+        delay = retry_after_seconds(response)
+        wait = delay if delay is not None else 1.0
+        if attempt == MAX_RATE_LIMIT_RETRIES or wait > MAX_RATE_LIMIT_WAIT_SECONDS:
+            return response, attempt + 1
+        sleep(wait)
+
+
 def validate_webhooks(
     profiles: Sequence[GoogleNewsProfile],
     env: Mapping[str, str],
     session: requests.Session,
+    rate_limits=None,
+    sleep=time.sleep,
 ) -> None:
     validated_urls = []
     for profile in profiles:
@@ -129,15 +151,21 @@ def validate_webhooks(
 
     first_error_code = None
     for profile, webhook_url in validated_urls:
+        if rate_limits and rate_limits.active(webhook_url):
+            continue
         error_code = None
         reason = None
         try:
-            response = session.get(webhook_url, timeout=(5.0, 15.0))
+            response, attempts = _preflight_response(session, webhook_url, rate_limits, sleep)
         except Exception:
             error_code = "webhook_preflight_failed"
             reason = "request_error"
         else:
             if response.status_code == 429:
+                delay = retry_after_seconds(response) if rate_limits else None
+                if delay is not None:
+                    rate_limits.save(webhook_url, delay, rate_limit_scope(response), attempts)
+                    continue
                 error_code = "webhook_rate_limited"
                 reason = "http_429"
             elif response.status_code != 200:
@@ -202,6 +230,15 @@ def run_profiles(
 
     with tempfile.TemporaryDirectory(prefix="google-news-results-", dir=state_dir) as result_dir:
         for index, profile in enumerate(profiles):
+            if not validate_only:
+                deferred = RateLimitStore(resolver_db).active(env.get(profile.webhook_env, ""))
+                if deferred:
+                    db_path = state_path / profile.state_db
+                    pending = count_pending_deliveries(str(db_path)) if db_path.exists() else 0
+                    results.append(ProfileRunResult(
+                        profile.profile_id, "deferred", 0, pending, 0,
+                        deferred.error_code, deferred.retry_at, deferred.rate_limit_scope))
+                    continue
             if circuit_reader.get_open_circuit() is not None:
                 results.append(ProfileRunResult.skipped(profile.profile_id, "circuit_open"))
                 continue
@@ -242,7 +279,12 @@ def run_profiles(
             ):
                 sleep(1.0)
 
-    status = "failed" if any(result.status == "failed" for result in results) else "success"
+    status = "failed" if any(
+        result.status == "failed" or (manual_test and result.status == "deferred")
+        for result in results
+    ) else "success"
+    if any(result.status == "deferred" for result in results):
+        print("::warning title=Google News delivery deferred::See the saved retry times and pending counts in the run summary")
     review_payload = export_unmapped_publishers(
         state_path, database_map, registry
     )
@@ -291,7 +333,8 @@ def run_dispatch(
         validate_common_feed_environment(merged_environment)
     export_unmapped_publishers(state_dir, database_map, registry)
     if not validate_only:
-        validate_webhooks(profiles, env, session or requests.Session())
+        validate_webhooks(profiles, env, session or requests.Session(),
+                          RateLimitStore(str(Path(state_dir) / "resolver.db")), sleep=sleep)
     return run_profiles(
         profiles,
         env,
@@ -324,7 +367,9 @@ def _read_profile_result(
             payload = json.load(handle)
     except (OSError, ValueError):
         return ProfileRunResult.failed(expected_profile_id, "missing_result")
-    if not isinstance(payload, dict) or set(payload) != RESULT_FIELDS:
+    if not isinstance(payload, dict) or set(payload) not in (
+        RESULT_FIELDS, RESULT_FIELDS | {"retry_at", "rate_limit_scope"}
+    ):
         return ProfileRunResult.failed(expected_profile_id, "invalid_result")
     if payload.get("profile_id") != expected_profile_id:
         return ProfileRunResult.failed(expected_profile_id, "invalid_result")
@@ -352,6 +397,8 @@ def _read_profile_result(
         return ProfileRunResult.failed(expected_profile_id, "invalid_result")
     if return_code != 0 and status == "success":
         return ProfileRunResult.failed(expected_profile_id, "handler_exit_nonzero")
+    if status == "deferred" and not valid_deferral(payload.get("retry_at"), payload.get("rate_limit_scope")):
+        return ProfileRunResult.failed(expected_profile_id, "invalid_result")
     return ProfileRunResult(
         expected_profile_id,
         status,
@@ -359,6 +406,8 @@ def _read_profile_result(
         pending_count,
         ambiguous_retry_count,
         error_code,
+        payload.get("retry_at"),
+        payload.get("rate_limit_scope"),
     )
 
 

@@ -4,12 +4,22 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime
 from typing import Dict, Optional
 
 
 PROFILE_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-STATUSES = {"success", "failed", "skipped"}
+STATUSES = {"success", "failed", "skipped", "deferred"}
+
+
+def valid_deferral(retry_at, scope):
+    try:
+        return (isinstance(retry_at, str) and
+                datetime.fromisoformat(retry_at).utcoffset() is not None and
+                scope in {"user", "shared", "global", "unknown"})
+    except (ValueError, TypeError):
+        return False
 
 
 def write_profile_result(
@@ -20,6 +30,8 @@ def write_profile_result(
     pending_count: int,
     error_code: Optional[str] = None,
     ambiguous_retry_count: int = 0,
+    retry_at: Optional[str] = None,
+    rate_limit_scope: Optional[str] = None,
 ) -> Dict[str, object]:
     if not isinstance(profile_id, str) or not PROFILE_ID.fullmatch(profile_id):
         raise ValueError("invalid profile id")
@@ -43,6 +55,10 @@ def write_profile_result(
         "ambiguous_retry_count": ambiguous,
         "error_code": error_code,
     }
+    if status == "deferred":
+        if not valid_deferral(retry_at, rate_limit_scope):
+            raise ValueError("invalid deferral")
+        payload.update(retry_at=retry_at, rate_limit_scope=rate_limit_scope)
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
     temporary_path = None

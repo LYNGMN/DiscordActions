@@ -9,6 +9,7 @@ from typing import Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
 import requests
+from discord_rate_limit_state import RateLimitStore, rate_limit_scope, retry_after_seconds
 
 
 MAX_RATE_LIMIT_WAIT_SECONDS = 300.0
@@ -124,6 +125,12 @@ def send_webhook_message(
     resolver_db_path: Optional[str] = None,
 ) -> str:
     """Post with bounded retries and preserve response-unknown evidence."""
+    rate_limits = RateLimitStore(resolver_db_path) if resolver_db_path else None
+    if rate_limits:
+        active = rate_limits.active(webhook_url)
+        if active and active.retry_epoch - rate_limits.clock() <= max_rate_limit_wait_seconds:
+            sleep(max(0.0, active.retry_epoch - rate_limits.clock()))
+        rate_limits.check(webhook_url)
     safe_payload = dict(payload)
     safe_payload["username"] = GOOGLE_NEWS_USERNAME
     safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
@@ -157,6 +164,13 @@ def send_webhook_message(
 
         if response.status_code == 429:
             retry_after = _retry_after_seconds(response)
+            if (rate_limits and retry_after is not None and
+                    (retry_after > max_rate_limit_wait_seconds or
+                     rate_limit_retries >= MAX_RATE_LIMIT_RETRIES)):
+                deferred = rate_limits.save(webhook_url, retry_after,
+                                            rate_limit_scope(response), attempt_count)
+                deferred.ambiguous_retry = ambiguous_retry
+                raise deferred
             if retry_after is None:
                 retry_after = DEFAULT_RATE_LIMIT_WAIT_SECONDS
             if (
@@ -226,14 +240,20 @@ def send_webhook_message(
             _annotate_delivery_error(error, ambiguous_retry, attempt_count)
             raise error
         bucket_wait = _exhausted_bucket_wait_seconds(response)
-        if bucket_wait is not None:
+        if bucket_wait is not None and not rate_limits:
             sleep(min(bucket_wait, max_rate_limit_wait_seconds))
-        return DiscordMessageId(
+        result = DiscordMessageId(
             message_id,
             ambiguous_retry,
             attempt_count,
             google_news_fallback,
         )
+        if rate_limits and bucket_wait is not None:
+            # The queue invokes this only after committing the successful message ID.
+            result.after_recorded = lambda: rate_limits.save(
+                webhook_url, bucket_wait, rate_limit_scope(response), attempt_count,
+                http_status=response.status_code)
+        return result
 
 
 def _discord_api_code(response) -> Optional[int]:
@@ -338,29 +358,7 @@ def _valid_google_news_url(value) -> bool:
 
 
 def _retry_after_seconds(response) -> Optional[float]:
-    values = []
-    for header_name in ("Retry-After", "X-RateLimit-Reset-After"):
-        header_value = response.headers.get(header_name)
-        if header_value is not None:
-            values.append(header_value)
-    try:
-        body = response.json()
-    except (TypeError, ValueError):
-        body = None
-    if isinstance(body, dict) and "retry_after" in body:
-        values.append(body["retry_after"])
-
-    parsed_values = []
-    for value in values:
-        if isinstance(value, bool):
-            continue
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError, OverflowError):
-            continue
-        if math.isfinite(parsed) and parsed >= 0:
-            parsed_values.append(parsed)
-    return max(parsed_values) if parsed_values else None
+    return retry_after_seconds(response)
 
 
 def _exhausted_bucket_wait_seconds(response) -> Optional[float]:

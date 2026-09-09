@@ -272,6 +272,43 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertTrue(self.module.finalize_delivery(self.db_path, "guid-1"))
         self.assertEqual(0, self.module.count_pending_deliveries(self.db_path))
 
+    def test_cooldown_saves_after_success_and_resumes_without_duplicate(self):
+        from discord_rate_limit_state import RateLimitStore, DeliveryDeferred
+        from google_news_discord_delivery import send_webhook_message
+        from unittest.mock import Mock, patch
+        state_path = str(Path(self.temp_dir.name) / 'resolver.db')
+        self.module.reserve_delivery(self.db_path, 'g1')
+        self.module.enqueue_delivery_messages(self.db_path, 'g1', ['main', 'related'])
+        response = Mock(status_code=200, headers={
+            'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset-After': '601'})
+        response.json.return_value = {'id': '123'}
+        def send(content):
+            return send_webhook_message('target', {'content': content}, resolver_db_path=state_path)
+        with patch('google_news_discord_delivery.requests.post', return_value=response) as post:
+            with self.assertRaises(DeliveryDeferred):
+                self.module.deliver_queued_item(self.db_path, 'g1', send)
+            self.assertEqual(post.call_count, 1)
+            self.assertEqual(self.module.pending_delivery_messages(self.db_path, 'g1'), [(1, 'related')])
+            with sqlite3.connect(state_path) as db:
+                db.execute('UPDATE discord_rate_limits SET retry_at = 0')
+            response.headers = {}
+            self.module.deliver_queued_item(self.db_path, 'g1', send)
+            self.assertEqual(post.call_count, 2)
+            self.assertEqual(post.call_args.kwargs['json']['content'], 'related')
+        self.assertEqual(self.module.count_pending_deliveries(self.db_path), 0)
+
+    def test_cooldown_write_failure_does_not_erase_success_evidence(self):
+        from google_news_discord_delivery import DiscordMessageId
+        self.module.reserve_delivery(self.db_path, 'g1')
+        self.module.enqueue_delivery_messages(self.db_path, 'g1', ['main', 'related'])
+        message_id = DiscordMessageId('123')
+        def fail():
+            raise RuntimeError('discord_rate_limit_state_failed')
+        message_id.after_recorded = fail
+        with self.assertRaisesRegex(RuntimeError, 'discord_rate_limit_state_failed'):
+            self.module.deliver_queued_item(self.db_path, 'g1', lambda _: message_id)
+        self.assertEqual(self.module.pending_delivery_messages(self.db_path, 'g1'), [(1, 'related')])
+
     def test_failed_ambiguous_delivery_is_recorded_while_remaining_pending(self):
         self.assertTrue(
             self.module.reserve_delivery_with_messages(

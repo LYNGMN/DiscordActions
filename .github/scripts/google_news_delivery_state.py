@@ -330,7 +330,8 @@ def deliver_queued_item(
                 db_path,
                 guid,
                 sequence,
-                getattr(error, "error_code", "final_failure"),
+                "ambiguous_retry" if getattr(error, "ambiguous_retry", False)
+                else getattr(error, "error_code", "final_failure"),
                 getattr(error, "attempt_count", 1),
             )
             raise
@@ -345,6 +346,9 @@ def deliver_queued_item(
         )
         if ambiguous:
             ambiguous_count += 1
+        after_recorded = getattr(message_id, "after_recorded", None)
+        if after_recorded:
+            after_recorded()
     if not finalize_delivery(db_path, guid):
         raise RuntimeError("delivery_not_complete")
     return QueueDeliveryOutcome(ambiguous_count)
@@ -386,9 +390,10 @@ def mark_delivery_message_failed(
         _ensure_message_table(connection)
         cursor = connection.execute(
             "UPDATE google_news_delivery_messages "
-            "SET attempt_count = attempt_count + ?, last_error_code = ? "
+            "SET attempt_count = attempt_count + ?, last_error_code = "
+            "CASE WHEN last_error_code = 'ambiguous_retry' THEN last_error_code ELSE ? END "
             "WHERE guid = ? AND sequence = ? AND status = 'pending'",
-            (max(1, int(attempt_count)), error_code, guid, sequence),
+            (max(0, int(attempt_count)), error_code, guid, sequence),
         )
         if cursor.rowcount != 1:
             raise ValueError("delivery message not found")

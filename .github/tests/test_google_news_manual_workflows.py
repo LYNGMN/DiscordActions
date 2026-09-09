@@ -71,6 +71,18 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             source,
         )
 
+    def test_both_workflows_report_deferrals_and_preserve_common_database(self):
+        for path in (UNIFIED_WORKFLOW, MANUAL_WORKFLOW):
+            source = path.read_text(encoding='utf-8')
+            self.assertIn("item.status === 'deferred'", source)
+            self.assertIn('core.warning(', source)
+            self.assertIn("'Deferred deliveries'", source)
+            self.assertIn('item.retry_at', source)
+            self.assertIn('item.rate_limit_scope', source)
+            self.assertIn('String(item.pending_count)', source)
+            self.assertIn('path: .google-news-state/', source)
+            self.assertIn('timeout-minutes: 25', source)
+
     def test_obsolete_and_blocked_workflows_are_removed(self):
         for workflow_name in REMOVED_WORKFLOWS:
             with self.subTest(workflow=workflow_name):

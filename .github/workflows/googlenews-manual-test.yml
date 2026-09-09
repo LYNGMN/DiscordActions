@@ -190,6 +190,17 @@ jobs:
                   ]),
                 ]);
             }
+            const deferredProfiles = summary.profiles.filter(item => item.status === 'deferred');
+            if (deferredProfiles.length > 0) {
+              core.warning('Google News delivery deferred; pending messages and retry times are saved.');
+              core.summary.addHeading('Deferred deliveries', 2).addTable([
+                ['Profile', 'Pending deliveries', 'Retry at (UTC)', 'Rate limit scope'],
+                ...deferredProfiles.map(item => [
+                  item.profile_id, String(item.pending_count),
+                  item.retry_at, item.rate_limit_scope
+                ])
+              ]);
+            }
             await core.summary.write();
 
       - name: Upload updated state
