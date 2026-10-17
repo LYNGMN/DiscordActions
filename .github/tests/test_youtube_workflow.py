@@ -1,9 +1,11 @@
 import importlib
+import sqlite3
 import sys
+import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest import mock
 
 
@@ -118,6 +120,113 @@ class EmbedYouTubeClient:
 class YouTubeWorkflowTests(unittest.TestCase):
     def source(self):
         return WORKFLOW.read_text(encoding="utf-8")
+
+    def test_unavailable_channel_video_is_delivered_after_known_video_boundary(self):
+        """Run twice: A is delivered first, B is omitted then recovered."""
+        module = load_youtube_script()
+        module.YOUTUBE_SOURCE = "api"
+        module.YOUTUBE_MODE = "channels"
+        module.YOUTUBE_CHANNEL_ID = "test-channel"
+        module.YOUTUBE_BASELINE_ONLY = False
+        module.YOUTUBE_MANUAL_TEST_MODE = False
+        module.YOUTUBE_DETAILVIEW = False
+        module.YOUTUBE_DELIVERY_ORDER = "feed_oldest_first"
+        module.DISPLAY_LANGUAGE = "en"
+        module.YOUTUBE_PLAYLIST_LAYOUT = "auto"
+
+        def detail(video_id):
+            return {
+                "id": video_id,
+                "snippet": {
+                    "publishedAt": "2026-09-01T00:00:00Z",
+                    "channelTitle": "Test channel",
+                    "channelId": "test-channel",
+                    "title": "Video " + video_id,
+                    "thumbnails": {"default": {"url": "https://img.example/thumb.jpg"}},
+                },
+                "contentDetails": {"duration": "PT7M13S"},
+            }
+
+        client = mock.Mock()
+        client.channels().list().execute.return_value = {
+            "items": [{"contentDetails": {"relatedPlaylists": {"uploads": "uploads"}}}]
+        }
+        client.playlistItems().list().execute.return_value = {
+            "items": [
+                {"snippet": {"resourceId": {"videoId": "A"}}},
+                {"snippet": {"resourceId": {"videoId": "B"}}},
+            ]
+        }
+        client.videos().list().execute.side_effect = [
+            {"items": [detail("A")]},  # B temporarily unavailable
+            {"items": [detail("B")]},  # B available on next run
+        ]
+
+        compiled_filter = SimpleNamespace(
+            fingerprint="test-filter",
+            timezone_name="UTC",
+            matches=lambda *_args: SimpleNamespace(matched=True),
+        )
+        message_id = SimpleNamespace(
+            message_id="123456789012345678",
+            ambiguous_retry=False,
+            attempt_count=1,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            module.DB_PATH = str(Path(directory) / "youtube.db")
+            with (
+                mock.patch.object(module, "compile_runtime_feed_filter", return_value=compiled_filter),
+                mock.patch.object(module, "send_youtube_webhook", return_value=message_id) as send,
+                mock.patch.object(module.time, "sleep"),
+            ):
+                module.fetch_and_post_videos(client)
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    self.assertEqual(
+                        [("A", "sent")],
+                        connection.execute(
+                            "SELECT video_id, delivery_status FROM videos ORDER BY video_id"
+                        ).fetchall(),
+                    )
+                self.assertEqual(["B"], module.missing_youtube_detail_ids(module.DB_PATH))
+
+                # The second source scan sees already-sent A first and stops.
+                # B can only be delivered because its ID was retained.
+                module.fetch_and_post_videos(client)
+                with sqlite3.connect(module.DB_PATH) as connection:
+                    self.assertEqual(
+                        [("A", "sent"), ("B", "sent")],
+                        connection.execute(
+                            "SELECT video_id, delivery_status FROM videos ORDER BY video_id"
+                        ).fetchall(),
+                    )
+                self.assertEqual([], module.missing_youtube_detail_ids(module.DB_PATH))
+                self.assertEqual(2, send.call_count)
+                self.assertEqual(
+                    ["A,B", "B"],
+                    [call.kwargs["id"] for call in client.videos().list.call_args_list],
+                )
+
+    def test_recovered_missing_detail_is_not_cleared_before_processing(self):
+        module = load_youtube_script()
+        module.YOUTUBE_SOURCE = "api"
+        module.YOUTUBE_MODE = "search"
+        module.YOUTUBE_SEARCH_KEYWORD = "test"
+
+        with tempfile.TemporaryDirectory() as directory:
+            module.DB_PATH = str(Path(directory) / "youtube.db")
+            module.init_db()
+            module.remember_missing_youtube_details(module.DB_PATH, ["B"])
+
+            with (
+                mock.patch.object(module, "fetch_videos", return_value=[]),
+                mock.patch.object(module, "fetch_video_details", return_value=[{"id": "B"}]),
+                mock.patch.object(module, "_api_video_data", side_effect=ValueError("conversion failed")),
+            ):
+                with self.assertRaisesRegex(ValueError, "conversion failed"):
+                    module.fetch_configured_video_data(object(), set())
+
+            self.assertEqual(["B"], module.missing_youtube_detail_ids(module.DB_PATH))
 
     def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
         source = self.source()
