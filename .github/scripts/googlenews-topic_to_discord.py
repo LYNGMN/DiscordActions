@@ -975,7 +975,7 @@ def fetch_rss_feed(url, request_guard):
     except BlockedRequestError:
         raise
     except requests.RequestException as error:
-        logging.warning("RSS 피드 가져오기 실패 (오류 유형: %s)", type(error).__name__)
+        logging.warning("RSS 피드 가져오기 실패 (오류 유형: %s, 코드: %s)", type(error).__name__, getattr(error, 'error_code', 'request_error'))
         raise RuntimeError("rss_fetch_failed") from None
 
 def parse_rss_feed(rss_data):
@@ -1087,10 +1087,11 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
         logging.info("Discord에 메시지 게시 완료")
         return message_id
     except (requests.RequestException, TypeError, ValueError) as error:
-        logging.error("Discord 메시지 전송 실패 (오류 유형: %s)", type(error).__name__)
+        logging.error("Discord 메시지 전송 실패 (오류 유형: %s, 코드: %s)", type(error).__name__, getattr(error, 'error_code', 'final_failure'))
         failure = RuntimeError("discord_delivery_failed")
         failure.error_code = getattr(error, "error_code", "final_failure")
         failure.attempt_count = getattr(error, "attempt_count", 1)
+        failure.http_status_code = getattr(error, "http_status_code", None)
         raise failure from None
 
 
