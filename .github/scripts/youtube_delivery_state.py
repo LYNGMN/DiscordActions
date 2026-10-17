@@ -59,6 +59,37 @@ def initialize_delivery_state(db_path: str) -> None:
             "CREATE TABLE IF NOT EXISTS youtube_source_state ("
             "state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)"
         )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS youtube_missing_details ("
+            "video_id TEXT PRIMARY KEY)"
+        )
+
+
+def remember_missing_youtube_details(db_path: str, video_ids: Sequence[str]) -> None:
+    """Persist unresolved IDs before a later known-video scan boundary hides them."""
+    initialize_delivery_state(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.executemany(
+            "INSERT OR IGNORE INTO youtube_missing_details (video_id) VALUES (?)",
+            [(video_id,) for video_id in video_ids if isinstance(video_id, str) and video_id],
+        )
+
+
+def missing_youtube_detail_ids(db_path: str) -> List[str]:
+    initialize_delivery_state(db_path)
+    with sqlite3.connect(db_path) as connection:
+        return [row[0] for row in connection.execute(
+            "SELECT video_id FROM youtube_missing_details ORDER BY rowid"
+        )]
+
+
+def clear_missing_youtube_details(db_path: str, video_ids: Sequence[str]) -> None:
+    initialize_delivery_state(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.executemany(
+            "DELETE FROM youtube_missing_details WHERE video_id = ?",
+            [(video_id,) for video_id in video_ids],
+        )
 
 
 def queue_youtube_delivery(
