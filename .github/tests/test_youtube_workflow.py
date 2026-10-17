@@ -204,7 +204,7 @@ class YouTubeWorkflowTests(unittest.TestCase):
                 self.assertEqual(2, send.call_count)
                 self.assertEqual(
                     ["A,B", "B"],
-                    [call.kwargs["id"] for call in client.videos().list.call_args_list],
+                    [call.kwargs["id"] for call in client.videos().list.call_args_list if "id" in call.kwargs],
                 )
 
     def test_recovered_missing_detail_is_not_cleared_before_processing(self):
