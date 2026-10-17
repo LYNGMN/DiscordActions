@@ -18,6 +18,9 @@ from feed_filters import (
 )
 from feed_localization import labels_for, normalize_display_language
 from youtube_delivery_state import (
+    remember_missing_youtube_details,
+    missing_youtube_detail_ids,
+    clear_missing_youtube_details,
     finalize_youtube_delivery,
     get_search_published_after,
     initialize_delivery_state,
@@ -573,11 +576,15 @@ def fetch_configured_video_data(youtube, known_video_ids):
         known_video_ids=known_video_ids,
     )
     video_ids = [video[0] for video in videos]
+    if YOUTUBE_MODE == 'channels':
+        video_ids = list(dict.fromkeys(video_ids + missing_youtube_detail_ids(DB_PATH)))
     details = fetch_video_details(youtube, video_ids)
     details_by_id = {item.get('id'): item for item in details if isinstance(item, dict)}
     missing = [video_id for video_id in video_ids if video_id not in details_by_id]
     if missing:
-        logging.warning("YouTube API omitted %s video details (private/deleted/unavailable); skipping them", len(missing))
+        remember_missing_youtube_details(DB_PATH, missing)
+        logging.warning("YouTube API omitted %s video details; IDs retained for retry", len(missing))
+    clear_missing_youtube_details(DB_PATH, [video_id for video_id in video_ids if video_id in details_by_id])
     items = [_api_video_data(youtube, details_by_id[video_id]) for video_id in video_ids if video_id in details_by_id]
     metadata = None
     if YOUTUBE_MODE == 'playlists':
