@@ -65,6 +65,20 @@ class YouTubeDeliveryStateTests(unittest.TestCase):
             video("middle", "2026-08-31T11:15:00Z"),
         ]
 
+    def test_missing_details_survive_known_video_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "youtube.db")
+            with sqlite3.connect(db_path) as connection:
+                create_full_videos_table(connection)
+            self.module.remember_missing_youtube_details(db_path, ["B"])
+            self.assertEqual(["B"], self.module.missing_youtube_detail_ids(db_path))
+            self.module.remember_missing_youtube_details(db_path, ["B"])
+            self.assertEqual(["B"], self.module.missing_youtube_detail_ids(db_path))
+            self.module.clear_missing_youtube_details(db_path, ["A"])
+            self.assertEqual(["B"], self.module.missing_youtube_detail_ids(db_path))
+            self.module.clear_missing_youtube_details(db_path, ["B"])
+            self.assertEqual([], self.module.missing_youtube_detail_ids(db_path))
+
     def test_missing_state_scheduled_mode_baselines_all_without_delivery(self):
         original = deepcopy(self.items)
 
