@@ -96,7 +96,12 @@ class GoogleNewsRequestGuard:
                 if 500 <= response.status_code < 600 and attempt == 0:
                     time.sleep(2.0)
                     continue
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError as error:
+                    # Avoid logging raw request URLs or response bodies.
+                    error.error_code = "http_{}".format(response.status_code)
+                    raise
                 return response
             except BlockedRequestError:
                 raise

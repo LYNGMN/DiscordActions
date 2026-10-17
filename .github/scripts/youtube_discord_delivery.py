@@ -57,7 +57,7 @@ def send_youtube_webhook(
                 ambiguous_retry = True
                 sleep(2.0)
                 continue
-            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            _annotate_delivery_error(error, ambiguous_retry, attempt + 1, error_code="discord_network_error")
             raise
 
         status_code = int(getattr(response, "status_code", 0) or 0)
@@ -72,7 +72,7 @@ def send_youtube_webhook(
             response.raise_for_status()
             response_data = response.json()
         except (requests.RequestException, TypeError, ValueError) as error:
-            _annotate_delivery_error(error, ambiguous_retry, attempt + 1)
+            _annotate_delivery_error(error, ambiguous_retry, attempt + 1, error_code=("discord_http_{}".format(status_code) if 400 <= status_code <= 599 else "discord_invalid_response"))
             raise
         message_id = response_data.get("id") if isinstance(response_data, dict) else None
         if not isinstance(message_id, str) or not message_id.isdigit():
@@ -104,6 +104,7 @@ def _annotate_delivery_error(
     error: Exception,
     ambiguous_retry: bool,
     attempt_count: int,
+    error_code: str = "final_failure",
 ) -> None:
-    error.error_code = "ambiguous_retry" if ambiguous_retry else "final_failure"
+    error.error_code = "ambiguous_retry" if ambiguous_retry else error_code
     error.attempt_count = int(attempt_count)

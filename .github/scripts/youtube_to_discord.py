@@ -577,8 +577,8 @@ def fetch_configured_video_data(youtube, known_video_ids):
     details_by_id = {item.get('id'): item for item in details if isinstance(item, dict)}
     missing = [video_id for video_id in video_ids if video_id not in details_by_id]
     if missing:
-        raise RuntimeError("youtube_video_details_incomplete")
-    items = [_api_video_data(youtube, details_by_id[video_id]) for video_id in video_ids]
+        logging.warning("YouTube API omitted %s video details (private/deleted/unavailable); skipping them", len(missing))
+    items = [_api_video_data(youtube, details_by_id[video_id]) for video_id in video_ids if video_id in details_by_id]
     metadata = None
     if YOUTUBE_MODE == 'playlists':
         metadata = fetch_playlist_info(youtube, YOUTUBE_PLAYLIST_ID)
@@ -588,7 +588,7 @@ def fetch_configured_video_data(youtube, known_video_ids):
 
 
 def fetch_and_post_videos(youtube):
-    logging.info("YouTube feed processing started")
+    logging.info("YouTube feed processing started: mode=%s source=%s", YOUTUBE_MODE, YOUTUBE_SOURCE)
     compiled_filter = compile_runtime_feed_filter()
     display_language = normalize_display_language(DISPLAY_LANGUAGE)
 
@@ -598,6 +598,7 @@ def fetch_and_post_videos(youtube):
         initialize_delivery_state(DB_PATH)
 
     # 저장된 payload를 먼저 처리하므로 피드에서 사라진 항목도 누락되지 않습니다.
+    logging.info("YouTube stage: resume_pending_deliveries")
     resumed_count = resume_pending_deliveries(
         max_videos=1 if YOUTUBE_MANUAL_TEST_MODE else None
     )
@@ -612,6 +613,7 @@ def fetch_and_post_videos(youtube):
     conn.close()
 
     scan_checkpoint = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    logging.info("YouTube stage: fetch_configured_video_data")
     source_items, playlist_info = fetch_configured_video_data(
         youtube,
         existing_video_ids,
@@ -737,7 +739,9 @@ if __name__ == "__main__":
         run_status = 'success'
         
     except Exception as error:
-        logging.error("실행 실패 (오류 유형: %s)", type(error).__name__)
+        # Print only known, static error codes: never print URLs, keys or exception strings.
+        safe_code = str(error) if isinstance(error, RuntimeError) and re.fullmatch(r'[a-z][a-z0-9_]{1,80}', str(error)) else type(error).__name__
+        logging.error("실행 실패 (단계별 로그 확인, 오류 코드: %s)", safe_code)
         sys.exit(1)
     finally:
         try:
