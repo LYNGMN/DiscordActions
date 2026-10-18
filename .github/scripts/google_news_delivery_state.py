@@ -15,6 +15,19 @@ from google_news_manual_test import prepare_baseline_item
 
 
 DISCORD_MESSAGE_ID = re.compile(r"^[0-9]+$")
+DEFAULT_SCHEDULED_DELIVERY_LIMIT = 25
+MAX_SCHEDULED_DELIVERY_LIMIT = 100
+
+
+def scheduled_delivery_limit(value: str = "25") -> int:
+    """Bound Discord article deliveries, not their durable preparation/queuing."""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,2}", value):
+        raise ValueError("invalid_google_news_delivery_limit")
+    parsed = int(value)
+    if parsed > MAX_SCHEDULED_DELIVERY_LIMIT:
+        raise ValueError("invalid_google_news_delivery_limit")
+    return parsed
+
 SAFE_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 TRACKING_QUERY_KEYS = {
     "dclid",
