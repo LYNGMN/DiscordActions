@@ -289,6 +289,77 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 self.assertEqual("success", result["status"])
                 self.assertEqual(0, result["processed_count"])
 
+    def test_scheduled_handler_limits_new_sends_and_replays_pending_next_run(self):
+        published_at = format_datetime(datetime.now(timezone.utc), usegmt=True)
+        rss = (
+            "<rss><channel>" +
+            "".join(
+                "<item><guid>budget-{0}</guid><title>Title {0}</title>"
+                "<link>https://news.google.com/rss/articles/budget-{0}</link>"
+                "<pubDate>{1}</pubDate>"
+                "<description>&lt;ul&gt;&lt;/ul&gt;</description></item>".format(index, published_at)
+                for index in range(3)
+            ) +
+            "</channel></rss>"
+        ).encode("utf-8")
+
+        class UniqueResolver(StubResolver):
+            def __init__(self, *args, **kwargs):
+                super().__init__()
+
+            def resolve(self, source_url):
+                return SimpleNamespace(
+                    url="https://publisher.example/article/" + source_url.rsplit("/", 1)[-1],
+                    status="resolved", article_id="unique", error_code=None
+                )
+
+        for script_path in SCRIPT_PATHS:
+            with self.subTest(script=script_path.name), tempfile.TemporaryDirectory() as directory:
+                module = load_script(script_path)
+                module.DB_PATH = str(Path(directory) / "news.db")
+                module.RESOLVER_DB_PATH = str(Path(directory) / "resolver.db")
+                module.RESULT_PATH = str(Path(directory) / "result.json")
+                module.MANUAL_TEST_MODE = False
+                module.MAX_SCHEDULED_DELIVERIES = 2
+                module.GoogleNewsRequestGuard = OpenCircuitGuard
+                module.GoogleNewsUrlResolver = UniqueResolver
+                if "top_" in script_path.name:
+                    module.INITIALIZE_TOP = False
+                    module.DISCORD_WEBHOOK_TOP = "redacted"
+                    module.DISCORD_USERNAME_TOP = "Google News"
+                    metadata = ("redacted-rss", None, "UTC", "%Y-%m-%d %H:%M:%S")
+                elif "topic_" in script_path.name:
+                    module.INITIALIZE_TOPIC = False
+                    module.DISCORD_WEBHOOK_TOPIC = "redacted"
+                    module.DISCORD_USERNAME_TOPIC = "Google News"
+                    metadata = ("redacted-rss", "Topic", "ko")
+                else:
+                    module.INITIALIZE_KEYWORD = False
+                    module.DISCORD_WEBHOOK_KEYWORD = "redacted"
+                    module.DISCORD_USERNAME_KEYWORD = "Google News"
+                    metadata = ("redacted-rss", "Keyword", "KR")
+                with (
+                    mock.patch.object(module, "get_rss_url", return_value=metadata),
+                    mock.patch.object(module, "fetch_rss_feed", return_value=rss),
+                    mock.patch.object(
+                        module, "send_discord_message", return_value="123456789012345678"
+                    ) as send,
+                ):
+                    self.assertEqual(0, module.main())
+                    self.assertEqual(2, send.call_count)
+                    self.assertEqual(1, module.count_pending_deliveries(module.DB_PATH))
+                    self.assertEqual(0, module.main())
+                    self.assertEqual(3, send.call_count)
+                    self.assertEqual(0, module.count_pending_deliveries(module.DB_PATH))
+                    with sqlite3.connect(module.DB_PATH) as connection:
+                        self.assertEqual(
+                            [("budget-0", "sent"), ("budget-1", "sent"), ("budget-2", "sent")],
+                            connection.execute(
+                                "SELECT guid, delivery_status FROM news_items "
+                                "WHERE guid LIKE 'budget-%' ORDER BY guid"
+                            ).fetchall(),
+                        )
+
     def test_all_handlers_use_the_shared_bounded_runtime_contract(self):
         for script_path in SCRIPT_PATHS:
             with self.subTest(script=script_path.name):
