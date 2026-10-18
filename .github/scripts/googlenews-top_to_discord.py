@@ -19,6 +19,7 @@ from google_news_manual_test import (
     validate_manual_test_result,
 )
 from google_news_delivery_state import (
+    scheduled_delivery_limit,
     count_ambiguous_retries,
     count_pending_deliveries,
     deliver_queued_item,
@@ -74,6 +75,9 @@ PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
 RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
 VALIDATE_ONLY = os.environ.get('GOOGLE_NEWS_VALIDATE_ONLY', 'false').lower() == 'true'
 MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '1000'))
+MAX_SCHEDULED_DELIVERIES = scheduled_delivery_limit(
+    os.environ.get('GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE', '25')
+)
 DELIVERY_ORDER = os.environ.get(
     'GOOGLE_NEWS_DELIVERY_ORDER', 'feed_oldest_first'
 ).lower()
@@ -617,10 +621,12 @@ def deliver_reserved_item(guid):
         )
 
 
-def resume_pending_deliveries():
+def resume_pending_deliveries(max_items=None):
     pending_guids = pending_delivery_guids(DB_PATH)
     if MANUAL_TEST_MODE:
         pending_guids = pending_guids[:1]
+    elif max_items is not None:
+        pending_guids = pending_guids[:max_items]
     for guid in pending_guids:
         try:
             deliver_reserved_item(guid)
@@ -667,7 +673,10 @@ def main():
             DB_PATH, PROFILE_ID or "top", PUBLISHER_REGISTRY
         )
 
-        resumed_count = resume_pending_deliveries()
+        # Limit the scheduled burst. Deferred messages remain in SQLite and
+        # are resumed ahead of newly discovered items on the next run.
+        delivery_limit = 1 if MANUAL_TEST_MODE else MAX_SCHEDULED_DELIVERIES
+        resumed_count = resume_pending_deliveries(max_items=delivery_limit)
         processed_count += resumed_count
         if MANUAL_TEST_MODE and resumed_count:
             record_profile_result("success", processed_count)
@@ -792,7 +801,7 @@ def main():
                 break
 
         if not profile_failed:
-            for guid, title in queued_items:
+            for guid, title in queued_items[:max(0, delivery_limit - resumed_count)]:
                 try:
                     deliver_reserved_item(guid)
                     processed_count += 1
