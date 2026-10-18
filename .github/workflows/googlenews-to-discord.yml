@@ -99,6 +99,7 @@ jobs:
       - name: Run unified Google News dispatcher
         env:
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
+          GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE: ${{ vars.GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE || '25' }}
           FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
           FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
           FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
