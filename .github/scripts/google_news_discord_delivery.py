@@ -1,5 +1,6 @@
 """Bounded Discord webhook delivery shared by Google News handlers."""
 
+import logging
 import math
 import os
 import re
@@ -166,6 +167,12 @@ def send_webhook_message(
                 rate_limit_retries += 1
                 sleep(retry_after)
                 continue
+            logging.warning(
+                "Discord 429 deferred: retry_after_seconds=%d max_wait_seconds=%d global=%s",
+                math.ceil(retry_after),
+                math.ceil(max_rate_limit_wait_seconds),
+                str(response.headers.get("X-RateLimit-Global", "")).lower() == "true",
+            )
             try:
                 response.raise_for_status()
             except requests.RequestException as error:
