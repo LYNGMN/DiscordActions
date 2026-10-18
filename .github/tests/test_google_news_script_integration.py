@@ -319,6 +319,7 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 module.DB_PATH = str(Path(directory) / "news.db")
                 module.RESOLVER_DB_PATH = str(Path(directory) / "resolver.db")
                 module.RESULT_PATH = str(Path(directory) / "result.json")
+                module.PROFILE_ID = "budget_" + script_path.name.split("-")[1].split("_")[0]
                 module.MANUAL_TEST_MODE = False
                 module.MAX_SCHEDULED_DELIVERIES = 2
                 module.GoogleNewsRequestGuard = OpenCircuitGuard
