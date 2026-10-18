@@ -69,6 +69,7 @@ BASE_ENV_ALLOWLIST = {
     "RUNNER_TEMP",
     "SSL_CERT_FILE",
     "TZ",
+    "GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE",
 } | COMMON_PROFILE_ENVIRONMENT
 CREDENTIAL_KEY = re.compile(
     r"(?:authorization|cookie|password|secret|token|webhook)", re.IGNORECASE
@@ -275,6 +276,9 @@ def build_handler_environment(
             "GOOGLE_NEWS_DB_PATH": os.path.join(state_dir, profile.state_db),
             "GOOGLE_NEWS_RESOLVER_DB_PATH": resolver_db,
             "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "1000",
+            "GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE": base_env.get(
+                "GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE", "25"
+            ),
             "GOOGLE_NEWS_DELIVERY_ORDER": base_env.get(
                 "GOOGLE_NEWS_DELIVERY_ORDER", "feed_oldest_first"
             ),
