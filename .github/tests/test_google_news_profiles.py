@@ -244,6 +244,7 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual("/state/resolver.db", environment["GOOGLE_NEWS_RESOLVER_DB_PATH"])
         self.assertEqual("true", environment["MANUAL_TEST_MODE"])
         self.assertEqual("1000", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
+        self.assertEqual("25", environment["GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE"])
         self.assertEqual(
             FAKE_WEBHOOK_BASE + "/3/redacted", environment["DISCORD_WEBHOOK_ADMIN"]
         )
