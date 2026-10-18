@@ -72,6 +72,36 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
                 "FROM news_items ORDER BY guid"
             ).fetchall()
 
+    def test_scheduled_delivery_limit_is_bounded_and_validated(self):
+        self.assertEqual(25, self.module.scheduled_delivery_limit())
+        self.assertEqual(2, self.module.scheduled_delivery_limit("2"))
+        self.assertEqual(100, self.module.scheduled_delivery_limit("100"))
+        for invalid in ("0", "-1", "101", "nan", "2.5", " 25", "100000"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(ValueError, "invalid_google_news_delivery_limit"):
+                    self.module.scheduled_delivery_limit(invalid)
+
+    def test_deferred_delivery_messages_remain_pending_across_runs(self):
+        for index in range(5):
+            guid = "queued-{}".format(index)
+            self.assertTrue(self.module.reserve_delivery_with_messages(
+                self.db_path, guid, "Title {}".format(index),
+                "https://publisher.example/story/{}".format(index),
+                ["Message {}".format(index)],
+            ))
+        delivered = []
+        def send_message(content):
+            delivered.append(content)
+            return "123456789012345678"
+
+        for _ in range(3):
+            pending = self.module.pending_delivery_guids(self.db_path)[:2]
+            for guid in pending:
+                self.module.deliver_queued_item(self.db_path, guid, send_message)
+        self.assertEqual(5, len(delivered))
+        self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
+        self.assertEqual(0, self.module.count_pending_deliveries(self.db_path))
+
     def test_scheduled_mode_uses_feed_position_not_publication_date(self):
         items = [
             make_item("feed-first", "Sun, 30 Aug 2026 08:00:00 GMT"),
