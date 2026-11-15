@@ -45,6 +45,7 @@ jobs:
           .github/scripts/google_news_keyword_matcher.py
           .github/scripts/google_news_manual_test.py
           .github/scripts/google_news_profile_result.py
+          .github/scripts/google_news_reset.py
           .github/scripts/google_news_profiles.py
           .github/scripts/google_news_publisher_names.py
           .github/scripts/google_news_publisher_review.py

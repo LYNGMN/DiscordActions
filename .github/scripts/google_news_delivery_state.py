@@ -24,6 +24,7 @@ MAX_RETENTION_DAYS = 365
 VACUUM_INTERVAL_SECONDS = 24 * 60 * 60
 LAST_VACUUM_KEY = "last_vacuum_at"
 MAX_DELIVERY_ATTEMPTS = 3
+EXPIRY_CHUNK_SIZE = 400
 PERMANENT_DELIVERY_ERROR = re.compile(r"^discord_http_4(?!29)\d{2}(?:_api_\d+)?$")
 STATE_METADATA_TABLE = "google_news_state_metadata"
 ARTICLE_IDENTITY_BACKFILL_KEY = "article_identity_backfill_v1"
@@ -576,6 +577,57 @@ def count_pending_deliveries(db_path: str) -> int:
         return int(row[0])
 
 
+def count_unfinished_deliveries(db_path: str) -> int:
+    with sqlite3.connect(db_path) as connection:
+        _ensure_delivery_columns(connection)
+        row = connection.execute(
+            "SELECT COUNT(*) FROM news_items "
+            "WHERE delivery_status IN ('pending', 'retryable')"
+        ).fetchone()
+        return int(row[0])
+
+
+def expire_pending_deliveries(db_path: str) -> int:
+    """Mark unfinished deliveries expired and delete their queued messages."""
+    with sqlite3.connect(db_path) as connection:
+        _ensure_delivery_columns(connection)
+        _ensure_message_table(connection)
+        guids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT guid FROM news_items "
+                "WHERE delivery_status IN ('pending', 'retryable')"
+            ).fetchall()
+        ]
+        for start in range(0, len(guids), EXPIRY_CHUNK_SIZE):
+            chunk = guids[start : start + EXPIRY_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            connection.execute(
+                "DELETE FROM google_news_delivery_messages "
+                "WHERE guid IN ({})".format(placeholders),
+                chunk,
+            )
+            connection.execute(
+                "UPDATE news_items SET delivery_status = 'expired', "
+                "delivery_sequence = NULL, discord_message_id = NULL "
+                "WHERE guid IN ({})".format(placeholders),
+                chunk,
+            )
+    return len(guids)
+
+
+def read_state_metadata(db_path: str, key: str) -> Optional[str]:
+    with sqlite3.connect(db_path) as connection:
+        _ensure_state_metadata(connection)
+        return _metadata_value(connection, key)
+
+
+def write_state_metadata(db_path: str, key: str, value: str) -> None:
+    with sqlite3.connect(db_path) as connection:
+        _ensure_state_metadata(connection)
+        _set_metadata_value(connection, key, value)
+
+
 def count_ambiguous_retries(db_path: str) -> int:
     with sqlite3.connect(db_path) as connection:
         _ensure_message_table(connection)
@@ -719,7 +771,7 @@ def _prune_database(
                 """
                 DELETE FROM news_items
                 WHERE (delivery_status IS NULL
-                       OR delivery_status IN ('sent', 'filtered', 'failed'))
+                       OR delivery_status IN ('sent', 'filtered', 'failed', 'expired'))
                   AND created_at IS NOT NULL
                   AND created_at < ?
                   AND NOT EXISTS (

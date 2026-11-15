@@ -1,0 +1,245 @@
+name: Google News Backlog Reset
+
+run-name: Google News backlog reset — ${{ inputs.confirmation }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RESET to expire all pending deliveries. / 대기 중인 배송을 모두 만료시키려면 RESET을 입력합니다.'
+        required: true
+        type: string
+      send_divider:
+        description: 'Send a "---" divider to affected channels. / 영향받은 채널에 --- 구분선을 보냅니다.'
+        required: true
+        default: true
+        type: boolean
+      divider_scope:
+        description: 'Send the divider to channels with pending items, or all Google News channels. / 대기가 있던 채널만 또는 모든 Google News 채널에 구분선을 보냅니다.'
+        required: true
+        default: pending
+        type: choice
+        options:
+          - pending
+          - all
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: google-news-to-discord
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    name: Expire backlog and send divider / 대기 만료와 구분선 전송
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Prepare state directory
+        run: |
+          mkdir -p .google-news-state
+          touch .google-news-state/state-placeholder.txt
+
+      - name: Find latest completed state artifact
+        id: previous_state
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const workflowIds = [
+              'googlenews-to-discord.yml',
+              'googlenews-manual-test.yml',
+              'googlenews-reset.yml',
+            ];
+            const runs = [];
+            for (const workflowId of workflowIds) {
+              const { data: runPage } = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflowId,
+                status: 'completed',
+                per_page: 100,
+              });
+              runs.push(...runPage.workflow_runs);
+            }
+            runs.sort(
+              (left, right) => new Date(right.created_at) - new Date(left.created_at)
+            );
+            let artifactId = '';
+            let sourceRunId = '';
+            for (const run of runs) {
+              if (run.id === context.runId) continue;
+              const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner,
+                repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const state = artifactPage.artifacts.find(
+                artifact => artifact.name === 'google-news-state' && !artifact.expired
+              );
+              if (state) {
+                artifactId = String(state.id);
+                sourceRunId = String(run.id);
+                break;
+              }
+            }
+            core.setOutput('artifact-id', artifactId);
+            core.setOutput('source-run-id', sourceRunId);
+
+      - name: Restore previous state
+        if: steps.previous_state.outputs.artifact-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
+          path: .google-news-state
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.previous_state.outputs.source-run-id }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --require-hashes -r .github/requirements.txt
+          python -m pip check
+
+      - name: Expire backlog and send divider
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          DIVIDER_SCOPE: ${{ inputs.divider_scope }}
+          SEND_DIVIDER: ${{ inputs.send_divider }}
+          DISCORD_WEBHOOK_GN_TOP_US: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_US }}
+          DISCORD_WEBHOOK_GN_TOP_KR: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_KR }}
+          DISCORD_WEBHOOK_GN_TOP_JP: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_JP }}
+          DISCORD_WEBHOOK_GN_TOP_CN: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_CN }}
+          DISCORD_WEBHOOK_GN_TOPIC_KOREA: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_KOREA }}
+          DISCORD_WEBHOOK_GN_TOPIC_SEOUL: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SEOUL }}
+          DISCORD_WEBHOOK_GN_TOPIC_ENT: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_ENT }}
+          DISCORD_WEBHOOK_GN_TOPIC_TECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_TECH }}
+          DISCORD_WEBHOOK_GN_TOPIC_SCITECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SCITECH }}
+          DISCORD_WEBHOOK_GN_KEYWORD_NOCODE: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_NOCODE }}
+          DISCORD_WEBHOOK_GN_KEYWORD_IU: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_IU }}
+        run: |
+          if [ "$CONFIRMATION" != "RESET" ]; then
+            echo "::error title=Google News reset not confirmed::Type RESET to expire pending deliveries."
+            exit 1
+          fi
+          divider_args=()
+          if [ "$SEND_DIVIDER" = "true" ]; then
+            divider_args+=(--send-divider)
+          fi
+          python .github/scripts/google_news_reset.py \
+            --state-dir .google-news-state \
+            --divider-scope "$DIVIDER_SCOPE" \
+            --confirm-reset \
+            "${divider_args[@]}"
+
+      - name: Write reset summary
+        if: always()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const path = '.google-news-state/backlog-reset.json';
+            if (!fs.existsSync(path)) {
+              await core.summary.addHeading('Google News Backlog Reset').addRaw('No reset summary was produced.').write();
+              return;
+            }
+            const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+            core.summary
+              .addHeading('Google News Backlog Reset')
+              .addRaw(`Expired pending deliveries: ${summary.total_expired ?? 0}\n`)
+              .addRaw(`Divider scope: ${summary.divider_scope ?? 'pending'}\n`)
+              .addRaw(`Reset at: ${summary.reset_at ?? 'unknown'}\n`);
+            core.summary
+              .addHeading('Profiles', 2)
+              .addTable([
+                [
+                  { data: 'Profile', header: true },
+                  { data: 'Pending before', header: true },
+                  { data: 'Expired', header: true },
+                  { data: 'Divider', header: true },
+                ],
+                ...(summary.profiles ?? []).map(item => [
+                  item.profile_id,
+                  String(item.pending_before ?? 0),
+                  String(item.expired ?? 0),
+                  item.divider ?? 'unknown',
+                ]),
+              ]);
+            await core.summary.write();
+
+      - name: Upload reset state
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-news-state
+          path: .google-news-state/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          overwrite: true
+
+      - name: Notify admin of failed run
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          import requests
+
+          webhook = os.environ.get("DISCORD_WEBHOOK_ADMIN", "").strip()
+          run_url = os.environ.get("RUN_URL", "")
+          if not webhook:
+              print("DISCORD_WEBHOOK_ADMIN is not configured")
+              raise SystemExit(0)
+
+          lines = ["**Google News 백로그 리셋 실패**", run_url]
+          try:
+              with open(".google-news-state/backlog-reset.json", encoding="utf-8") as handle:
+                  summary = json.load(handle)
+          except (OSError, ValueError):
+              summary = {}
+          failed = [
+              profile
+              for profile in summary.get("profiles", [])
+              if profile.get("divider") in {"failed", "missing_webhook"}
+          ]
+          if failed:
+              lines.append(
+                  "divider failures: "
+                  + ", ".join(
+                      "{} ({})".format(
+                          profile.get("profile_id"),
+                          profile.get("error") or "unknown",
+                      )
+                      for profile in failed[:10]
+                  )
+              )
+          try:
+              response = requests.post(
+                  webhook,
+                  json={"content": "\n".join(lines), "username": "Discord Actions"},
+                  timeout=(5.0, 15.0),
+              )
+              response.raise_for_status()
+          except Exception as error:
+              print("admin notification failed: {}".format(type(error).__name__))
+          PY

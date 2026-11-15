@@ -35,6 +35,7 @@ jobs:
             const workflowIds = [
               'googlenews-to-discord.yml',
               'googlenews-manual-test.yml',
+              'googlenews-reset.yml',
             ];
             const runs = [];
             for (const workflowId of workflowIds) {
