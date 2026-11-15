@@ -890,6 +890,25 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual("all_profiles_skipped", summary.error_code)
         self.assertIn("code=time_budget_exhausted", output.getvalue())
 
+    def test_stale_result_directories_are_removed_before_dispatch(self):
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        stale = state_path / "google-news-results-stale"
+        stale.mkdir()
+        (stale / "old.json").write_text("{}", encoding="utf-8")
+
+        self.dispatcher.run_profiles(
+            [self.profiles[0]],
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner([]),
+            sleep=lambda _: None,
+        )
+
+        self.assertFalse(stale.exists())
+        self.assertEqual([], list(state_path.glob("google-news-results-*")))
+
     def test_run_budget_is_exported_to_child_environment(self):
         deadline = time.time() + 600
         calls = []
