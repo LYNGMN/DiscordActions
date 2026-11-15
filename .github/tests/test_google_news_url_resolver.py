@@ -1,8 +1,10 @@
 import base64
 import importlib
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
@@ -486,6 +488,155 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
         self.assertEqual(1, stats["budget_exhausted"])
         self.assertEqual(1, stats["fallbacks"])
 
+    def test_run_deadline_stops_network_resolution_before_any_request(self):
+        module = load_resolver_module()
+        article_id = "CBMiDeadlineArticle"
+        source_url = f"https://news.google.com/rss/articles/{article_id}?oc=5"
+        session = QueueSession()
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ,
+            {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() - 60)},
+        ):
+            resolver = module.GoogleNewsUrlResolver(
+                session=session,
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+            stats = resolver.get_stats()
+
+        self.assertEqual(source_url, result.url)
+        self.assertEqual("fallback", result.status)
+        self.assertEqual(article_id, result.article_id)
+        self.assertEqual("run_deadline_exceeded", result.error_code)
+        self.assertEqual(0, len(session.get_calls))
+        self.assertEqual(0, len(session.post_calls))
+        self.assertEqual(0, stats["network_resolution_attempts"])
+        self.assertEqual(1, stats["deadline_skipped"])
+        self.assertEqual(1, stats["fallbacks"])
+
+    def test_run_deadline_buffer_also_stops_network_resolution(self):
+        module = load_resolver_module()
+        source_url = "https://news.google.com/rss/articles/CBMiDeadlineBuffer?oc=5"
+        session = QueueSession()
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ,
+            {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() + 5)},
+        ):
+            resolver = module.GoogleNewsUrlResolver(
+                session=session,
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+            stats = resolver.get_stats()
+
+        self.assertEqual("fallback", result.status)
+        self.assertEqual("run_deadline_exceeded", result.error_code)
+        self.assertEqual(0, len(session.get_calls))
+        self.assertEqual(0, len(session.post_calls))
+        self.assertEqual(1, stats["deadline_skipped"])
+        self.assertEqual(1, stats["fallbacks"])
+
+    def test_run_deadline_still_returns_cached_success_without_network(self):
+        module = load_resolver_module()
+        article_id = "CBMiDeadlineCached"
+        source_url = f"https://news.google.com/read/{article_id}?hl=ko"
+        original_url = "https://publisher.example/deadline-cached"
+        get_response, post_response = self._successful_responses(original_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "news.db")
+            priming_resolver = module.GoogleNewsUrlResolver(
+                session=QueueSession(
+                    get_responses=[get_response],
+                    post_responses=[post_response],
+                ),
+                db_path=db_path,
+                min_interval_seconds=0,
+            )
+            self.assertEqual(
+                "resolved",
+                priming_resolver.resolve(source_url).status,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() - 60)},
+            ):
+                resolver = module.GoogleNewsUrlResolver(
+                    session=UnexpectedSession(),
+                    db_path=db_path,
+                    min_interval_seconds=0,
+                )
+                result = resolver.resolve(source_url)
+                stats = resolver.get_stats()
+
+        self.assertEqual("cache_hit", result.status)
+        self.assertEqual(original_url, result.url)
+        self.assertIsNone(result.error_code)
+        self.assertEqual(1, stats["cache_hits"])
+        self.assertEqual(0, stats["deadline_skipped"])
+
+    def test_run_deadline_still_decodes_legacy_article_locally(self):
+        module = load_resolver_module()
+        original_url = "https://publisher.example/deadline-legacy"
+        encoded_bytes = (
+            b'\x08\x13"'
+            + bytes([len(original_url)])
+            + original_url.encode("utf-8")
+            + b"\xd2\x01\x00"
+        )
+        article_id = base64.urlsafe_b64encode(encoded_bytes).decode().rstrip("=")
+        source_url = f"https://news.google.com/articles/{article_id}"
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ,
+            {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() - 60)},
+        ):
+            resolver = module.GoogleNewsUrlResolver(
+                session=UnexpectedSession(),
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+
+        self.assertEqual("legacy", result.status)
+        self.assertEqual(original_url, result.url)
+
+    def test_resolution_without_deadline_environment_still_uses_network(self):
+        module = load_resolver_module()
+        article_id = "CBMiNoDeadlineEnvironment"
+        source_url = f"https://news.google.com/rss/articles/{article_id}?oc=5"
+        original_url = "https://publisher.example/no-deadline"
+        get_response, post_response = self._successful_responses(original_url)
+        session = QueueSession(
+            get_responses=[get_response],
+            post_responses=[post_response],
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ,
+            {},
+            clear=False,
+        ):
+            os.environ.pop("GOOGLE_NEWS_RUN_DEADLINE", None)
+            resolver = module.GoogleNewsUrlResolver(
+                session=session,
+                db_path=str(Path(temp_dir) / "news.db"),
+                min_interval_seconds=0,
+            )
+            result = resolver.resolve(source_url)
+            stats = resolver.get_stats()
+
+        self.assertEqual("resolved", result.status)
+        self.assertEqual(original_url, result.url)
+        self.assertEqual(1, len(session.get_calls))
+        self.assertEqual(1, len(session.post_calls))
+        self.assertEqual(0, stats["deadline_skipped"])
+
     def test_related_resolution_uses_cache_without_new_network_requests(self):
         module = load_resolver_module()
         source_url = "https://news.google.com/rss/articles/CBMiRelatedCached?oc=5"
@@ -689,6 +840,7 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
                 "circuit_blocked_until",
                 "circuit_opened",
                 "circuit_skipped",
+                "deadline_skipped",
                 "fallbacks",
                 "legacy",
                 "network_resolution_attempts",
