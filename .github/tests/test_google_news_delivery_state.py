@@ -926,6 +926,64 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         )
         self.assertNotEqual(first_marker, vacuum_marker())
 
+    def test_large_deletion_vacuums_within_the_same_day(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        resolver_path = str(Path(self.temp_dir.name) / "resolver-large.db")
+        with sqlite3.connect(resolver_path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE google_news_url_cache (
+                    article_id TEXT PRIMARY KEY,
+                    google_url TEXT NOT NULL,
+                    resolved_url TEXT,
+                    status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_error_code TEXT,
+                    next_retry_at TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO google_news_url_cache "
+                "(article_id, google_url, resolved_url, status, updated_at) "
+                "VALUES (?, ?, ?, 'resolved', ?)",
+                [
+                    (
+                        "old-{}".format(index),
+                        "https://news.google.com/old-{}".format(index),
+                        "https://publisher.example/old-{}".format(index),
+                        (now - timedelta(days=40)).isoformat(),
+                    )
+                    for index in range(3)
+                ],
+            )
+        with mock.patch.object(self.module, "VACUUM_ROW_THRESHOLD", 1):
+            self.module.apply_state_retention(
+                [resolver_path], retention_days=30, now=now
+            )
+            first = self.module.read_state_metadata(
+                resolver_path, "last_vacuum_at"
+            )
+            connection = sqlite3.connect(resolver_path)
+            connection.execute(
+                "INSERT INTO google_news_url_cache "
+                "(article_id, google_url, resolved_url, status, updated_at) "
+                "VALUES ('later', 'https://news.google.com/later', "
+                "'https://publisher.example/later', 'resolved', ?)",
+                ((now - timedelta(days=40)).isoformat(),),
+            )
+            connection.commit()
+            connection.close()
+            self.module.apply_state_retention(
+                [resolver_path], retention_days=30, now=now + timedelta(hours=1)
+            )
+        self.assertIsNotNone(first)
+        self.assertNotEqual(
+            first,
+            self.module.read_state_metadata(resolver_path, "last_vacuum_at"),
+        )
+
     def test_state_retention_prunes_old_abandoned_items(self):
         now = datetime(2026, 11, 15, tzinfo=timezone.utc)
         self.assertTrue(
@@ -960,6 +1018,85 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM news_items WHERE guid = 'abandoned-guid'"
                 ).fetchone()[0],
             )
+
+    def test_url_cache_retention_is_separate_from_article_history(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "ALTER TABLE news_items ADD COLUMN delivery_status TEXT"
+            )
+            connection.execute(
+                "ALTER TABLE news_items ADD COLUMN created_at TEXT"
+            )
+            connection.execute(
+                "INSERT INTO news_items "
+                "(pub_date, guid, title, link, related_news, delivery_status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'sent', ?)",
+                (
+                    "Mon, 05 Nov 2026 00:00:00 GMT",
+                    "ten-day-old",
+                    "Ten day old",
+                    "https://publisher.example/ten-day-old",
+                    "[]",
+                    (now - timedelta(days=10)).isoformat(),
+                ),
+            )
+            connection.execute(
+                """
+                CREATE TABLE google_news_url_cache (
+                    article_id TEXT PRIMARY KEY,
+                    google_url TEXT NOT NULL,
+                    resolved_url TEXT,
+                    status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_error_code TEXT,
+                    next_retry_at TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO google_news_url_cache "
+                "(article_id, google_url, resolved_url, status, updated_at) "
+                "VALUES ('ten-day-cache', 'https://news.google.com/x', "
+                "'https://publisher.example/x', 'resolved', ?)",
+                ((now - timedelta(days=10)).isoformat(),),
+            )
+
+        stats = self.module.apply_state_retention(
+            [self.db_path],
+            retention_days=30,
+            url_cache_retention_days=7,
+            now=now,
+        )
+
+        self.assertEqual(0, stats["items"])
+        self.assertEqual(1, stats["url_cache"])
+        with sqlite3.connect(self.db_path) as connection:
+            self.assertEqual(
+                1,
+                connection.execute(
+                    "SELECT COUNT(*) FROM news_items WHERE guid = 'ten-day-old'"
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                0,
+                connection.execute(
+                    "SELECT COUNT(*) FROM google_news_url_cache"
+                ).fetchone()[0],
+            )
+
+    def test_url_cache_retention_days_is_bounded_and_validated(self):
+        self.assertEqual(7, self.module.DEFAULT_URL_CACHE_RETENTION_DAYS)
+        self.assertEqual(7, self.module.url_cache_retention_days())
+        self.assertEqual(1, self.module.url_cache_retention_days("1"))
+        self.assertEqual(365, self.module.url_cache_retention_days("365"))
+        for invalid in ("0", "-1", "366", "nan", " 7"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_url_cache_retention_days"
+                ):
+                    self.module.url_cache_retention_days(invalid)
 
     def test_state_retention_is_idempotent_and_ignores_missing_files(self):
         now = datetime(2026, 11, 15, tzinfo=timezone.utc)

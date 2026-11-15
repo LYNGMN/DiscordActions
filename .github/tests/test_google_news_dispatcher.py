@@ -1006,6 +1006,16 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             ),
         )
 
+    def test_url_cache_retention_days_is_validated(self):
+        self.assertEqual(7, self.dispatcher.parse_url_cache_retention_days())
+        self.assertEqual(1, self.dispatcher.parse_url_cache_retention_days("1"))
+        for invalid in ("0", "366", "nan", " 7"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_url_cache_retention_days"
+                ):
+                    self.dispatcher.parse_url_cache_retention_days(invalid)
+
     def test_backlog_settings_are_validated(self):
         self.assertEqual(500, self.dispatcher.parse_backlog_limit())
         self.assertEqual(3, self.dispatcher.parse_backlog_age_days())
