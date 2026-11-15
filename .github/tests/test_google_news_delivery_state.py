@@ -3,8 +3,9 @@ import sqlite3
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 from xml.etree.ElementTree import Element, SubElement
 
 
@@ -588,6 +589,200 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
                 "https://publisher.example/already-posted?utm_medium=rss",
             )
         )
+
+    def test_article_identity_backfill_runs_once_per_database(self):
+        with mock.patch.object(
+            self.module,
+            "_backfill_article_identities",
+            wraps=self.module._backfill_article_identities,
+        ) as backfill:
+            self.assertTrue(
+                self.module.reserve_delivery(
+                    self.db_path,
+                    "first-guid",
+                    "첫 번째 기사 - 언론사",
+                    "https://publisher.example/first",
+                )
+            )
+            self.assertTrue(
+                self.module.reserve_delivery(
+                    self.db_path,
+                    "second-guid",
+                    "두 번째 기사 - 언론사",
+                    "https://publisher.example/second",
+                )
+            )
+
+        self.assertEqual(1, backfill.call_count)
+
+    def test_retention_days_is_bounded_and_validated(self):
+        self.assertEqual(14, self.module.DEFAULT_RETENTION_DAYS)
+        self.assertEqual(14, self.module.state_retention_days())
+        self.assertEqual(1, self.module.state_retention_days("1"))
+        self.assertEqual(365, self.module.state_retention_days("365"))
+        for invalid in ("0", "-1", "366", "nan", "2.5", " 14", "140000"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_state_retention_days"
+                ):
+                    self.module.state_retention_days(invalid)
+
+    def test_state_retention_prunes_expired_terminal_items_only(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        expired = (now - timedelta(days=40)).isoformat()
+        recent = (now - timedelta(days=1)).isoformat()
+        for guid in ("expired-sent", "expired-pending", "recent-sent"):
+            self.assertTrue(
+                self.module.reserve_delivery_with_messages(
+                    self.db_path,
+                    guid,
+                    "제목 {}".format(guid),
+                    "https://publisher.example/{}".format(guid),
+                    ["본문 {}".format(guid)],
+                )
+            )
+        self.module.record_filtered_item(
+            self.db_path,
+            make_item("expired-filtered", "Sun, 30 Aug 2026 12:00:00 GMT"),
+            "fingerprint",
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE news_items SET delivery_status = 'sent' "
+                "WHERE guid IN ('expired-sent', 'recent-sent')"
+            )
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET status = 'sent' "
+                "WHERE guid IN ('expired-sent', 'recent-sent')"
+            )
+            connection.execute(
+                "UPDATE news_items SET created_at = ? "
+                "WHERE guid IN ('expired-sent', 'expired-pending', 'expired-filtered')",
+                (expired,),
+            )
+            connection.execute(
+                "UPDATE news_items SET created_at = ? WHERE guid = 'recent-sent'",
+                (recent,),
+            )
+
+        stats = self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now
+        )
+
+        self.assertEqual(2, stats["items"])
+        with sqlite3.connect(self.db_path) as connection:
+            remaining = {
+                row[0]
+                for row in connection.execute("SELECT guid FROM news_items")
+            }
+            message_guids = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT guid FROM google_news_delivery_messages"
+                )
+            }
+            identity_guids = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT guid FROM google_news_article_identity"
+                )
+            }
+        self.assertEqual({"expired-pending", "recent-sent"}, remaining)
+        self.assertEqual(remaining, message_guids)
+        self.assertEqual(remaining, identity_guids)
+
+    def test_state_retention_backfills_legacy_pub_dates(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "INSERT INTO news_items (pub_date, guid, title, link, related_news) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    "Mon, 05 Jan 2026 00:00:00 GMT",
+                    "legacy-guid",
+                    "오래된 기사 - 언론사",
+                    "https://publisher.example/legacy",
+                    "[]",
+                ),
+            )
+
+        stats = self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now
+        )
+
+        self.assertEqual(1, stats["items"])
+        with sqlite3.connect(self.db_path) as connection:
+            self.assertEqual(
+                0, connection.execute("SELECT COUNT(*) FROM news_items").fetchone()[0]
+            )
+
+    def test_state_retention_prunes_only_stale_url_cache_rows(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        resolver_path = str(Path(self.temp_dir.name) / "resolver.db")
+        with sqlite3.connect(resolver_path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE google_news_url_cache (
+                    article_id TEXT PRIMARY KEY,
+                    google_url TEXT NOT NULL,
+                    resolved_url TEXT,
+                    status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_error_code TEXT,
+                    next_retry_at TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO google_news_url_cache "
+                "(article_id, google_url, resolved_url, status, updated_at) "
+                "VALUES (?, ?, ?, 'resolved', ?)",
+                [
+                    (
+                        "old-article",
+                        "https://news.google.com/rss/articles/old",
+                        "https://publisher.example/old",
+                        (now - timedelta(days=40)).isoformat(),
+                    ),
+                    (
+                        "recent-article",
+                        "https://news.google.com/rss/articles/recent",
+                        "https://publisher.example/recent",
+                        (now - timedelta(days=1)).isoformat(),
+                    ),
+                ],
+            )
+
+        stats = self.module.apply_state_retention(
+            [resolver_path], retention_days=14, now=now
+        )
+
+        self.assertEqual(1, stats["url_cache"])
+        with sqlite3.connect(resolver_path) as connection:
+            remaining = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT article_id FROM google_news_url_cache"
+                )
+            }
+        self.assertEqual({"recent-article"}, remaining)
+
+    def test_state_retention_is_idempotent_and_ignores_missing_files(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        first = self.module.apply_state_retention(
+            [self.db_path, str(Path(self.temp_dir.name) / "missing.db")],
+            retention_days=14,
+            now=now,
+        )
+        second = self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now
+        )
+
+        self.assertEqual(0, first["items"])
+        self.assertEqual(0, second["items"])
+        self.assertEqual(1, first["databases"])
+        self.assertEqual(1, second["databases"])
 
 
 if __name__ == "__main__":
