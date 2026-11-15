@@ -401,6 +401,7 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 �
 - 상태 아티팩트는 실행할 때마다 `GOOGLE_NEWS_STATE_RETENTION_DAYS`(기본 30일)보다 오래된 완료·필터·포기 기록과 오래된 URL 변환 캐시를 정리하고, SQLite 파일은 하루에 한 번 압축합니다. 그래서 아티팩트 크기가 계속 커지지 않습니다. 정리 대상에서 전송 대기·재시도 항목은 제외됩니다.
 - 수동 시험이 성공해도 예약 실행은 꺼지지 않습니다. 예약 실행이 보이지 않으면 **Google News to Discord** 또는 **YouTube to Discord Notification**이 활성 상태인지, 기본 브랜치의 `schedule`에 다섯 칸으로 작성한 cron 표현식이 있는지 확인합니다. 실제 전송을 다시 시험할 때는 이름이 **Manual Delivery Test**로 끝나는 별도 워크플로를 사용합니다.
 - 전송 대기 건수가 100건 이상인 프로필은 실행 요약의 **Backlog** 표에 표시됩니다. 대기열이 계속 쌓이는지 바로 확인할 수 있습니다.
+- 대기 적체를 한 번에 정리하려면 **Actions → Google News Backlog Reset**을 수동 실행하고 `confirmation`에 `RESET`을 입력합니다. 대기 중이던 배송은 만료되고, 대기가 있던 채널에는 `---` 구분선이 한 번 전송됩니다. 이후 새로 발견된 기사부터 배송됩니다. 이 작업은 되돌릴 수 없습니다.
 - 상태 아티팩트 업로드가 일시 실패하면 한 번 더 시도합니다. 두 번 모두 실패하면 실행을 실패로 표시해, 다음 실행이 이전 상태를 복원해 중복 전송할 수 있음을 알립니다.
 - 예약 실행이 12시간 넘게 없으면 **Google News Schedule Health** 워크플로가 6시간마다 확인해 관리자 채널에 알립니다. 알림이 필요 없으면 이 워크플로를 비활성화하세요.
 - 공개 저장소에 60일 동안 저장소 활동이 없으면 GitHub가 예약 워크플로를 자동으로 비활성화할 수 있습니다. Actions 화면에 해당 안내가 나타나면 워크플로를 다시 활성화하세요. 이 프로젝트는 GitHub의 이 정책을 우회하는 자동 Keepalive 방식을 사용하지 않습니다. 자세한 내용은 [GitHub 워크플로 활성화·비활성화 문서](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)를 참고하세요.

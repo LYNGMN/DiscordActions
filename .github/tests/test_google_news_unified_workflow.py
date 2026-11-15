@@ -7,6 +7,7 @@ WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
 WORKFLOW = WORKFLOWS_DIR / "googlenews-to-discord.yml"
 MANUAL_WORKFLOW = WORKFLOWS_DIR / "googlenews-manual-test.yml"
 HEALTH_WORKFLOW = WORKFLOWS_DIR / "googlenews-health.yml"
+RESET_WORKFLOW = WORKFLOWS_DIR / "googlenews-reset.yml"
 CI_WORKFLOW = WORKFLOWS_DIR / "test.yml"
 EXPECTED_WEBHOOK_SECRETS = (
     "DISCORD_WEBHOOK_GN_TOP_US",
@@ -30,6 +31,7 @@ NEW_MODULES = (
     "google_news_keyword_matcher.py",
     "google_news_manual_test.py",
     "google_news_profile_result.py",
+    "google_news_reset.py",
     "google_news_profiles.py",
     "google_news_publisher_names.py",
     "google_news_publisher_review.py",
@@ -213,6 +215,23 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("GOOGLE_NEWS_RUN_BUDGET_SECONDS", source)
                 self.assertIn("time_budget_exhausted", source)
                 self.assertIn("Time budget reached for", source)
+
+    def test_reset_workflow_is_guarded_and_restores_state(self):
+        source = RESET_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Google News Backlog Reset", source)
+        self.assertIn("confirmation", source)
+        self.assertIn('"$CONFIRMATION" != "RESET"', source)
+        self.assertIn("google_news_reset.py", source)
+        self.assertIn("name: google-news-state", source)
+        self.assertIn("overwrite: true", source)
+        self.assertIn("'googlenews-reset.yml'", source)
+        self.assertIn("if: failure()", source)
+
+    def test_restore_lists_include_backlog_reset(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW, RESET_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("'googlenews-reset.yml'", source)
 
     def test_health_workflow_alerts_when_scheduled_runs_stop(self):
         source = HEALTH_WORKFLOW.read_text(encoding="utf-8")

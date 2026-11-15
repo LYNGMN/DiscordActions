@@ -768,6 +768,111 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
             }
         self.assertEqual({"recent-article"}, remaining)
 
+    def test_expire_pending_deliveries_clears_queue_and_keeps_history(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "pending-guid", "Pending", "", ["pending message"]
+            )
+        )
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "sent-guid", "Sent", "", ["sent message"]
+            )
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE news_items SET delivery_status = 'sent' "
+                "WHERE guid = 'sent-guid'"
+            )
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET status = 'sent' "
+                "WHERE guid = 'sent-guid'"
+            )
+
+        self.assertEqual(1, self.module.count_unfinished_deliveries(self.db_path))
+        expired = self.module.expire_pending_deliveries(self.db_path)
+
+        self.assertEqual(1, expired)
+        self.assertEqual(0, self.module.count_pending_deliveries(self.db_path))
+        self.assertEqual(0, self.module.count_unfinished_deliveries(self.db_path))
+        self.assertTrue(self.module.is_item_handled(self.db_path, "pending-guid"))
+        with sqlite3.connect(self.db_path) as connection:
+            statuses = dict(
+                connection.execute(
+                    "SELECT guid, delivery_status FROM news_items"
+                ).fetchall()
+            )
+            message_guids = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT guid FROM google_news_delivery_messages"
+                )
+            }
+        self.assertEqual(
+            {"pending-guid": "expired", "sent-guid": "sent"}, statuses
+        )
+        self.assertEqual({"sent-guid"}, message_guids)
+
+    def test_expire_pending_deliveries_handles_more_than_one_chunk(self):
+        for index in range(5):
+            self.assertTrue(
+                self.module.reserve_delivery_with_messages(
+                    self.db_path,
+                    "chunk-{}".format(index),
+                    "Title {}".format(index),
+                    "https://publisher.example/chunk/{}".format(index),
+                    ["message"],
+                )
+            )
+
+        with mock.patch.object(self.module, "EXPIRY_CHUNK_SIZE", 2):
+            expired = self.module.expire_pending_deliveries(self.db_path)
+
+        self.assertEqual(5, expired)
+        with sqlite3.connect(self.db_path) as connection:
+            statuses = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT delivery_status FROM news_items"
+                )
+            }
+            messages = connection.execute(
+                "SELECT COUNT(*) FROM google_news_delivery_messages"
+            ).fetchone()[0]
+        self.assertEqual({"expired"}, statuses)
+        self.assertEqual(0, messages)
+
+    def test_state_retention_prunes_old_expired_items(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path,
+                "expired-guid",
+                "Title",
+                "https://publisher.example/expired",
+                ["message"],
+            )
+        )
+        self.module.expire_pending_deliveries(self.db_path)
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE news_items SET created_at = ? WHERE guid = 'expired-guid'",
+                ((now - timedelta(days=40)).isoformat(),),
+            )
+
+        stats = self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now
+        )
+
+        self.assertEqual(1, stats["items"])
+        with sqlite3.connect(self.db_path) as connection:
+            self.assertEqual(
+                0,
+                connection.execute(
+                    "SELECT COUNT(*) FROM news_items WHERE guid = 'expired-guid'"
+                ).fetchone()[0],
+            )
+
     def test_state_retention_vacuums_at_most_once_per_day(self):
         now = datetime(2026, 11, 15, tzinfo=timezone.utc)
         expired = (now - timedelta(days=40)).isoformat()
