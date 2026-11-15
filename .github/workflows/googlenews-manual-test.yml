@@ -121,6 +121,7 @@ jobs:
           SELECTED_PROFILE: ${{ inputs.profile }}
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
           GOOGLE_NEWS_STATE_RETENTION_DAYS: ${{ vars.GOOGLE_NEWS_STATE_RETENTION_DAYS || '14' }}
+          GOOGLE_NEWS_RUN_BUDGET_SECONDS: ${{ vars.GOOGLE_NEWS_RUN_BUDGET_SECONDS || '1080' }}
           FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
           FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
           FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
@@ -173,6 +174,7 @@ jobs:
             const failedProfiles = summary.profiles.filter(item => item.status === 'failed');
             const skippedProfiles = summary.profiles.filter(item => item.status === 'skipped');
             const prunedItems = summary.retention?.items ?? 0;
+            const budgetSkipped = summary.profiles.filter(item => item.error_code === 'time_budget_exhausted');
             core.summary
               .addHeading('Google News Manual Delivery Test')
               .addRaw(`Status: ${summary.status}\n`)
@@ -185,6 +187,9 @@ jobs:
               .addRaw(`Pruned state rows: ${prunedItems}\n`);
             if (summary.error_code) {
               core.summary.addRaw(`Error code: ${summary.error_code}\n`);
+            }
+            if (budgetSkipped.length > 0) {
+              core.summary.addRaw(`Time budget reached for: ${budgetSkipped.map(item => item.profile_id).join(', ')}\n`);
             }
             if (summary.circuit_blocked_until) {
 

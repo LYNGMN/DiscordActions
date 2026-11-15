@@ -184,6 +184,14 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("context.runId", source)
                 self.assertIn("No run summary was produced for this run.", source)
 
+    def test_run_budget_is_configured_and_reported(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("GOOGLE_NEWS_RUN_BUDGET_SECONDS", source)
+                self.assertIn("time_budget_exhausted", source)
+                self.assertIn("Time budget reached for", source)
+
     def test_scheduled_workflow_notifies_admin_on_failure(self):
         source = self.source()
         self.assertIn("Notify admin of failed run", source)

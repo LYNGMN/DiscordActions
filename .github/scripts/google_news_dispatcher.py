@@ -58,6 +58,20 @@ RESULT_FIELDS = {
 ANNOTATION_LIMIT = 10
 PREFLIGHT_ATTEMPTS = 2
 PREFLIGHT_RETRY_DELAY_SECONDS = 2.0
+DEFAULT_RUN_BUDGET_SECONDS = 1080
+MIN_RUN_BUDGET_SECONDS = 60
+MAX_RUN_BUDGET_SECONDS = 1200
+MIN_PROFILE_BUDGET_SECONDS = 60
+
+
+def run_budget_seconds(value: str = "1080") -> int:
+    """Bound one run so state is uploaded before the job timeout."""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,3}", value):
+        raise ValueError("invalid_google_news_run_budget")
+    parsed = int(value)
+    if not MIN_RUN_BUDGET_SECONDS <= parsed <= MAX_RUN_BUDGET_SECONDS:
+        raise ValueError("invalid_google_news_run_budget")
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -239,6 +253,7 @@ def run_profiles(
     publisher_registry: Optional[PublisherRegistry] = None,
     profile_databases: Optional[Mapping[str, str]] = None,
     preflight_results: Sequence[ProfileRunResult] = (),
+    run_deadline: Optional[float] = None,
 ) -> DispatchSummary:
     started_at = _utc_timestamp()
     state_path = Path(state_dir)
@@ -257,6 +272,15 @@ def run_profiles(
 
     with tempfile.TemporaryDirectory(prefix="google-news-results-", dir=state_dir) as result_dir:
         for index, profile in enumerate(profiles):
+            if (
+                run_deadline is not None
+                and run_deadline - time.time() < MIN_PROFILE_BUDGET_SECONDS
+            ):
+                results.extend(
+                    ProfileRunResult.skipped(item.profile_id, "time_budget_exhausted")
+                    for item in profiles[index:]
+                )
+                break
             if circuit_reader.get_open_circuit() is not None:
                 results.append(ProfileRunResult.skipped(profile.profile_id, "circuit_open"))
                 continue
@@ -278,6 +302,8 @@ def run_profiles(
                     "GOOGLE_NEWS_VALIDATE_ONLY": "true" if validate_only else "false",
                 }
             )
+            if run_deadline is not None:
+                child_env["GOOGLE_NEWS_RUN_DEADLINE"] = "{:.3f}".format(run_deadline)
             try:
                 completed = subprocess_runner(
                     [sys.executable, str(HANDLERS[profile.handler])],
@@ -351,6 +377,7 @@ def run_dispatch(
     manual_test: bool,
     validate_only: bool = False,
     retention_days: int = DEFAULT_RETENTION_DAYS,
+    run_deadline: Optional[float] = None,
     session: Optional[requests.Session] = None,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
@@ -388,6 +415,7 @@ def run_dispatch(
         publisher_registry=registry,
         profile_databases=database_map,
         preflight_results=preflight_results,
+        run_deadline=run_deadline,
     )
 
 
@@ -432,20 +460,21 @@ def _emit_profile_annotations(
             ),
             emitted,
         )
-    skipped = [result.profile_id for result in results if result.status == "skipped"]
-    if skipped:
-        blocked_until = (
-            circuit_state.blocked_until.isoformat()
-            if circuit_state is not None
-            else "unknown"
-        )
-        _emit_annotation(
+    skipped_by_code: Dict[str, List[str]] = {}
+    for result in results:
+        if result.status != "skipped":
+            continue
+        skipped_by_code.setdefault(
+            result.error_code or "unknown", []
+        ).append(result.profile_id)
+    for code, profile_ids in sorted(skipped_by_code.items()):
+        body = "profiles={} code={}".format(",".join(profile_ids), code)
+        if code == "circuit_open" and circuit_state is not None:
+            body += " until={}".format(circuit_state.blocked_until.isoformat())
+        emitted = _emit_annotation(
             "warning",
             "Google News delivery deferred",
-            "profiles={} code=circuit_open until={}".format(
-                ",".join(skipped),
-                blocked_until,
-            ),
+            body,
             emitted,
         )
 
@@ -580,6 +609,12 @@ def main(argv=None) -> int:
                 str(DEFAULT_RETENTION_DAYS),
             )
         )
+        budget_seconds = run_budget_seconds(
+            os.environ.get(
+                "GOOGLE_NEWS_RUN_BUDGET_SECONDS",
+                str(DEFAULT_RUN_BUDGET_SECONDS),
+            )
+        )
         all_profiles = load_profiles(arguments.profiles)
         profiles = select_profiles(all_profiles, arguments.profile_id)
         summary = run_dispatch(
@@ -589,6 +624,7 @@ def main(argv=None) -> int:
             arguments.manual_test,
             validate_only=arguments.validate_only,
             retention_days=retention_days,
+            run_deadline=time.time() + budget_seconds,
             profile_databases={
                 profile.profile_id: profile.state_db
                 for profile in all_profiles

@@ -6,6 +6,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -825,6 +826,61 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
 
         self.assertEqual("43669743020", summary.run_id)
         self.assertEqual("43669743020", summary.to_dict()["run_id"])
+
+    def test_run_budget_skips_remaining_profiles(self):
+        profiles = self.profiles[:2]
+        runner = mock.Mock()
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            summary = self.dispatcher.run_profiles(
+                profiles,
+                self.env,
+                self.state_dir,
+                manual_test=False,
+                subprocess_runner=runner,
+                sleep=lambda _: None,
+                run_deadline=time.time() + 1,
+            )
+
+        runner.assert_not_called()
+        self.assertEqual(["skipped", "skipped"], [item.status for item in summary.profiles])
+        self.assertEqual(
+            ["time_budget_exhausted", "time_budget_exhausted"],
+            [item.error_code for item in summary.profiles],
+        )
+        self.assertEqual("failed", summary.status)
+        self.assertEqual("all_profiles_skipped", summary.error_code)
+        self.assertIn("code=time_budget_exhausted", output.getvalue())
+
+    def test_run_budget_is_exported_to_child_environment(self):
+        deadline = time.time() + 600
+        calls = []
+
+        self.dispatcher.run_profiles(
+            [self.profiles[0]],
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+            run_deadline=deadline,
+        )
+
+        self.assertEqual(
+            "{:.3f}".format(deadline), calls[0][1]["GOOGLE_NEWS_RUN_DEADLINE"]
+        )
+
+    def test_run_budget_seconds_is_bounded_and_validated(self):
+        self.assertEqual(1080, self.dispatcher.run_budget_seconds())
+        self.assertEqual(60, self.dispatcher.run_budget_seconds("60"))
+        self.assertEqual(1200, self.dispatcher.run_budget_seconds("1200"))
+        for invalid in ("0", "59", "1201", "nan", "2.5", " 1080", "108000"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_run_budget"
+                ):
+                    self.dispatcher.run_budget_seconds(invalid)
 
 
 if __name__ == "__main__":

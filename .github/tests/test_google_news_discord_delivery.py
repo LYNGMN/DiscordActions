@@ -1,7 +1,9 @@
 import importlib
+import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -439,6 +441,76 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
         self.assertEqual("ambiguous_retry", raised.exception.error_code)
         self.assertEqual(6, raised.exception.attempt_count)
         self.assertEqual(6, post.call_count)
+
+
+    def test_run_deadline_blocks_request_before_sending(self):
+        with mock.patch.dict(
+            os.environ, {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() - 1)}
+        ), mock.patch.object(self.delivery.requests, "post") as post:
+            with self.assertRaises(self.delivery.RunDeadlineExceeded):
+                self.delivery.send_webhook_message(
+                    "https://discord.com/api/webhooks/1/token",
+                    {"content": "message"},
+                    sleep=lambda _: None,
+                )
+        post.assert_not_called()
+
+    def test_rate_limit_wait_beyond_deadline_is_deferred(self):
+        class RateLimitedResponse:
+            status_code = 429
+            headers = {"Retry-After": "300"}
+
+            def json(self):
+                return {"retry_after": 300}
+
+        sleep = mock.Mock()
+        with mock.patch.dict(
+            os.environ, {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() + 30)}
+        ), mock.patch.object(
+            self.delivery.requests, "post", return_value=RateLimitedResponse()
+        ):
+            with self.assertRaises(self.delivery.RunDeadlineExceeded):
+                self.delivery.send_webhook_message(
+                    "https://discord.com/api/webhooks/1/token",
+                    {"content": "message"},
+                    sleep=sleep,
+                )
+        sleep.assert_not_called()
+
+    def test_successful_send_keeps_message_id_when_bucket_reset_is_far(self):
+        class ExhaustedBucketResponse:
+            status_code = 200
+            headers = {
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset-After": "600",
+            }
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"id": "123456789012345678"}
+
+        sleep = mock.Mock()
+        with mock.patch.dict(
+            os.environ, {"GOOGLE_NEWS_RUN_DEADLINE": str(time.time() + 30)}
+        ), mock.patch.object(
+            self.delivery.requests, "post", return_value=ExhaustedBucketResponse()
+        ):
+            message_id = self.delivery.send_webhook_message(
+                "https://discord.com/api/webhooks/1/token",
+                {"content": "message"},
+                sleep=sleep,
+            )
+
+        self.assertEqual("123456789012345678", message_id)
+        sleep.assert_not_called()
+
+    def test_run_deadline_helpers_are_inactive_without_environment(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(self.delivery.remaining_run_seconds())
+            self.assertFalse(self.delivery.run_deadline_reached())
+            self.delivery.ensure_run_budget()
 
 
 if __name__ == "__main__":
