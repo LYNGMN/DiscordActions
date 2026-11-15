@@ -5,18 +5,24 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, List, Mapping, Optional, Sequence
+from typing import Callable, Dict, List, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
 import requests
 
+from google_news_delivery_state import (
+    DEFAULT_RETENTION_DAYS,
+    apply_state_retention,
+    state_retention_days,
+)
 from google_news_profile_result import ERROR_CODE, STATUSES
 from google_news_publisher_names import PublisherRegistry, load_default_registry
 from google_news_publisher_review import (
@@ -29,7 +35,7 @@ from google_news_profiles import (
     load_profiles,
     validate_common_feed_environment,
 )
-from google_news_request_guard import GoogleNewsRequestGuard
+from google_news_request_guard import CircuitState, GoogleNewsRequestGuard
 
 
 LOGGER = logging.getLogger(__name__)
@@ -49,6 +55,9 @@ RESULT_FIELDS = {
     "ambiguous_retry_count",
     "error_code",
 }
+ANNOTATION_LIMIT = 10
+PREFLIGHT_ATTEMPTS = 2
+PREFLIGHT_RETRY_DELAY_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -90,6 +99,9 @@ class DispatchSummary:
     profiles: Sequence[ProfileRunResult]
     unmapped_publisher_count: int = 0
     new_unmapped_publisher_count: int = 0
+    retention: Mapping[str, int] = field(default_factory=dict)
+    circuit_error_code: Optional[str] = None
+    circuit_blocked_until: Optional[str] = None
 
     def to_dict(self):
         return {
@@ -102,6 +114,9 @@ class DispatchSummary:
             "profiles": [profile.to_dict() for profile in self.profiles],
             "unmapped_publisher_count": self.unmapped_publisher_count,
             "new_unmapped_publisher_count": self.new_unmapped_publisher_count,
+            "retention": dict(self.retention),
+            "circuit_error_code": self.circuit_error_code,
+            "circuit_blocked_until": self.circuit_blocked_until,
         }
 
 
@@ -109,6 +124,7 @@ def validate_webhooks(
     profiles: Sequence[GoogleNewsProfile],
     env: Mapping[str, str],
     session: requests.Session,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     validated_urls = []
     for profile in profiles:
@@ -129,41 +145,45 @@ def validate_webhooks(
 
     first_error_code = None
     for profile, webhook_url in validated_urls:
+        response, request_error = _fetch_webhook_metadata(
+            session, webhook_url, sleep
+        )
         error_code = None
         reason = None
-        try:
-            response = session.get(webhook_url, timeout=(5.0, 15.0))
-        except Exception:
+        if request_error is not None:
             error_code = "webhook_preflight_failed"
-            reason = "request_error"
+            reason = request_error
+        elif response.status_code == 429:
+            error_code = "webhook_rate_limited"
+            reason = "http_429"
+        elif response.status_code != 200:
+            error_code = "webhook_preflight_failed"
+            reason = "http_{}".format(response.status_code)
         else:
-            if response.status_code == 429:
-                error_code = "webhook_rate_limited"
-                reason = "http_429"
-            elif response.status_code != 200:
-                error_code = "webhook_preflight_failed"
-                reason = "http_{}".format(response.status_code)
+            try:
+                payload = response.json()
+            except (TypeError, ValueError):
+                error_code = "webhook_metadata_invalid"
+                reason = "invalid_json"
             else:
-                try:
-                    payload = response.json()
-                except (TypeError, ValueError):
+                if not isinstance(payload, dict) or not isinstance(
+                    payload.get("name"), str
+                ):
                     error_code = "webhook_metadata_invalid"
-                    reason = "invalid_json"
-                else:
-                    if not isinstance(payload, dict) or not isinstance(
-                        payload.get("name"), str
-                    ):
-                        error_code = "webhook_metadata_invalid"
-                        reason = "invalid_metadata"
-                    elif payload["name"] != profile.expected_webhook_name:
-                        error_code = "webhook_name_mismatch"
-                        reason = "name_mismatch"
+                    reason = "invalid_metadata"
+                elif payload["name"] != profile.expected_webhook_name:
+                    error_code = "webhook_name_mismatch"
+                    reason = "name_mismatch"
 
         if error_code is not None:
             LOGGER.error(
                 "Discord webhook preflight failed: profile_id=%s reason=%s",
                 profile.profile_id,
                 reason,
+            )
+            print(
+                "::error title=Discord webhook preflight failed::"
+                "profile={} reason={}".format(profile.profile_id, reason)
             )
             if first_error_code is None:
                 first_error_code = error_code
@@ -174,12 +194,34 @@ def validate_webhooks(
         raise RuntimeError(first_error_code)
 
 
+def _fetch_webhook_metadata(
+    session: requests.Session,
+    webhook_url: str,
+    sleep: Callable[[float], None],
+):
+    """Retry one transient network or 5xx failure before failing the run."""
+    last_error = "request_error"
+    for attempt in range(PREFLIGHT_ATTEMPTS):
+        try:
+            response = session.get(webhook_url, timeout=(5.0, 15.0))
+        except Exception:
+            last_error = "request_error"
+        else:
+            if response.status_code < 500:
+                return response, None
+            last_error = "http_{}".format(response.status_code)
+        if attempt + 1 < PREFLIGHT_ATTEMPTS:
+            sleep(PREFLIGHT_RETRY_DELAY_SECONDS)
+    return None, last_error
+
+
 def run_profiles(
     profiles: Sequence[GoogleNewsProfile],
     env: Mapping[str, str],
     state_dir: str,
     manual_test: bool,
     validate_only: bool = False,
+    retention_days: int = DEFAULT_RETENTION_DAYS,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
     publisher_registry: Optional[PublisherRegistry] = None,
@@ -242,6 +284,9 @@ def run_profiles(
             ):
                 sleep(1.0)
 
+    circuit_state = circuit_reader.get_open_circuit()
+    retention = _prune_state_databases(state_path, database_map, retention_days)
+    _emit_profile_annotations(results, circuit_state)
     status = "failed" if any(result.status == "failed" for result in results) else "success"
     review_payload = export_unmapped_publishers(
         state_path, database_map, registry
@@ -263,6 +308,15 @@ def run_profiles(
         new_unmapped_publisher_count=len(
             after_unmapped - before_unmapped
         ),
+        retention=retention,
+        circuit_error_code=(
+            circuit_state.error_code if circuit_state is not None else None
+        ),
+        circuit_blocked_until=(
+            circuit_state.blocked_until.isoformat()
+            if circuit_state is not None
+            else None
+        ),
     )
     _write_summary(state_path / "run-summary.json", summary)
     return summary
@@ -274,6 +328,7 @@ def run_dispatch(
     state_dir: str,
     manual_test: bool,
     validate_only: bool = False,
+    retention_days: int = DEFAULT_RETENTION_DAYS,
     session: Optional[requests.Session] = None,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
@@ -291,18 +346,115 @@ def run_dispatch(
         validate_common_feed_environment(merged_environment)
     export_unmapped_publishers(state_dir, database_map, registry)
     if not validate_only:
-        validate_webhooks(profiles, env, session or requests.Session())
+        validate_webhooks(
+            profiles,
+            env,
+            session or requests.Session(),
+            sleep=sleep,
+        )
     return run_profiles(
         profiles,
         env,
         state_dir,
         manual_test,
         validate_only=validate_only,
+        retention_days=retention_days,
         subprocess_runner=subprocess_runner,
         sleep=sleep,
         publisher_registry=registry,
         profile_databases=database_map,
     )
+
+
+def _prune_state_databases(
+    state_path: Path,
+    database_map: Mapping[str, str],
+    retention_days: int,
+) -> Dict[str, int]:
+    paths = [str(state_path / name) for name in database_map.values()]
+    paths.append(str(state_path / "resolver.db"))
+    try:
+        return apply_state_retention(paths, retention_days=retention_days)
+    except (OSError, sqlite3.Error, ValueError) as error:
+        LOGGER.warning(
+            "Google News state retention skipped (오류 유형: %s)",
+            type(error).__name__,
+        )
+        return {
+            "items": 0,
+            "messages": 0,
+            "identities": 0,
+            "url_cache": 0,
+            "databases": 0,
+        }
+
+
+def _emit_profile_annotations(
+    results: Sequence[ProfileRunResult],
+    circuit_state: Optional[CircuitState],
+) -> None:
+    emitted = 0
+    for result in results:
+        if result.status != "failed":
+            continue
+        emitted = _emit_annotation(
+            "error",
+            "Google News profile failed",
+            "profile={} code={} pending={}".format(
+                result.profile_id,
+                result.error_code or "unknown_failure",
+                result.pending_count,
+            ),
+            emitted,
+        )
+    skipped = [result.profile_id for result in results if result.status == "skipped"]
+    if skipped:
+        blocked_until = (
+            circuit_state.blocked_until.isoformat()
+            if circuit_state is not None
+            else "unknown"
+        )
+        _emit_annotation(
+            "warning",
+            "Google News delivery deferred",
+            "profiles={} code=circuit_open until={}".format(
+                ",".join(skipped),
+                blocked_until,
+            ),
+            emitted,
+        )
+
+
+def _emit_annotation(level: str, title: str, body: str, emitted: int) -> int:
+    if emitted >= ANNOTATION_LIMIT:
+        return emitted
+    print("::{} title={}::{}".format(level, title, body))
+    return emitted + 1
+
+
+def _record_dispatch_failure(arguments, error_code: str) -> None:
+    state_path = Path(arguments.state_dir)
+    state_path.mkdir(parents=True, exist_ok=True)
+    failed_summary = DispatchSummary(
+        status="failed",
+        manual_test=bool(arguments.manual_test),
+        validate_only=bool(arguments.validate_only),
+        error_code=error_code,
+        started_at=_utc_timestamp(),
+        finished_at=_utc_timestamp(),
+        profiles=tuple(),
+    )
+    _write_summary(state_path / "run-summary.json", failed_summary)
+    LOGGER.error("Google News 디스패처 실패 (코드: %s)", error_code)
+    print(
+        "::error title=Google News dispatcher failed::code={}".format(error_code)
+    )
+
+
+def _unexpected_error_code(error: Exception) -> str:
+    name = re.sub(r"(?<!^)(?=[A-Z])", "_", type(error).__name__).lower()
+    name = re.sub(r"[^a-z0-9_]+", "_", name).strip("_") or "error"
+    return ("unexpected_" + name)[:64]
 
 
 def select_profiles(
@@ -396,6 +548,12 @@ def main(argv=None) -> int:
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     try:
+        retention_days = state_retention_days(
+            os.environ.get(
+                "GOOGLE_NEWS_STATE_RETENTION_DAYS",
+                str(DEFAULT_RETENTION_DAYS),
+            )
+        )
         all_profiles = load_profiles(arguments.profiles)
         profiles = select_profiles(all_profiles, arguments.profile_id)
         summary = run_dispatch(
@@ -404,6 +562,7 @@ def main(argv=None) -> int:
             arguments.state_dir,
             arguments.manual_test,
             validate_only=arguments.validate_only,
+            retention_days=retention_days,
             profile_databases={
                 profile.profile_id: profile.state_db
                 for profile in all_profiles
@@ -413,19 +572,10 @@ def main(argv=None) -> int:
         error_code = str(error)
         if not ERROR_CODE.fullmatch(error_code):
             error_code = "dispatch_failed"
-        state_path = Path(arguments.state_dir)
-        state_path.mkdir(parents=True, exist_ok=True)
-        failed_summary = DispatchSummary(
-            status="failed",
-            manual_test=bool(arguments.manual_test),
-            validate_only=bool(arguments.validate_only),
-            error_code=error_code,
-            started_at=_utc_timestamp(),
-            finished_at=_utc_timestamp(),
-            profiles=tuple(),
-        )
-        _write_summary(state_path / "run-summary.json", failed_summary)
-        LOGGER.error("Google News 디스패처 실패 (코드: %s)", error_code)
+        _record_dispatch_failure(arguments, error_code)
+        return 1
+    except Exception as error:
+        _record_dispatch_failure(arguments, _unexpected_error_code(error))
         return 1
     LOGGER.info(
         "Google News 디스패처 완료: status=%s profiles=%s",
