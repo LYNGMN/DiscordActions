@@ -90,22 +90,60 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
 
         return run
 
-    def test_preflight_mismatch_runs_zero_handlers(self):
-        session = QueueSession([FakeResponse(payload={"name": "wrong-name"})])
+    def test_preflight_mismatch_skips_only_that_profile(self):
+        profiles = self.profiles[:2]
+        session = QueueSession(
+            [
+                FakeResponse(payload={"name": "wrong-name"}),
+                FakeResponse(payload={"name": profiles[1].expected_webhook_name}),
+            ]
+        )
+        calls = []
+
+        summary = self.dispatcher.run_dispatch(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=True,
+            session=session,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual(1, len(calls))
+        self.assertEqual(
+            [profiles[1].profile_id],
+            [call[1]["GOOGLE_NEWS_PROFILE_ID"] for call in calls],
+        )
+        self.assertEqual(["failed", "success"], [item.status for item in summary.profiles])
+        self.assertEqual("webhook_name_mismatch", summary.profiles[0].error_code)
+        self.assertEqual("failed", summary.status)
+
+    def test_preflight_failure_for_every_profile_records_each_one(self):
+        profiles = self.profiles[:2]
+        session = QueueSession(
+            [FakeResponse(payload={"name": "wrong-name"}) for _ in profiles]
+        )
         runner = mock.Mock()
 
-        with self.assertRaisesRegex(RuntimeError, "webhook_name_mismatch"):
-            self.dispatcher.run_dispatch(
-                self.profiles,
-                self.env,
-                self.state_dir,
-                manual_test=True,
-                session=session,
-                subprocess_runner=runner,
-                sleep=lambda _: None,
-            )
+        summary = self.dispatcher.run_dispatch(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=True,
+            session=session,
+            subprocess_runner=runner,
+            sleep=lambda _: None,
+        )
 
         runner.assert_not_called()
+        self.assertEqual("failed", summary.status)
+        self.assertEqual(2, len(summary.profiles))
+        self.assertTrue(all(item.status == "failed" for item in summary.profiles))
+        self.assertEqual(
+            ["webhook_name_mismatch", "webhook_name_mismatch"],
+            [item.error_code for item in summary.profiles],
+        )
 
     def test_invalid_common_feed_settings_stop_before_webhook_network(self):
         env = dict(self.env)
@@ -149,26 +187,29 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual([], session.calls)
         runner.assert_not_called()
 
-    def test_preflight_rejects_missing_or_non_https_secrets_before_network(self):
+    def test_preflight_reports_invalid_webhook_values_without_network(self):
         cases = (
             (None, "missing_webhook"),
             ("http://example.com", "invalid_webhook"),
             ("https://name@discord.com/api/webhooks/1/token", "invalid_webhook"),
             ("https://discord.com:444/api/webhooks/1/token", "invalid_webhook"),
         )
+        profile = self.profiles[0]
         for value, expected_code in cases:
             with self.subTest(value=value):
                 env = dict(self.env)
                 if value is None:
-                    env.pop(self.profiles[0].webhook_env)
+                    env.pop(profile.webhook_env)
                 else:
-                    env[self.profiles[0].webhook_env] = value
+                    env[profile.webhook_env] = value
                 session = QueueSession([])
-                with self.assertRaisesRegex(RuntimeError, expected_code):
-                    self.dispatcher.validate_webhooks(
-                        self.profiles, env, session, sleep=lambda _: None
-                    )
+                usable, failures = self.dispatcher.preflight_profiles(
+                    [profile], env, session, sleep=lambda _: None
+                )
+                self.assertEqual([], usable)
                 self.assertEqual([], session.calls)
+                self.assertEqual(1, len(failures))
+                self.assertEqual(expected_code, failures[0].error_code)
 
     def test_invalid_child_result_is_reported_without_exposing_its_values(self):
         profile = self.profiles[0]
@@ -200,21 +241,24 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
 
         self.assertEqual("invalid_result", summary.profiles[0].error_code)
 
-    def test_preflight_rejects_rate_limit_and_invalid_json_with_safe_codes(self):
+    def test_preflight_reports_rate_limit_and_invalid_json_with_safe_codes(self):
         cases = (
             (FakeResponse(status_code=429), "webhook_rate_limited"),
             (FakeResponse(json_error=ValueError("body must not leak")), "webhook_metadata_invalid"),
         )
+        profile = self.profiles[0]
         for response, expected_code in cases:
             with self.subTest(expected_code=expected_code):
-                with self.assertRaisesRegex(RuntimeError, expected_code) as raised:
-                    self.dispatcher.validate_webhooks(
-                        self.profiles,
-                        self.env,
-                        QueueSession([response]),
-                        sleep=lambda _: None,
-                    )
-                self.assertNotIn("body must not leak", str(raised.exception))
+                usable, failures = self.dispatcher.preflight_profiles(
+                    [profile],
+                    self.env,
+                    QueueSession([response]),
+                    sleep=lambda _: None,
+                )
+                self.assertEqual([], usable)
+                self.assertEqual(1, len(failures))
+                self.assertEqual(expected_code, failures[0].error_code)
+                self.assertNotIn("body must not leak", repr(failures))
 
     def test_preflight_reports_every_failed_profile_without_secret_values(self):
         profiles = self.profiles[:2]
@@ -226,12 +270,17 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         )
 
         with self.assertLogs(self.dispatcher.LOGGER, level="ERROR") as captured:
-            with self.assertRaisesRegex(RuntimeError, "webhook_preflight_failed"):
-                self.dispatcher.validate_webhooks(
-                    profiles, self.env, session, sleep=lambda _: None
-                )
+            usable, failures = self.dispatcher.preflight_profiles(
+                profiles, self.env, session, sleep=lambda _: None
+            )
 
         logs = "\n".join(captured.output)
+        self.assertEqual([], usable)
+        self.assertEqual(2, len(failures))
+        self.assertEqual(
+            ["webhook_preflight_failed", "webhook_name_mismatch"],
+            [item.error_code for item in failures],
+        )
         self.assertEqual(2, len(session.calls))
         self.assertIn("profile_id=top_us reason=http_401", logs)
         self.assertIn("profile_id=top_kr reason=name_mismatch", logs)
@@ -239,7 +288,7 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertNotIn("token1", logs)
         self.assertNotIn("token2", logs)
 
-    def test_preflight_rate_limit_stops_remaining_metadata_requests(self):
+    def test_rate_limited_preflight_does_not_stop_other_profiles(self):
         profiles = self.profiles[:2]
         session = QueueSession(
             [
@@ -248,12 +297,43 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             ]
         )
 
-        with self.assertRaisesRegex(RuntimeError, "webhook_rate_limited"):
-            self.dispatcher.validate_webhooks(
-                profiles, self.env, session, sleep=lambda _: None
+        usable, failures = self.dispatcher.preflight_profiles(
+            profiles, self.env, session, sleep=lambda _: None
+        )
+
+        self.assertEqual([profiles[1]], usable)
+        self.assertEqual(
+            ["webhook_rate_limited"], [item.error_code for item in failures]
+        )
+        self.assertEqual(2, len(session.calls))
+
+    def test_preflight_failure_annotation_has_no_secret_values(self):
+        profiles = self.profiles[:2]
+        session = QueueSession(
+            [
+                FakeResponse(payload={"name": "wrong-name"}),
+                FakeResponse(payload={"name": profiles[1].expected_webhook_name}),
+            ]
+        )
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.dispatcher.run_dispatch(
+                profiles,
+                self.env,
+                self.state_dir,
+                manual_test=True,
+                session=session,
+                subprocess_runner=self.successful_runner([]),
+                sleep=lambda _: None,
             )
 
-        self.assertEqual(1, len(session.calls))
+        rendered = output.getvalue()
+        self.assertIn("::error title=Google News profile failed::", rendered)
+        self.assertIn("profile={}".format(profiles[0].profile_id), rendered)
+        self.assertIn("code=webhook_name_mismatch", rendered)
+        self.assertNotIn("discord.com", rendered)
+        self.assertNotIn("token1", rendered)
 
     def test_handlers_run_in_exact_registry_order_with_isolated_environments(self):
         calls = []
@@ -632,9 +712,9 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         session = QueueSession([FakeResponse(503), FakeResponse(503)])
 
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            with self.assertRaisesRegex(RuntimeError, "webhook_preflight_failed"):
-                self.dispatcher.run_dispatch(
+        with self.assertLogs(self.dispatcher.LOGGER, level="ERROR") as captured:
+            with contextlib.redirect_stdout(output):
+                summary = self.dispatcher.run_dispatch(
                     [profile],
                     self.env,
                     self.state_dir,
@@ -644,10 +724,15 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                     sleep=lambda _: None,
                 )
 
+        self.assertEqual("failed", summary.status)
+        self.assertEqual(
+            "webhook_preflight_failed", summary.profiles[0].error_code
+        )
         rendered = output.getvalue()
-        self.assertIn("::error title=Discord webhook preflight failed::", rendered)
+        self.assertIn("::error title=Google News profile failed::", rendered)
         self.assertIn("profile={}".format(profile.profile_id), rendered)
-        self.assertIn("reason=http_503", rendered)
+        self.assertIn("code=webhook_preflight_failed", rendered)
+        self.assertIn("reason=http_503", "\n".join(captured.output))
         self.assertNotIn("discord.com", rendered)
 
     def test_dispatch_prunes_expired_state_before_summary(self):
@@ -691,6 +776,55 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual(0, remaining)
         self.assertEqual(1, summary.retention["items"])
         self.assertEqual(1, summary.to_dict()["retention"]["items"])
+
+    def test_all_skipped_run_fails_with_error_code(self):
+        profiles = self.profiles[:2]
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(state_path / "resolver.db")) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS google_news_resolver_state ("
+                "state_key TEXT PRIMARY KEY, blocked_until TEXT, "
+                "last_error_code TEXT, updated_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO google_news_resolver_state "
+                "(state_key, blocked_until, last_error_code, updated_at) "
+                "VALUES ('global', ?, 'http_429', ?)",
+                (
+                    (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        runner = mock.Mock()
+
+        summary = self.dispatcher.run_profiles(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=runner,
+            sleep=lambda _: None,
+        )
+
+        runner.assert_not_called()
+        self.assertEqual(["skipped", "skipped"], [item.status for item in summary.profiles])
+        self.assertEqual("failed", summary.status)
+        self.assertEqual("all_profiles_skipped", summary.error_code)
+
+    def test_summary_records_github_run_id(self):
+        with mock.patch.dict(os.environ, {"GITHUB_RUN_ID": "43669743020"}):
+            summary = self.dispatcher.run_profiles(
+                [self.profiles[0]],
+                self.env,
+                self.state_dir,
+                manual_test=False,
+                subprocess_runner=self.successful_runner([]),
+                sleep=lambda _: None,
+            )
+
+        self.assertEqual("43669743020", summary.run_id)
+        self.assertEqual("43669743020", summary.to_dict()["run_id"])
 
 
 if __name__ == "__main__":
