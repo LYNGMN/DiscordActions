@@ -890,6 +890,138 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual("all_profiles_skipped", summary.error_code)
         self.assertIn("code=time_budget_exhausted", output.getvalue())
 
+    def make_pending_item(self, delivery, profile, guid, created_at):
+        Path(self.state_dir).mkdir(parents=True, exist_ok=True)
+        database_path = Path(self.state_dir) / profile.state_db
+        with sqlite3.connect(str(database_path)) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS news_items ("
+                "pub_date TEXT, guid TEXT PRIMARY KEY, title TEXT, "
+                "link TEXT, related_news TEXT)"
+            )
+        self.assertTrue(
+            delivery.reserve_delivery_with_messages(
+                str(database_path),
+                guid,
+                "Title {}".format(guid),
+                "https://publisher.example/{}".format(guid),
+                ["message"],
+            )
+        )
+        with sqlite3.connect(str(database_path)) as connection:
+            connection.execute(
+                "UPDATE news_items SET created_at = ? WHERE guid = ?",
+                (created_at, guid),
+            )
+
+    def test_auto_expiry_removes_only_old_backlog_above_threshold(self):
+        profile = self.profiles[0]
+        delivery = load_module("google_news_delivery_state")
+        now = datetime.now(timezone.utc)
+        old = (now - timedelta(days=5)).isoformat()
+        recent = (now - timedelta(hours=1)).isoformat()
+        self.make_pending_item(delivery, profile, "old-1", old)
+        self.make_pending_item(delivery, profile, "old-2", old)
+        self.make_pending_item(delivery, profile, "recent-1", recent)
+        self.env["DISCORD_WEBHOOK_ADMIN"] = "https://discord.com/api/webhooks/9/admin"
+        alerts = []
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            summary = self.dispatcher.run_profiles(
+                [profile],
+                self.env,
+                self.state_dir,
+                manual_test=False,
+                subprocess_runner=self.successful_runner([]),
+                sleep=lambda _: None,
+                backlog_limit=2,
+                backlog_age_days=3,
+                admin_notifier=lambda url, content: alerts.append((url, content)) or True,
+            )
+
+        self.assertEqual(2, summary.backlog_expired)
+        self.assertEqual(1, len(alerts))
+        self.assertIn("profile={}".format(profile.profile_id), alerts[0][1])
+        self.assertIn("expired=2", alerts[0][1])
+        self.assertIn("::warning title=Google News backlog expired::", output.getvalue())
+        database_path = Path(self.state_dir) / profile.state_db
+        self.assertEqual(1, delivery.count_unfinished_deliveries(str(database_path)))
+        with sqlite3.connect(str(database_path)) as connection:
+            statuses = dict(
+                connection.execute(
+                    "SELECT guid, delivery_status FROM news_items"
+                ).fetchall()
+            )
+        self.assertEqual("expired", statuses["old-1"])
+        self.assertEqual("expired", statuses["old-2"])
+        self.assertEqual("pending", statuses["recent-1"])
+
+    def test_auto_expiry_is_skipped_below_threshold(self):
+        profile = self.profiles[0]
+        delivery = load_module("google_news_delivery_state")
+        old = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        self.make_pending_item(delivery, profile, "old-1", old)
+        alerts = []
+
+        summary = self.dispatcher.run_profiles(
+            [profile],
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner([]),
+            sleep=lambda _: None,
+            backlog_limit=2,
+            backlog_age_days=3,
+            admin_notifier=lambda url, content: alerts.append((url, content)) or True,
+        )
+
+        self.assertEqual(0, summary.backlog_expired)
+        self.assertEqual([], alerts)
+
+    def test_auto_expiry_is_skipped_in_manual_test_mode(self):
+        profile = self.profiles[0]
+        delivery = load_module("google_news_delivery_state")
+        old = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        self.make_pending_item(delivery, profile, "old-1", old)
+        self.make_pending_item(delivery, profile, "old-2", old)
+
+        summary = self.dispatcher.run_profiles(
+            [profile],
+            self.env,
+            self.state_dir,
+            manual_test=True,
+            subprocess_runner=self.successful_runner([]),
+            sleep=lambda _: None,
+            backlog_limit=1,
+            backlog_age_days=3,
+            admin_notifier=lambda url, content: True,
+        )
+
+        self.assertEqual(0, summary.backlog_expired)
+        self.assertEqual(
+            2,
+            delivery.count_unfinished_deliveries(
+                str(Path(self.state_dir) / profile.state_db)
+            ),
+        )
+
+    def test_backlog_settings_are_validated(self):
+        self.assertEqual(500, self.dispatcher.parse_backlog_limit())
+        self.assertEqual(3, self.dispatcher.parse_backlog_age_days())
+        for value in ("0", "10001", "nan", " 500"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_backlog_limit"
+                ):
+                    self.dispatcher.parse_backlog_limit(value)
+        for value in ("0", "31", "nan", " 3"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_backlog_age"
+                ):
+                    self.dispatcher.parse_backlog_age_days(value)
+
     def test_stale_result_directories_are_removed_before_dispatch(self):
         state_path = Path(self.state_dir)
         state_path.mkdir(parents=True, exist_ok=True)

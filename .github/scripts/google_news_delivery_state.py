@@ -599,21 +599,55 @@ def expire_pending_deliveries(db_path: str) -> int:
                 "WHERE delivery_status IN ('pending', 'retryable')"
             ).fetchall()
         ]
-        for start in range(0, len(guids), EXPIRY_CHUNK_SIZE):
-            chunk = guids[start : start + EXPIRY_CHUNK_SIZE]
-            placeholders = ",".join("?" for _ in chunk)
-            connection.execute(
-                "DELETE FROM google_news_delivery_messages "
-                "WHERE guid IN ({})".format(placeholders),
-                chunk,
-            )
-            connection.execute(
-                "UPDATE news_items SET delivery_status = 'expired', "
-                "delivery_sequence = NULL, discord_message_id = NULL "
-                "WHERE guid IN ({})".format(placeholders),
-                chunk,
-            )
+        _expire_guids(connection, guids)
     return len(guids)
+
+
+def expire_stale_deliveries(
+    db_path: str,
+    age_days: int,
+    now: Optional[datetime] = None,
+) -> int:
+    """Expire unfinished deliveries older than age_days and drop their messages."""
+    if (
+        isinstance(age_days, bool)
+        or not isinstance(age_days, int)
+        or age_days < 1
+    ):
+        raise ValueError("invalid backlog age")
+    current = _aware_utc(now) if now is not None else datetime.now(timezone.utc)
+    cutoff = (current - timedelta(days=age_days)).isoformat()
+    with sqlite3.connect(db_path) as connection:
+        _ensure_delivery_columns(connection)
+        _ensure_message_table(connection)
+        guids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT guid FROM news_items "
+                "WHERE delivery_status IN ('pending', 'retryable') "
+                "AND created_at IS NOT NULL AND created_at < ?",
+                (cutoff,),
+            ).fetchall()
+        ]
+        _expire_guids(connection, guids)
+    return len(guids)
+
+
+def _expire_guids(connection: sqlite3.Connection, guids: Sequence[str]) -> None:
+    for start in range(0, len(guids), EXPIRY_CHUNK_SIZE):
+        chunk = list(guids[start : start + EXPIRY_CHUNK_SIZE])
+        placeholders = ",".join("?" for _ in chunk)
+        connection.execute(
+            "DELETE FROM google_news_delivery_messages "
+            "WHERE guid IN ({})".format(placeholders),
+            chunk,
+        )
+        connection.execute(
+            "UPDATE news_items SET delivery_status = 'expired', "
+            "delivery_sequence = NULL, discord_message_id = NULL "
+            "WHERE guid IN ({})".format(placeholders),
+            chunk,
+        )
 
 
 def read_state_metadata(db_path: str, key: str) -> Optional[str]:

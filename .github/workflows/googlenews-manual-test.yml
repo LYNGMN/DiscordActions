@@ -123,6 +123,8 @@ jobs:
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
           GOOGLE_NEWS_STATE_RETENTION_DAYS: ${{ vars.GOOGLE_NEWS_STATE_RETENTION_DAYS || '30' }}
           GOOGLE_NEWS_RUN_BUDGET_SECONDS: ${{ vars.GOOGLE_NEWS_RUN_BUDGET_SECONDS || '1080' }}
+          GOOGLE_NEWS_BACKLOG_LIMIT: ${{ vars.GOOGLE_NEWS_BACKLOG_LIMIT || '500' }}
+          GOOGLE_NEWS_BACKLOG_AGE_DAYS: ${{ vars.GOOGLE_NEWS_BACKLOG_AGE_DAYS || '3' }}
           FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
           FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
           FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
@@ -176,6 +178,8 @@ jobs:
             const skippedProfiles = summary.profiles.filter(item => item.status === 'skipped');
             const prunedItems = summary.retention?.items ?? 0;
             const budgetSkipped = summary.profiles.filter(item => item.error_code === 'time_budget_exhausted');
+            const backlogExpired = summary.backlog ?? [];
+            const expiredTotal = summary.backlog_expired ?? 0;
             const backlogProfiles = summary.profiles.filter(item => item.pending_count >= 100);
             core.summary
               .addHeading('Google News Manual Delivery Test')
@@ -186,7 +190,8 @@ jobs:
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
               .addRaw(`Unmapped publishers: ${summary.unmapped_publisher_count ?? 0}\n`)
               .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`)
-              .addRaw(`Pruned state rows: ${prunedItems}\n`);
+              .addRaw(`Pruned state rows: ${prunedItems}\n`)
+              .addRaw(`Auto-expired backlog: ${expiredTotal}\n`);
             if (summary.error_code) {
               core.summary.addRaw(`Error code: ${summary.error_code}\n`);
             }
@@ -224,6 +229,22 @@ jobs:
                   ...skippedProfiles.map(item => [
                     item.profile_id,
                     item.error_code ?? 'circuit_open',
+                  ]),
+                ]);
+            }
+            if (backlogExpired.length > 0) {
+              core.summary
+                .addHeading('Auto-expired backlog', 2)
+                .addTable([
+                  [
+                    { data: 'Profile', header: true },
+                    { data: 'Expired', header: true },
+                    { data: 'Remaining', header: true },
+                  ],
+                  ...backlogExpired.map(item => [
+                    item.profile_id,
+                    String(item.expired ?? 0),
+                    String(item.remaining ?? 0),
                   ]),
                 ]);
             }
