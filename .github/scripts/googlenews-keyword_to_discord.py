@@ -404,6 +404,15 @@ def deliver_reserved_item(guid):
             guid,
             "ambiguous_retry",
         )
+    if outcome.failed_count:
+        print("::warning title=Google News delivery abandoned::A queued message reached the retry limit")
+        notify_admin(
+            DISCORD_WEBHOOK_ADMIN,
+            "Google News",
+            PROFILE_ID or "keyword",
+            guid,
+            outcome.last_error_code or "final_failure",
+        )
 
 
 def resume_pending_deliveries(max_items=None):
