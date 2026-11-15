@@ -185,6 +185,14 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("context.runId", source)
                 self.assertIn("No run summary was produced for this run.", source)
 
+    def test_summaries_show_a_backlog_table(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("const backlogProfiles", source)
+                self.assertIn("item.pending_count >= 100", source)
+                self.assertIn("addHeading('Backlog', 2)", source)
+
     def test_state_upload_is_retried_once_and_fails_closed(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):
             with self.subTest(workflow=workflow.name):

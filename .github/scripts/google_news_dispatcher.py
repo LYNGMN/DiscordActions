@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -258,6 +259,7 @@ def run_profiles(
     started_at = _utc_timestamp()
     state_path = Path(state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
+    _remove_stale_result_dirs(state_path)
     registry = publisher_registry or load_default_registry()
     database_map = dict(
         profile_databases
@@ -417,6 +419,19 @@ def run_dispatch(
         preflight_results=preflight_results,
         run_deadline=run_deadline,
     )
+
+
+def _remove_stale_result_dirs(state_path: Path) -> None:
+    for path in state_path.glob("google-news-results-*"):
+        if not path.is_dir():
+            continue
+        try:
+            shutil.rmtree(path)
+        except OSError as error:
+            LOGGER.warning(
+                "Could not remove a stale result directory (오류 유형: %s)",
+                type(error).__name__,
+            )
 
 
 def _prune_state_databases(

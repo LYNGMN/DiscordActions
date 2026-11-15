@@ -146,6 +146,7 @@ jobs:
             const skippedProfiles = summary.profiles.filter(item => item.status === 'skipped');
             const prunedItems = summary.retention?.items ?? 0;
             const budgetSkipped = summary.profiles.filter(item => item.error_code === 'time_budget_exhausted');
+            const backlogProfiles = summary.profiles.filter(item => item.pending_count >= 100);
             core.summary
               .addHeading('Google News')
               .addRaw(`Status: ${summary.status}\n`)
@@ -193,6 +194,20 @@ jobs:
                   ...skippedProfiles.map(item => [
                     item.profile_id,
                     item.error_code ?? 'circuit_open',
+                  ]),
+                ]);
+            }
+            if (backlogProfiles.length > 0) {
+              core.summary
+                .addHeading('Backlog', 2)
+                .addTable([
+                  [
+                    { data: 'Profile', header: true },
+                    { data: 'Pending', header: true },
+                  ],
+                  ...backlogProfiles.map(item => [
+                    item.profile_id,
+                    String(item.pending_count),
                   ]),
                 ]);
             }
