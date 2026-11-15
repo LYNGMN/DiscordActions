@@ -768,6 +768,41 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
             }
         self.assertEqual({"recent-article"}, remaining)
 
+    def test_state_retention_prunes_old_abandoned_items(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path,
+                "abandoned-guid",
+                "제목",
+                "https://publisher.example/abandoned",
+                ["본문"],
+            )
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE news_items SET delivery_status = 'failed', created_at = ? "
+                "WHERE guid = 'abandoned-guid'",
+                ((now - timedelta(days=40)).isoformat(),),
+            )
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET status = 'failed' "
+                "WHERE guid = 'abandoned-guid'"
+            )
+
+        stats = self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now
+        )
+
+        self.assertEqual(1, stats["items"])
+        with sqlite3.connect(self.db_path) as connection:
+            self.assertEqual(
+                0,
+                connection.execute(
+                    "SELECT COUNT(*) FROM news_items WHERE guid = 'abandoned-guid'"
+                ).fetchone()[0],
+            )
+
     def test_state_retention_is_idempotent_and_ignores_missing_files(self):
         now = datetime(2026, 11, 15, tzinfo=timezone.utc)
         first = self.module.apply_state_retention(
@@ -783,6 +818,167 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertEqual(0, second["items"])
         self.assertEqual(1, first["databases"])
         self.assertEqual(1, second["databases"])
+
+    def test_message_is_abandoned_after_repeated_permanent_failures(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "poison-guid", "Title", "", ["message"]
+            )
+        )
+        failure = RuntimeError("discord rejected the request")
+        failure.error_code = "discord_http_400_api_240000"
+        failure.attempt_count = 1
+
+        def send(_content):
+            raise failure
+
+        for _ in range(self.module.MAX_DELIVERY_ATTEMPTS - 1):
+            with self.assertRaises(RuntimeError):
+                self.module.deliver_queued_item(self.db_path, "poison-guid", send)
+
+        outcome = self.module.deliver_queued_item(self.db_path, "poison-guid", send)
+
+        self.assertEqual(1, outcome.failed_count)
+        self.assertEqual("discord_http_400_api_240000", outcome.last_error_code)
+        with sqlite3.connect(self.db_path) as connection:
+            article = connection.execute(
+                "SELECT delivery_status FROM news_items WHERE guid = ?",
+                ("poison-guid",),
+            ).fetchone()
+            message = connection.execute(
+                "SELECT status, attempt_count, last_error_code "
+                "FROM google_news_delivery_messages WHERE guid = ?",
+                ("poison-guid",),
+            ).fetchone()
+        self.assertEqual(("failed",), article)
+        self.assertEqual(
+            ("failed", self.module.MAX_DELIVERY_ATTEMPTS, "discord_http_400_api_240000"),
+            message,
+        )
+        self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
+        self.assertEqual(0, self.module.count_pending_deliveries(self.db_path))
+
+    def test_exhausted_message_is_skipped_without_another_send(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "skipped-guid", "Title", "", ["message"]
+            )
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET attempt_count = ?, "
+                "last_error_code = 'discord_http_400_api_240000' WHERE guid = ?",
+                (self.module.MAX_DELIVERY_ATTEMPTS, "skipped-guid"),
+            )
+
+        send = mock.Mock(side_effect=AssertionError("must not send"))
+        outcome = self.module.deliver_queued_item(
+            self.db_path, "skipped-guid", send
+        )
+
+        send.assert_not_called()
+        self.assertEqual(1, outcome.failed_count)
+        self.assertEqual("max_attempts_exceeded", outcome.last_error_code)
+        self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
+
+    def test_abandoned_item_does_not_block_other_pending_items(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "poison-guid", "Poison", "", ["message"]
+            )
+        )
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "good-guid", "Good", "", ["message"]
+            )
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET attempt_count = ?, "
+                "last_error_code = 'discord_http_400_api_240000' WHERE guid = ?",
+                (self.module.MAX_DELIVERY_ATTEMPTS, "poison-guid"),
+            )
+
+        poison = self.module.deliver_queued_item(
+            self.db_path, "poison-guid", mock.Mock()
+        )
+        self.assertEqual(1, poison.failed_count)
+        self.assertEqual(["good-guid"], self.module.pending_delivery_guids(self.db_path))
+
+        good = self.module.deliver_queued_item(
+            self.db_path, "good-guid", lambda _content: "123456789012345678"
+        )
+        self.assertEqual(0, good.failed_count)
+        with sqlite3.connect(self.db_path) as connection:
+            statuses = dict(
+                connection.execute(
+                    "SELECT guid, delivery_status FROM news_items"
+                ).fetchall()
+            )
+        self.assertEqual(
+            {"poison-guid": "failed", "good-guid": "sent"}, statuses
+        )
+
+    def test_partially_delivered_item_is_marked_failed_after_abandonment(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "partial-guid", "Title", "", ["main", "related"]
+            )
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET attempt_count = ?, "
+                "last_error_code = 'discord_http_400_api_240000' "
+                "WHERE guid = ? AND sequence = ?",
+                (self.module.MAX_DELIVERY_ATTEMPTS, "partial-guid", 1),
+            )
+
+        outcome = self.module.deliver_queued_item(
+            self.db_path,
+            "partial-guid",
+            lambda _content: "123456789012345678",
+        )
+
+        self.assertEqual(1, outcome.failed_count)
+        with sqlite3.connect(self.db_path) as connection:
+            article = connection.execute(
+                "SELECT delivery_status, discord_message_id FROM news_items "
+                "WHERE guid = ?",
+                ("partial-guid",),
+            ).fetchone()
+            messages = connection.execute(
+                "SELECT sequence, status FROM google_news_delivery_messages "
+                "WHERE guid = ? ORDER BY sequence",
+                ("partial-guid",),
+            ).fetchall()
+        self.assertEqual(("failed", "123456789012345678"), article)
+        self.assertEqual([(0, "sent"), (1, "failed")], messages)
+
+    def test_transient_rate_limit_is_not_abandoned(self):
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path, "limited-guid", "Title", "", ["message"]
+            )
+        )
+        failure = RuntimeError("rate limited")
+        failure.error_code = "discord_rate_limited"
+        failure.attempt_count = 5
+
+        with self.assertRaises(RuntimeError):
+            self.module.deliver_queued_item(
+                self.db_path,
+                "limited-guid",
+                lambda _content: (_ for _ in ()).throw(failure),
+            )
+
+        self.assertEqual(["limited-guid"], self.module.pending_delivery_guids(self.db_path))
+        with sqlite3.connect(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT status, attempt_count, last_error_code "
+                "FROM google_news_delivery_messages WHERE guid = ?",
+                ("limited-guid",),
+            ).fetchone()
+        self.assertEqual(("pending", 5, "discord_rate_limited"), row)
 
 
 if __name__ == "__main__":

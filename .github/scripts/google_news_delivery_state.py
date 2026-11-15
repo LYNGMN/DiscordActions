@@ -21,6 +21,8 @@ DEFAULT_SCHEDULED_DELIVERY_LIMIT = 25
 MAX_SCHEDULED_DELIVERY_LIMIT = 100
 DEFAULT_RETENTION_DAYS = 14
 MAX_RETENTION_DAYS = 365
+MAX_DELIVERY_ATTEMPTS = 3
+PERMANENT_DELIVERY_ERROR = re.compile(r"^discord_http_4(?!29)\d{2}(?:_api_\d+)?$")
 STATE_METADATA_TABLE = "google_news_state_metadata"
 ARTICLE_IDENTITY_BACKFILL_KEY = "article_identity_backfill_v1"
 CREATED_AT_BACKFILL_KEY = "created_at_backfill_v1"
@@ -59,6 +61,8 @@ TRACKING_QUERY_KEYS = {
 @dataclass(frozen=True)
 class QueueDeliveryOutcome:
     ambiguous_retry_count: int
+    failed_count: int = 0
+    last_error_code: Optional[str] = None
 
 
 def prepare_scheduled_items(
@@ -344,6 +348,24 @@ def pending_delivery_messages(db_path: str, guid: str) -> List[Tuple[int, str]]:
     return [(int(sequence), content) for sequence, content in rows]
 
 
+def pending_delivery_messages_with_attempts(
+    db_path: str,
+    guid: str,
+) -> List[Tuple[int, str, int, Optional[str]]]:
+    with sqlite3.connect(db_path) as connection:
+        _ensure_message_table(connection)
+        rows = connection.execute(
+            "SELECT sequence, content, attempt_count, last_error_code "
+            "FROM google_news_delivery_messages "
+            "WHERE guid = ? AND status = 'pending' ORDER BY sequence",
+            (guid,),
+        ).fetchall()
+    return [
+        (int(sequence), content, int(attempt_count), last_error_code)
+        for sequence, content, attempt_count, last_error_code in rows
+    ]
+
+
 def pending_delivery_guids(db_path: str) -> List[str]:
     with sqlite3.connect(db_path) as connection:
         _ensure_delivery_columns(connection)
@@ -362,24 +384,59 @@ def pending_delivery_guids(db_path: str) -> List[str]:
     return [row[0] for row in rows]
 
 
+def _is_permanent_delivery_error(error_code: Optional[str]) -> bool:
+    return bool(
+        isinstance(error_code, str)
+        and PERMANENT_DELIVERY_ERROR.fullmatch(error_code)
+    )
+
+
 def deliver_queued_item(
     db_path: str,
     guid: str,
     send_message: Callable[[str], str],
 ) -> QueueDeliveryOutcome:
     ambiguous_count = 0
-    for sequence, content in pending_delivery_messages(db_path, guid):
+    failed_count = 0
+    last_error_code = None
+    for (
+        sequence,
+        content,
+        attempt_count,
+        previous_error_code,
+    ) in pending_delivery_messages_with_attempts(db_path, guid):
+        if (
+            attempt_count >= MAX_DELIVERY_ATTEMPTS
+            and _is_permanent_delivery_error(previous_error_code)
+        ):
+            mark_delivery_message_exhausted(
+                db_path, guid, sequence, "max_attempts_exceeded"
+            )
+            failed_count += 1
+            last_error_code = "max_attempts_exceeded"
+            continue
         try:
             message_id = send_message(content)
         except Exception as error:
-            mark_delivery_message_failed(
+            error_code = getattr(error, "error_code", "final_failure")
+            if not isinstance(error_code, str) or not SAFE_ERROR_CODE.fullmatch(error_code):
+                error_code = "final_failure"
+            new_attempt_count = mark_delivery_message_failed(
                 db_path,
                 guid,
                 sequence,
-                getattr(error, "error_code", "final_failure"),
+                error_code,
                 getattr(error, "attempt_count", 1),
             )
-            raise
+            if not (
+                _is_permanent_delivery_error(error_code)
+                and new_attempt_count >= MAX_DELIVERY_ATTEMPTS
+            ):
+                raise
+            mark_delivery_message_exhausted(db_path, guid, sequence, error_code)
+            failed_count += 1
+            last_error_code = error_code
+            continue
         ambiguous = bool(getattr(message_id, "ambiguous_retry", False))
         mark_delivery_message_sent(
             db_path,
@@ -393,7 +450,7 @@ def deliver_queued_item(
             ambiguous_count += 1
     if not finalize_delivery(db_path, guid):
         raise RuntimeError("delivery_not_complete")
-    return QueueDeliveryOutcome(ambiguous_count)
+    return QueueDeliveryOutcome(ambiguous_count, failed_count, last_error_code)
 
 
 def mark_delivery_message_sent(
@@ -425,7 +482,7 @@ def mark_delivery_message_failed(
     sequence: int,
     error_code: str,
     attempt_count: int = 1,
-) -> None:
+) -> int:
     if not isinstance(error_code, str) or not SAFE_ERROR_CODE.fullmatch(error_code):
         error_code = "final_failure"
     with sqlite3.connect(db_path) as connection:
@@ -438,6 +495,32 @@ def mark_delivery_message_failed(
         )
         if cursor.rowcount != 1:
             raise ValueError("delivery message not found")
+        row = connection.execute(
+            "SELECT attempt_count FROM google_news_delivery_messages "
+            "WHERE guid = ? AND sequence = ?",
+            (guid, sequence),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def mark_delivery_message_exhausted(
+    db_path: str,
+    guid: str,
+    sequence: int,
+    error_code: str,
+) -> None:
+    if not isinstance(error_code, str) or not SAFE_ERROR_CODE.fullmatch(error_code):
+        error_code = "final_failure"
+    with sqlite3.connect(db_path) as connection:
+        _ensure_message_table(connection)
+        cursor = connection.execute(
+            "UPDATE google_news_delivery_messages "
+            "SET status = 'failed', last_error_code = ? "
+            "WHERE guid = ? AND sequence = ? AND status = 'pending'",
+            (error_code, guid, sequence),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("delivery message not found")
 
 
 def finalize_delivery(db_path: str, guid: str) -> bool:
@@ -445,25 +528,39 @@ def finalize_delivery(db_path: str, guid: str) -> bool:
         _ensure_delivery_columns(connection)
         _ensure_message_table(connection)
         counts = connection.execute(
-            "SELECT COUNT(*), SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) "
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) "
             "FROM google_news_delivery_messages WHERE guid = ?",
             (guid,),
         ).fetchone()
         total = int(counts[0] or 0)
         pending = int(counts[1] or 0)
+        failed = int(counts[2] or 0)
         if total == 0 or pending:
             return False
         row = connection.execute(
             "SELECT discord_message_id FROM google_news_delivery_messages "
-            "WHERE guid = ? ORDER BY sequence DESC LIMIT 1",
+            "WHERE guid = ? AND status = 'sent' ORDER BY sequence DESC LIMIT 1",
             (guid,),
         ).fetchone()
-        if row is None or not isinstance(row[0], str) or not DISCORD_MESSAGE_ID.fullmatch(row[0]):
+        last_message_id = row[0] if row else None
+        if failed:
+            connection.execute(
+                "UPDATE news_items SET delivery_status = 'failed', "
+                "discord_message_id = ? WHERE guid = ?",
+                (last_message_id, guid),
+            )
+            return True
+        if (
+            not isinstance(last_message_id, str)
+            or not DISCORD_MESSAGE_ID.fullmatch(last_message_id)
+        ):
             return False
         connection.execute(
             "UPDATE news_items SET delivery_status = 'sent', discord_message_id = ? "
             "WHERE guid = ?",
-            (row[0], guid),
+            (last_message_id, guid),
         )
         return True
 
@@ -616,7 +713,7 @@ def _prune_database(database_path: str, cutoff: str) -> Dict[str, int]:
                 """
                 DELETE FROM news_items
                 WHERE (delivery_status IS NULL
-                       OR delivery_status IN ('sent', 'filtered'))
+                       OR delivery_status IN ('sent', 'filtered', 'failed'))
                   AND created_at IS NOT NULL
                   AND created_at < ?
                   AND NOT EXISTS (
