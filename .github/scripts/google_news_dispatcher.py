@@ -19,9 +19,13 @@ from urllib.parse import urlparse
 
 import requests
 
+from delivery_admin_alert import current_actions_url, notify_admin_text
+
 from google_news_delivery_state import (
     DEFAULT_RETENTION_DAYS,
     apply_state_retention,
+    count_unfinished_deliveries,
+    expire_stale_deliveries,
     state_retention_days,
 )
 from google_news_profile_result import ERROR_CODE, STATUSES
@@ -63,6 +67,30 @@ DEFAULT_RUN_BUDGET_SECONDS = 1080
 MIN_RUN_BUDGET_SECONDS = 60
 MAX_RUN_BUDGET_SECONDS = 1200
 MIN_PROFILE_BUDGET_SECONDS = 60
+DEFAULT_BACKLOG_LIMIT = 500
+MIN_BACKLOG_LIMIT = 1
+MAX_BACKLOG_LIMIT = 10000
+DEFAULT_BACKLOG_AGE_DAYS = 3
+MIN_BACKLOG_AGE_DAYS = 1
+MAX_BACKLOG_AGE_DAYS = 30
+
+
+def parse_backlog_limit(value: str = "500") -> int:
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,4}", value):
+        raise ValueError("invalid_google_news_backlog_limit")
+    parsed = int(value)
+    if parsed > MAX_BACKLOG_LIMIT:
+        raise ValueError("invalid_google_news_backlog_limit")
+    return parsed
+
+
+def parse_backlog_age_days(value: str = "3") -> int:
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]?", value):
+        raise ValueError("invalid_google_news_backlog_age")
+    parsed = int(value)
+    if parsed > MAX_BACKLOG_AGE_DAYS:
+        raise ValueError("invalid_google_news_backlog_age")
+    return parsed
 
 
 def run_budget_seconds(value: str = "1080") -> int:
@@ -118,6 +146,8 @@ class DispatchSummary:
     circuit_error_code: Optional[str] = None
     circuit_blocked_until: Optional[str] = None
     run_id: Optional[str] = None
+    backlog_expired: int = 0
+    backlog: Sequence[Mapping[str, object]] = ()
 
     def to_dict(self):
         return {
@@ -134,6 +164,8 @@ class DispatchSummary:
             "circuit_error_code": self.circuit_error_code,
             "circuit_blocked_until": self.circuit_blocked_until,
             "run_id": self.run_id,
+            "backlog_expired": self.backlog_expired,
+            "backlog": [dict(item) for item in self.backlog],
         }
 
 
@@ -255,7 +287,19 @@ def run_profiles(
     profile_databases: Optional[Mapping[str, str]] = None,
     preflight_results: Sequence[ProfileRunResult] = (),
     run_deadline: Optional[float] = None,
+    backlog_limit: int = DEFAULT_BACKLOG_LIMIT,
+    backlog_age_days: int = DEFAULT_BACKLOG_AGE_DAYS,
+    admin_notifier: Callable[[str, str], bool] = notify_admin_text,
 ) -> DispatchSummary:
+    if (
+        isinstance(backlog_limit, bool)
+        or not isinstance(backlog_limit, int)
+        or not MIN_BACKLOG_LIMIT <= backlog_limit <= MAX_BACKLOG_LIMIT
+        or isinstance(backlog_age_days, bool)
+        or not isinstance(backlog_age_days, int)
+        or not MIN_BACKLOG_AGE_DAYS <= backlog_age_days <= MAX_BACKLOG_AGE_DAYS
+    ):
+        raise ValueError("invalid backlog settings")
     started_at = _utc_timestamp()
     state_path = Path(state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
@@ -271,9 +315,21 @@ def run_profiles(
     resolver_db = str(state_path / "resolver.db")
     circuit_reader = GoogleNewsRequestGuard(requests.Session(), resolver_db)
     results: List[ProfileRunResult] = list(preflight_results)
+    backlog_events: List[Dict[str, object]] = []
+    backlog_now = datetime.now(timezone.utc)
 
     with tempfile.TemporaryDirectory(prefix="google-news-results-", dir=state_dir) as result_dir:
         for index, profile in enumerate(profiles):
+            if not manual_test and not validate_only:
+                event = _expire_profile_backlog(
+                    profile,
+                    state_path,
+                    backlog_limit,
+                    backlog_age_days,
+                    backlog_now,
+                )
+                if event is not None:
+                    backlog_events.append(event)
             if (
                 run_deadline is not None
                 and run_deadline - time.time() < MIN_PROFILE_BUDGET_SECONDS
@@ -327,7 +383,10 @@ def run_profiles(
 
     circuit_state = circuit_reader.get_open_circuit()
     retention = _prune_state_databases(state_path, database_map, retention_days)
-    _emit_profile_annotations(results, circuit_state)
+    emitted = _emit_profile_annotations(results, circuit_state)
+    _emit_backlog_annotations(backlog_events, emitted)
+    _notify_backlog_expiry(backlog_events, env, admin_notifier)
+    backlog_expired = sum(int(event["expired"]) for event in backlog_events)
     status = "failed" if any(result.status == "failed" for result in results) else "success"
     error_code = None
     if (
@@ -367,6 +426,8 @@ def run_profiles(
             else None
         ),
         run_id=os.environ.get("GITHUB_RUN_ID"),
+        backlog_expired=backlog_expired,
+        backlog=tuple(backlog_events),
     )
     _write_summary(state_path / "run-summary.json", summary)
     return summary
@@ -380,6 +441,8 @@ def run_dispatch(
     validate_only: bool = False,
     retention_days: int = DEFAULT_RETENTION_DAYS,
     run_deadline: Optional[float] = None,
+    backlog_limit: int = DEFAULT_BACKLOG_LIMIT,
+    backlog_age_days: int = DEFAULT_BACKLOG_AGE_DAYS,
     session: Optional[requests.Session] = None,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
@@ -418,6 +481,8 @@ def run_dispatch(
         profile_databases=database_map,
         preflight_results=preflight_results,
         run_deadline=run_deadline,
+        backlog_limit=backlog_limit,
+        backlog_age_days=backlog_age_days,
     )
 
 
@@ -432,6 +497,79 @@ def _remove_stale_result_dirs(state_path: Path) -> None:
                 "Could not remove a stale result directory (오류 유형: %s)",
                 type(error).__name__,
             )
+
+
+def _expire_profile_backlog(
+    profile: GoogleNewsProfile,
+    state_path: Path,
+    backlog_limit: int,
+    backlog_age_days: int,
+    now: datetime,
+) -> Optional[Dict[str, object]]:
+    database_path = state_path / profile.state_db
+    if not database_path.is_file():
+        return None
+    pending = count_unfinished_deliveries(str(database_path))
+    if pending < backlog_limit:
+        return None
+    expired = expire_stale_deliveries(
+        str(database_path), backlog_age_days, now
+    )
+    if expired <= 0:
+        return None
+    return {
+        "profile_id": profile.profile_id,
+        "pending": pending,
+        "expired": expired,
+        "remaining": pending - expired,
+    }
+
+
+def _emit_backlog_annotations(
+    events: Sequence[Mapping[str, object]],
+    emitted: int,
+) -> int:
+    for event in events:
+        emitted = _emit_annotation(
+            "warning",
+            "Google News backlog expired",
+            "profile={} expired={} pending={}".format(
+                event["profile_id"],
+                event["expired"],
+                event["pending"],
+            ),
+            emitted,
+        )
+    return emitted
+
+
+def _notify_backlog_expiry(
+    events: Sequence[Mapping[str, object]],
+    env: Mapping[str, str],
+    notifier: Callable[[str, str], bool],
+) -> None:
+    if not events:
+        return
+    webhook = env.get("DISCORD_WEBHOOK_ADMIN", "")
+    if not isinstance(webhook, str) or not webhook.strip():
+        return
+    lines = ["Google News backlog expired"]
+    lines.extend(
+        "profile={} expired={} remaining={}".format(
+            event["profile_id"], event["expired"], event["remaining"]
+        )
+        for event in events
+    )
+    run_url = current_actions_url()
+    if run_url:
+        lines.append("run: {}".format(run_url))
+    try:
+        notifier(webhook.strip(), "\n".join(lines))
+    except Exception as error:
+        LOGGER.warning(
+            "Google News backlog alert skipped (오류 유형: %s)",
+            type(error).__name__,
+        )
 
 
 def _prune_state_databases(
@@ -460,7 +598,7 @@ def _prune_state_databases(
 def _emit_profile_annotations(
     results: Sequence[ProfileRunResult],
     circuit_state: Optional[CircuitState],
-) -> None:
+) -> int:
     emitted = 0
     failed = [result for result in results if result.status == "failed"]
     if len(failed) > ANNOTATION_LIMIT - 1:
@@ -499,6 +637,7 @@ def _emit_profile_annotations(
             body,
             emitted,
         )
+    return emitted
 
 
 def _failure_summary(failed: Sequence[ProfileRunResult]) -> str:
@@ -647,6 +786,17 @@ def main(argv=None) -> int:
                 str(DEFAULT_RUN_BUDGET_SECONDS),
             )
         )
+        backlog_limit = parse_backlog_limit(
+            os.environ.get(
+                "GOOGLE_NEWS_BACKLOG_LIMIT", str(DEFAULT_BACKLOG_LIMIT)
+            )
+        )
+        backlog_age_days = parse_backlog_age_days(
+            os.environ.get(
+                "GOOGLE_NEWS_BACKLOG_AGE_DAYS",
+                str(DEFAULT_BACKLOG_AGE_DAYS),
+            )
+        )
         all_profiles = load_profiles(arguments.profiles)
         profiles = select_profiles(all_profiles, arguments.profile_id)
         summary = run_dispatch(
@@ -657,6 +807,8 @@ def main(argv=None) -> int:
             validate_only=arguments.validate_only,
             retention_days=retention_days,
             run_deadline=time.time() + budget_seconds,
+            backlog_limit=backlog_limit,
+            backlog_age_days=backlog_age_days,
             profile_databases={
                 profile.profile_id: profile.state_db
                 for profile in all_profiles

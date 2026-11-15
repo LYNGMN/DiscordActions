@@ -58,5 +58,22 @@ def notify_admin(
         return False
 
 
+def notify_admin_text(webhook_url: str, content: str, post=requests.post) -> bool:
+    """Post a pre-sanitized admin message without ever logging the webhook."""
+    if not webhook_url or not content:
+        return False
+    try:
+        response = post(
+            webhook_url,
+            json={"content": content, "username": "Discord Actions"},
+            headers={"Content-Type": "application/json"},
+            timeout=(5.0, 15.0),
+        )
+        response.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
 def _safe_label(value: str) -> str:
     return SAFE_LABEL.sub("_", str(value))[:64] or "unknown"
