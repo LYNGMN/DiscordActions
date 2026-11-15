@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from google_news_discord_delivery import run_deadline_reached
 from google_news_request_guard import (
     AccessDeniedError,
     BlockedRequestError,
@@ -88,6 +89,7 @@ class GoogleNewsUrlResolver:
             "fallbacks": 0,
             "budget_exhausted": 0,
             "related_network_skipped": 0,
+            "deadline_skipped": 0,
             "circuit_skipped": 0,
             "circuit_opened": 0,
             "circuit_blocked_until": None,
@@ -139,6 +141,16 @@ class GoogleNewsUrlResolver:
                 "fallback",
                 article_id,
                 "related_network_skipped",
+            )
+
+        if run_deadline_reached():
+            self._increment_stat("deadline_skipped")
+            self._increment_stat("fallbacks")
+            return UrlResolution(
+                source_url,
+                "fallback",
+                article_id,
+                "run_deadline_exceeded",
             )
 
         open_circuit = self.request_guard.get_open_circuit()
