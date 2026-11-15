@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -102,6 +102,7 @@ class DispatchSummary:
     retention: Mapping[str, int] = field(default_factory=dict)
     circuit_error_code: Optional[str] = None
     circuit_blocked_until: Optional[str] = None
+    run_id: Optional[str] = None
 
     def to_dict(self):
         return {
@@ -117,20 +118,32 @@ class DispatchSummary:
             "retention": dict(self.retention),
             "circuit_error_code": self.circuit_error_code,
             "circuit_blocked_until": self.circuit_blocked_until,
+            "run_id": self.run_id,
         }
 
 
-def validate_webhooks(
+def preflight_profiles(
     profiles: Sequence[GoogleNewsProfile],
     env: Mapping[str, str],
     session: requests.Session,
     sleep: Callable[[float], None] = time.sleep,
-) -> None:
+) -> Tuple[List[GoogleNewsProfile], List[ProfileRunResult]]:
+    """Check each webhook independently and keep the usable profiles.
+
+    A broken or missing webhook must never stop delivery for every other
+    channel, so only the affected profile is marked failed.
+    """
     validated_urls = []
+    failures = []
     for profile in profiles:
         value = env.get(profile.webhook_env, "")
         if not isinstance(value, str) or not value.strip():
-            raise RuntimeError("missing_webhook")
+            LOGGER.error(
+                "Discord webhook preflight failed: profile_id=%s reason=missing_webhook",
+                profile.profile_id,
+            )
+            failures.append(ProfileRunResult.failed(profile.profile_id, "missing_webhook"))
+            continue
         parsed = urlparse(value.strip())
         if (
             parsed.scheme != "https"
@@ -140,58 +153,57 @@ def validate_webhooks(
             or parsed.fragment
             or not WEBHOOK_PATH.fullmatch(parsed.path)
         ):
-            raise RuntimeError("invalid_webhook")
+            LOGGER.error(
+                "Discord webhook preflight failed: profile_id=%s reason=invalid_webhook",
+                profile.profile_id,
+            )
+            failures.append(ProfileRunResult.failed(profile.profile_id, "invalid_webhook"))
+            continue
         validated_urls.append((profile, value.strip()))
 
-    first_error_code = None
+    usable = []
     for profile, webhook_url in validated_urls:
         response, request_error = _fetch_webhook_metadata(
             session, webhook_url, sleep
         )
-        error_code = None
-        reason = None
-        if request_error is not None:
-            error_code = "webhook_preflight_failed"
-            reason = request_error
-        elif response.status_code == 429:
-            error_code = "webhook_rate_limited"
-            reason = "http_429"
-        elif response.status_code != 200:
-            error_code = "webhook_preflight_failed"
-            reason = "http_{}".format(response.status_code)
-        else:
-            try:
-                payload = response.json()
-            except (TypeError, ValueError):
-                error_code = "webhook_metadata_invalid"
-                reason = "invalid_json"
-            else:
-                if not isinstance(payload, dict) or not isinstance(
-                    payload.get("name"), str
-                ):
-                    error_code = "webhook_metadata_invalid"
-                    reason = "invalid_metadata"
-                elif payload["name"] != profile.expected_webhook_name:
-                    error_code = "webhook_name_mismatch"
-                    reason = "name_mismatch"
+        error_code, reason = _webhook_metadata_error(
+            profile, response, request_error
+        )
+        if error_code is None:
+            usable.append(profile)
+            continue
+        LOGGER.error(
+            "Discord webhook preflight failed: profile_id=%s reason=%s",
+            profile.profile_id,
+            reason,
+        )
+        failures.append(ProfileRunResult.failed(profile.profile_id, error_code))
 
-        if error_code is not None:
-            LOGGER.error(
-                "Discord webhook preflight failed: profile_id=%s reason=%s",
-                profile.profile_id,
-                reason,
-            )
-            print(
-                "::error title=Discord webhook preflight failed::"
-                "profile={} reason={}".format(profile.profile_id, reason)
-            )
-            if first_error_code is None:
-                first_error_code = error_code
-            if error_code == "webhook_rate_limited":
-                break
+    return usable, failures
 
-    if first_error_code is not None:
-        raise RuntimeError(first_error_code)
+
+def _webhook_metadata_error(
+    profile: GoogleNewsProfile,
+    response,
+    request_error: Optional[str],
+) -> Tuple[Optional[str], Optional[str]]:
+    if request_error is not None:
+        return "webhook_preflight_failed", request_error
+    if response is None:
+        return "webhook_preflight_failed", "request_error"
+    if response.status_code == 429:
+        return "webhook_rate_limited", "http_429"
+    if response.status_code != 200:
+        return "webhook_preflight_failed", "http_{}".format(response.status_code)
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return "webhook_metadata_invalid", "invalid_json"
+    if not isinstance(payload, dict) or not isinstance(payload.get("name"), str):
+        return "webhook_metadata_invalid", "invalid_metadata"
+    if payload["name"] != profile.expected_webhook_name:
+        return "webhook_name_mismatch", "name_mismatch"
+    return None, None
 
 
 def _fetch_webhook_metadata(
@@ -226,6 +238,7 @@ def run_profiles(
     sleep: Callable[[float], None] = time.sleep,
     publisher_registry: Optional[PublisherRegistry] = None,
     profile_databases: Optional[Mapping[str, str]] = None,
+    preflight_results: Sequence[ProfileRunResult] = (),
 ) -> DispatchSummary:
     started_at = _utc_timestamp()
     state_path = Path(state_dir)
@@ -240,7 +253,7 @@ def run_profiles(
     )
     resolver_db = str(state_path / "resolver.db")
     circuit_reader = GoogleNewsRequestGuard(requests.Session(), resolver_db)
-    results: List[ProfileRunResult] = []
+    results: List[ProfileRunResult] = list(preflight_results)
 
     with tempfile.TemporaryDirectory(prefix="google-news-results-", dir=state_dir) as result_dir:
         for index, profile in enumerate(profiles):
@@ -288,6 +301,14 @@ def run_profiles(
     retention = _prune_state_databases(state_path, database_map, retention_days)
     _emit_profile_annotations(results, circuit_state)
     status = "failed" if any(result.status == "failed" for result in results) else "success"
+    error_code = None
+    if (
+        status == "success"
+        and results
+        and all(result.status == "skipped" for result in results)
+    ):
+        status = "failed"
+        error_code = "all_profiles_skipped"
     review_payload = export_unmapped_publishers(
         state_path, database_map, registry
     )
@@ -298,7 +319,7 @@ def run_profiles(
         status=status,
         manual_test=bool(manual_test),
         validate_only=bool(validate_only),
-        error_code=None,
+        error_code=error_code,
         started_at=started_at,
         finished_at=_utc_timestamp(),
         profiles=tuple(results),
@@ -317,6 +338,7 @@ def run_profiles(
             if circuit_state is not None
             else None
         ),
+        run_id=os.environ.get("GITHUB_RUN_ID"),
     )
     _write_summary(state_path / "run-summary.json", summary)
     return summary
@@ -345,15 +367,17 @@ def run_dispatch(
         merged_environment.update(profile.environment)
         validate_common_feed_environment(merged_environment)
     export_unmapped_publishers(state_dir, database_map, registry)
+    usable_profiles = list(profiles)
+    preflight_results: List[ProfileRunResult] = []
     if not validate_only:
-        validate_webhooks(
+        usable_profiles, preflight_results = preflight_profiles(
             profiles,
             env,
             session or requests.Session(),
             sleep=sleep,
         )
     return run_profiles(
-        profiles,
+        usable_profiles,
         env,
         state_dir,
         manual_test,
@@ -363,6 +387,7 @@ def run_dispatch(
         sleep=sleep,
         publisher_registry=registry,
         profile_databases=database_map,
+        preflight_results=preflight_results,
     )
 
 
@@ -443,6 +468,7 @@ def _record_dispatch_failure(arguments, error_code: str) -> None:
         started_at=_utc_timestamp(),
         finished_at=_utc_timestamp(),
         profiles=tuple(),
+        run_id=os.environ.get("GITHUB_RUN_ID"),
     )
     _write_summary(state_path / "run-summary.json", failed_summary)
     LOGGER.error("Google News 디스패처 실패 (코드: %s)", error_code)

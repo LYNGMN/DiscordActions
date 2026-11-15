@@ -176,5 +176,22 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             self.assertIn(".github/scripts/{}".format(module_name), source)
 
 
+    def test_summaries_ignore_a_stale_run_summary(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("summary.run_id", source)
+                self.assertIn("context.runId", source)
+                self.assertIn("No run summary was produced for this run.", source)
+
+    def test_scheduled_workflow_notifies_admin_on_failure(self):
+        source = self.source()
+        self.assertIn("Notify admin of failed run", source)
+        self.assertIn("if: failure()", source)
+        self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
+        self.assertIn("type(error).__name__", source)
+        self.assertNotIn("print(webhook", source)
+
+
 if __name__ == "__main__":
     unittest.main()
