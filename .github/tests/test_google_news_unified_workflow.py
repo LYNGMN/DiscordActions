@@ -185,6 +185,19 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("context.runId", source)
                 self.assertIn("No run summary was produced for this run.", source)
 
+    def test_state_upload_is_retried_once_and_fails_closed(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("id: upload_state", source)
+                self.assertIn("continue-on-error: true", source)
+                self.assertIn("Retry state upload", source)
+                self.assertIn("steps.upload_state.outcome == 'failure'", source)
+                self.assertIn("overwrite: true", source)
+                self.assertIn("Note recovered state upload", source)
+                self.assertIn("Fail when state upload failed", source)
+                self.assertIn("exit 1", source)
+
     def test_run_budget_is_configured_and_reported(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):
             with self.subTest(workflow=workflow.name):

@@ -199,7 +199,9 @@ jobs:
             await core.summary.write();
 
       - name: Upload updated state
+        id: upload_state
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: google-news-state
@@ -207,6 +209,30 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 90
+          overwrite: true
+
+      - name: Retry state upload
+        id: retry_state
+        if: always() && steps.upload_state.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-news-state
+          path: .google-news-state/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          overwrite: true
+
+      - name: Note recovered state upload
+        if: always() && steps.upload_state.outcome == 'failure' && steps.retry_state.outcome == 'success'
+        run: echo "::warning title=Google News state upload retried::The first upload failed and the retry succeeded"
+
+      - name: Fail when state upload failed
+        if: always() && steps.upload_state.outcome == 'failure' && steps.retry_state.outcome == 'failure'
+        run: |
+          echo "::error title=Google News state upload failed::The next run may restore an older state and resend items."
+          exit 1
 
       - name: Upload unmapped publisher review
         if: always()
@@ -216,6 +242,7 @@ jobs:
           path: .google-news-state/unmapped-google-news-publishers.json
           if-no-files-found: error
           retention-days: 90
+          overwrite: true
 
       - name: Notify admin of failed run
         if: failure()
