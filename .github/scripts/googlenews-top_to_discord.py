@@ -11,7 +11,6 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
-from dateutil.tz import gettz
 from bs4 import BeautifulSoup
 from delivery_admin_alert import notify_admin
 from google_news_manual_test import (

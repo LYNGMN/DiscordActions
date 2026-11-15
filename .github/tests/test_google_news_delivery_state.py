@@ -616,8 +616,8 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertEqual(1, backfill.call_count)
 
     def test_retention_days_is_bounded_and_validated(self):
-        self.assertEqual(14, self.module.DEFAULT_RETENTION_DAYS)
-        self.assertEqual(14, self.module.state_retention_days())
+        self.assertEqual(30, self.module.DEFAULT_RETENTION_DAYS)
+        self.assertEqual(30, self.module.state_retention_days())
         self.assertEqual(1, self.module.state_retention_days("1"))
         self.assertEqual(365, self.module.state_retention_days("365"))
         for invalid in ("0", "-1", "366", "nan", "2.5", " 14", "140000"):
@@ -767,6 +767,59 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
                 )
             }
         self.assertEqual({"recent-article"}, remaining)
+
+    def test_state_retention_vacuums_at_most_once_per_day(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        expired = (now - timedelta(days=40)).isoformat()
+
+        def add_expired_sent_item(guid):
+            self.assertTrue(
+                self.module.reserve_delivery_with_messages(
+                    self.db_path,
+                    guid,
+                    "제목",
+                    "https://publisher.example/{}".format(guid),
+                    ["본문"],
+                )
+            )
+            with sqlite3.connect(self.db_path) as connection:
+                connection.execute(
+                    "UPDATE news_items SET delivery_status = 'sent', created_at = ? "
+                    "WHERE guid = ?",
+                    (expired, guid),
+                )
+                connection.execute(
+                    "UPDATE google_news_delivery_messages SET status = 'sent' "
+                    "WHERE guid = ?",
+                    (guid,),
+                )
+
+        def vacuum_marker():
+            with sqlite3.connect(self.db_path) as connection:
+                row = connection.execute(
+                    "SELECT value FROM google_news_state_metadata "
+                    "WHERE metadata_key = 'last_vacuum_at'"
+                ).fetchone()
+            return row[0] if row else None
+
+        add_expired_sent_item("vacuum-a")
+        self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now
+        )
+        first_marker = vacuum_marker()
+        self.assertIsNotNone(first_marker)
+
+        add_expired_sent_item("vacuum-b")
+        self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now + timedelta(hours=1)
+        )
+        self.assertEqual(first_marker, vacuum_marker())
+
+        add_expired_sent_item("vacuum-c")
+        self.module.apply_state_retention(
+            [self.db_path], retention_days=14, now=now + timedelta(hours=25)
+        )
+        self.assertNotEqual(first_marker, vacuum_marker())
 
     def test_state_retention_prunes_old_abandoned_items(self):
         now = datetime(2026, 11, 15, tzinfo=timezone.utc)

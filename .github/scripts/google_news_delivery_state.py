@@ -19,8 +19,10 @@ from google_news_manual_test import prepare_baseline_item
 DISCORD_MESSAGE_ID = re.compile(r"^[0-9]+$")
 DEFAULT_SCHEDULED_DELIVERY_LIMIT = 25
 MAX_SCHEDULED_DELIVERY_LIMIT = 100
-DEFAULT_RETENTION_DAYS = 14
+DEFAULT_RETENTION_DAYS = 30
 MAX_RETENTION_DAYS = 365
+VACUUM_INTERVAL_SECONDS = 24 * 60 * 60
+LAST_VACUUM_KEY = "last_vacuum_at"
 MAX_DELIVERY_ATTEMPTS = 3
 PERMANENT_DELIVERY_ERROR = re.compile(r"^discord_http_4(?!29)\d{2}(?:_api_\d+)?$")
 STATE_METADATA_TABLE = "google_news_state_metadata"
@@ -38,7 +40,7 @@ def scheduled_delivery_limit(value: str = "25") -> int:
     return parsed
 
 
-def state_retention_days(value: str = "14") -> int:
+def state_retention_days(value: str = "30") -> int:
     """Bound how many days of finished article history travel in the state artifact."""
     if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,2}", value):
         raise ValueError("invalid_google_news_state_retention_days")
@@ -693,21 +695,25 @@ def apply_state_retention(
         if not os.path.isfile(database_path):
             continue
         seen.add(database_path)
-        deleted = _prune_database(database_path, cutoff)
+        deleted = _prune_database(database_path, cutoff, current)
         for key in ("items", "messages", "identities", "url_cache"):
             totals[key] += deleted[key]
         totals["databases"] += 1
     return totals
 
 
-def _prune_database(database_path: str, cutoff: str) -> Dict[str, int]:
+def _prune_database(
+    database_path: str,
+    cutoff: str,
+    now: datetime,
+) -> Dict[str, int]:
     deleted = {"items": 0, "messages": 0, "identities": 0, "url_cache": 0}
     with sqlite3.connect(database_path) as connection:
+        _ensure_state_metadata(connection)
         if _table_exists(connection, "news_items"):
             _ensure_delivery_columns(connection)
             _ensure_message_table(connection)
             _ensure_identity_table(connection)
-            _ensure_state_metadata(connection)
             _backfill_item_timestamps(connection)
             cursor = connection.execute(
                 """
@@ -742,9 +748,23 @@ def _prune_database(database_path: str, cutoff: str) -> Dict[str, int]:
             )
             deleted["url_cache"] = max(0, cursor.rowcount)
         connection.commit()
-        if any(deleted.values()):
+        if any(deleted.values()) and _vacuum_due(connection, now):
             connection.execute("VACUUM")
+            _set_metadata_value(connection, LAST_VACUUM_KEY, now.isoformat())
     return deleted
+
+
+def _vacuum_due(connection: sqlite3.Connection, now: datetime) -> bool:
+    value = _metadata_value(connection, LAST_VACUUM_KEY)
+    if not value:
+        return True
+    try:
+        last_vacuum = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return True
+    if last_vacuum.tzinfo is None:
+        last_vacuum = last_vacuum.replace(tzinfo=timezone.utc)
+    return (now - last_vacuum).total_seconds() >= VACUUM_INTERVAL_SECONDS
 
 
 def _backfill_item_timestamps(connection: sqlite3.Connection) -> None:
