@@ -1,13 +1,15 @@
-"""Bounded article selection and crash-safe Discord delivery state."""
+"""Bounded article selection, retention, and crash-safe Discord delivery state."""
 
 import hashlib
 import html
+import os
 import re
 import sqlite3
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable, List, Optional, Sequence, Tuple
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from xml.etree.ElementTree import Element
 
@@ -17,6 +19,11 @@ from google_news_manual_test import prepare_baseline_item
 DISCORD_MESSAGE_ID = re.compile(r"^[0-9]+$")
 DEFAULT_SCHEDULED_DELIVERY_LIMIT = 25
 MAX_SCHEDULED_DELIVERY_LIMIT = 100
+DEFAULT_RETENTION_DAYS = 14
+MAX_RETENTION_DAYS = 365
+STATE_METADATA_TABLE = "google_news_state_metadata"
+ARTICLE_IDENTITY_BACKFILL_KEY = "article_identity_backfill_v1"
+CREATED_AT_BACKFILL_KEY = "created_at_backfill_v1"
 
 
 def scheduled_delivery_limit(value: str = "25") -> int:
@@ -26,6 +33,16 @@ def scheduled_delivery_limit(value: str = "25") -> int:
     parsed = int(value)
     if parsed > MAX_SCHEDULED_DELIVERY_LIMIT:
         raise ValueError("invalid_google_news_delivery_limit")
+    return parsed
+
+
+def state_retention_days(value: str = "14") -> int:
+    """Bound how many days of finished article history travel in the state artifact."""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,2}", value):
+        raise ValueError("invalid_google_news_state_retention_days")
+    parsed = int(value)
+    if parsed > MAX_RETENTION_DAYS:
+        raise ValueError("invalid_google_news_state_retention_days")
     return parsed
 
 SAFE_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -96,9 +113,18 @@ def record_filtered_item(
         _ensure_delivery_columns(connection)
         connection.execute(
             "INSERT OR IGNORE INTO news_items "
-            "(pub_date, guid, title, link, related_news, delivery_status, filter_fingerprint) "
-            "VALUES (?, ?, ?, ?, ?, 'filtered', ?)",
-            (pub_date, guid, title, link, related_news, filter_fingerprint),
+            "(pub_date, guid, title, link, related_news, delivery_status, "
+            "filter_fingerprint, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'filtered', ?, ?)",
+            (
+                pub_date,
+                guid,
+                title,
+                link,
+                related_news,
+                filter_fingerprint,
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         connection.execute(
             "UPDATE news_items SET pub_date = ?, title = ?, link = ?, related_news = ?, "
@@ -204,7 +230,7 @@ def _reserve_delivery_in_connection(
     title: str,
     link: str,
 ) -> bool:
-    _backfill_article_identities(connection)
+    _ensure_article_identity_backfill(connection)
 
     existing_guid = connection.execute(
         "SELECT delivery_status, delivery_sequence FROM news_items WHERE guid = ?",
@@ -235,9 +261,16 @@ def _reserve_delivery_in_connection(
     if existing_guid is None:
         connection.execute(
             "INSERT INTO news_items "
-            "(guid, title, link, delivery_status, filter_fingerprint, delivery_sequence) "
-            "VALUES (?, ?, ?, 'pending', NULL, ?)",
-            (guid, title, link, delivery_sequence),
+            "(guid, title, link, delivery_status, filter_fingerprint, "
+            "delivery_sequence, created_at) "
+            "VALUES (?, ?, ?, 'pending', NULL, ?, ?)",
+            (
+                guid,
+                title,
+                link,
+                delivery_sequence,
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
     else:
         connection.execute(
@@ -466,6 +499,12 @@ def _ensure_delivery_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE news_items ADD COLUMN filter_fingerprint TEXT")
     if "delivery_sequence" not in columns:
         connection.execute("ALTER TABLE news_items ADD COLUMN delivery_sequence INTEGER")
+    if "created_at" not in columns:
+        connection.execute("ALTER TABLE news_items ADD COLUMN created_at TEXT")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_news_items_delivery "
+        "ON news_items (delivery_status, delivery_sequence)"
+    )
 
 
 def _ensure_identity_table(connection: sqlite3.Connection) -> None:
@@ -477,6 +516,10 @@ def _ensure_identity_table(connection: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         )
         """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_google_news_article_identity_guid "
+        "ON google_news_article_identity (guid)"
     )
 
 
@@ -497,6 +540,14 @@ def _ensure_message_table(connection: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_article_identity_backfill(connection: sqlite3.Connection) -> None:
+    _ensure_state_metadata(connection)
+    if _metadata_value(connection, ARTICLE_IDENTITY_BACKFILL_KEY):
+        return
+    _backfill_article_identities(connection)
+    _set_metadata_value(connection, ARTICLE_IDENTITY_BACKFILL_KEY, "done")
+
+
 def _backfill_article_identities(connection: sqlite3.Connection) -> None:
     created_at = datetime.now(timezone.utc).isoformat()
     rows = connection.execute(
@@ -511,6 +562,171 @@ def _backfill_article_identities(connection: sqlite3.Connection) -> None:
         "(identity_key, guid, created_at) VALUES (?, ?, ?)",
         identity_rows,
     )
+
+
+def apply_state_retention(
+    database_paths: Iterable[str],
+    retention_days: int = DEFAULT_RETENTION_DAYS,
+    now: Optional[datetime] = None,
+) -> Dict[str, int]:
+    """Delete finished history older than retention_days and compact the files.
+
+    Pending or retryable deliveries are never removed. The function is safe to
+    call on a missing database and returns only counts for the run summary.
+    """
+    if (
+        isinstance(retention_days, bool)
+        or not isinstance(retention_days, int)
+        or not 1 <= retention_days <= MAX_RETENTION_DAYS
+    ):
+        raise ValueError("invalid_google_news_state_retention_days")
+    current = _aware_utc(now) if now is not None else datetime.now(timezone.utc)
+    cutoff = (current - timedelta(days=retention_days)).isoformat()
+    totals = {
+        "items": 0,
+        "messages": 0,
+        "identities": 0,
+        "url_cache": 0,
+        "databases": 0,
+    }
+    seen = set()
+    for database_path in database_paths:
+        if not isinstance(database_path, str) or database_path in seen:
+            continue
+        if not os.path.isfile(database_path):
+            continue
+        seen.add(database_path)
+        deleted = _prune_database(database_path, cutoff)
+        for key in ("items", "messages", "identities", "url_cache"):
+            totals[key] += deleted[key]
+        totals["databases"] += 1
+    return totals
+
+
+def _prune_database(database_path: str, cutoff: str) -> Dict[str, int]:
+    deleted = {"items": 0, "messages": 0, "identities": 0, "url_cache": 0}
+    with sqlite3.connect(database_path) as connection:
+        if _table_exists(connection, "news_items"):
+            _ensure_delivery_columns(connection)
+            _ensure_message_table(connection)
+            _ensure_identity_table(connection)
+            _ensure_state_metadata(connection)
+            _backfill_item_timestamps(connection)
+            cursor = connection.execute(
+                """
+                DELETE FROM news_items
+                WHERE (delivery_status IS NULL
+                       OR delivery_status IN ('sent', 'filtered'))
+                  AND created_at IS NOT NULL
+                  AND created_at < ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM google_news_delivery_messages AS messages
+                      WHERE messages.guid = news_items.guid
+                        AND messages.status = 'pending'
+                  )
+                """,
+                (cutoff,),
+            )
+            deleted["items"] = max(0, cursor.rowcount)
+            cursor = connection.execute(
+                "DELETE FROM google_news_delivery_messages "
+                "WHERE guid NOT IN (SELECT guid FROM news_items)"
+            )
+            deleted["messages"] = max(0, cursor.rowcount)
+            cursor = connection.execute(
+                "DELETE FROM google_news_article_identity "
+                "WHERE guid NOT IN (SELECT guid FROM news_items)"
+            )
+            deleted["identities"] = max(0, cursor.rowcount)
+        if _table_exists(connection, "google_news_url_cache"):
+            cursor = connection.execute(
+                "DELETE FROM google_news_url_cache WHERE updated_at < ?",
+                (cutoff,),
+            )
+            deleted["url_cache"] = max(0, cursor.rowcount)
+        connection.commit()
+        if any(deleted.values()):
+            connection.execute("VACUUM")
+    return deleted
+
+
+def _backfill_item_timestamps(connection: sqlite3.Connection) -> None:
+    if _metadata_value(connection, CREATED_AT_BACKFILL_KEY):
+        return
+    fallback = datetime.now(timezone.utc).isoformat()
+    rows = connection.execute(
+        "SELECT rowid, pub_date FROM news_items WHERE created_at IS NULL"
+    ).fetchall()
+    updates = [
+        (_created_at_from_pub_date(pub_date) or fallback, rowid)
+        for rowid, pub_date in rows
+    ]
+    if updates:
+        connection.executemany(
+            "UPDATE news_items SET created_at = ? WHERE rowid = ?",
+            updates,
+        )
+    _set_metadata_value(connection, CREATED_AT_BACKFILL_KEY, "done")
+
+
+def _created_at_from_pub_date(value) -> Optional[str]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        try:
+            parsed = parsedate_to_datetime(text)
+        except (TypeError, ValueError, OverflowError):
+            return None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _ensure_state_metadata(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS {} (
+            metadata_key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """.format(STATE_METADATA_TABLE)
+    )
+
+
+def _metadata_value(connection: sqlite3.Connection, key: str) -> Optional[str]:
+    row = connection.execute(
+        "SELECT value FROM {} WHERE metadata_key = ?".format(STATE_METADATA_TABLE),
+        (key,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _set_metadata_value(
+    connection: sqlite3.Connection,
+    key: str,
+    value: str,
+) -> None:
+    connection.execute(
+        "INSERT OR REPLACE INTO {} "
+        "(metadata_key, value, updated_at) VALUES (?, ?, ?)".format(
+            STATE_METADATA_TABLE
+        ),
+        (key, value, datetime.now(timezone.utc).isoformat()),
+    )
+
+
+def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
+    row = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (name,),
+    ).fetchone()
+    return row is not None
 
 
 def _next_delivery_sequence(connection: sqlite3.Connection) -> int:

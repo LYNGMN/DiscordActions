@@ -120,6 +120,7 @@ jobs:
         env:
           SELECTED_PROFILE: ${{ inputs.profile }}
           GOOGLE_NEWS_DELIVERY_ORDER: ${{ vars.GOOGLE_NEWS_DELIVERY_ORDER || 'feed_oldest_first' }}
+          GOOGLE_NEWS_STATE_RETENTION_DAYS: ${{ vars.GOOGLE_NEWS_STATE_RETENTION_DAYS || '14' }}
           FEED_DATE_FILTER: ${{ vars.FEED_DATE_FILTER }}
           FEED_KEYWORD_FILTER: ${{ vars.FEED_KEYWORD_FILTER }}
           FEED_KEYWORD_SCOPE: ${{ vars.FEED_KEYWORD_SCOPE || 'title' }}
@@ -165,6 +166,8 @@ jobs:
             const pending = summary.profiles.reduce((total, item) => total + item.pending_count, 0);
             const ambiguous = summary.profiles.reduce((total, item) => total + item.ambiguous_retry_count, 0);
             const failedProfiles = summary.profiles.filter(item => item.status === 'failed');
+            const skippedProfiles = summary.profiles.filter(item => item.status === 'skipped');
+            const prunedItems = summary.retention?.items ?? 0;
             core.summary
               .addHeading('Google News Manual Delivery Test')
               .addRaw(`Status: ${summary.status}\n`)
@@ -173,7 +176,11 @@ jobs:
               .addRaw(`Pending deliveries: ${pending}\n`)
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
               .addRaw(`Unmapped publishers: ${summary.unmapped_publisher_count ?? 0}\n`)
-              .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`);
+              .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`)
+              .addRaw(`Pruned state rows: ${prunedItems}\n`);
+            if (summary.circuit_blocked_until) {
+              core.summary.addRaw(`Google News paused until: ${summary.circuit_blocked_until}\n`);
+            }
             if (failedProfiles.length > 0) {
               core.summary
                 .addHeading('Failed profiles', 2)
@@ -187,6 +194,20 @@ jobs:
                     item.profile_id,
                     item.error_code ?? 'unknown_failure',
                     String(item.pending_count),
+                  ]),
+                ]);
+            }
+            if (skippedProfiles.length > 0) {
+              core.summary
+                .addHeading('Skipped profiles', 2)
+                .addTable([
+                  [
+                    { data: 'Profile', header: true },
+                    { data: 'Reason', header: true },
+                  ],
+                  ...skippedProfiles.map(item => [
+                    item.profile_id,
+                    item.error_code ?? 'circuit_open',
                   ]),
                 ]);
             }
