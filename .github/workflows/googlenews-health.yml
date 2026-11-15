@@ -1,0 +1,68 @@
+name: Google News Schedule Health
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check latest scheduled delivery
+        uses: actions/github-script@v9
+        env:
+          DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'googlenews-to-discord.yml',
+              branch: 'main',
+              status: 'completed',
+              per_page: 1,
+            });
+            const latest = data.workflow_runs[0];
+            const ageHours = latest
+              ? (Date.now() - new Date(latest.created_at).getTime()) / 3600000
+              : Infinity;
+            const runUrl = latest
+              ? latest.html_url
+              : `${context.serverUrl}/${owner}/${repo}/actions/workflows/googlenews-to-discord.yml`;
+            core.info(
+              `Latest completed run: ${latest ? latest.created_at : 'none'} (${ageHours.toFixed(1)} hours ago)`
+            );
+            if (ageHours < 12) {
+              core.info('Scheduled delivery is recent enough.');
+              return;
+            }
+
+            const webhook = (process.env.DISCORD_WEBHOOK_ADMIN || '').trim();
+            if (!webhook) {
+              core.setFailed(
+                `No scheduled Google News run in ${ageHours.toFixed(1)} hours and DISCORD_WEBHOOK_ADMIN is not configured.`
+              );
+              return;
+            }
+
+            const content = [
+              '**Google News 예약 실행이 없습니다**',
+              `마지막 완료 실행: ${latest ? latest.created_at : '없음'}`,
+              `경과: ${ageHours.toFixed(1)}시간`,
+              runUrl,
+            ].join('\n');
+            const response = await fetch(webhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content, username: 'Discord Actions' }),
+            });
+            if (!response.ok) {
+              core.setFailed(`Admin notification failed with HTTP ${response.status}`);
+            }

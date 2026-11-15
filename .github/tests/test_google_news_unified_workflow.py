@@ -6,6 +6,7 @@ from pathlib import Path
 WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
 WORKFLOW = WORKFLOWS_DIR / "googlenews-to-discord.yml"
 MANUAL_WORKFLOW = WORKFLOWS_DIR / "googlenews-manual-test.yml"
+HEALTH_WORKFLOW = WORKFLOWS_DIR / "googlenews-health.yml"
 CI_WORKFLOW = WORKFLOWS_DIR / "test.yml"
 EXPECTED_WEBHOOK_SECRETS = (
     "DISCORD_WEBHOOK_GN_TOP_US",
@@ -191,6 +192,18 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("GOOGLE_NEWS_RUN_BUDGET_SECONDS", source)
                 self.assertIn("time_budget_exhausted", source)
                 self.assertIn("Time budget reached for", source)
+
+    def test_health_workflow_alerts_when_scheduled_runs_stop(self):
+        source = HEALTH_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("cron: '0 */6 * * *'", source)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertIn("googlenews-to-discord.yml", source)
+        self.assertIn("status: 'completed'", source)
+        self.assertIn("12", source)
+        self.assertIn("actions: read", source)
+        self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
+        self.assertIn("fetch(webhook", source)
+        self.assertNotIn("console.log(webhook", source)
 
     def test_workflows_notify_admin_on_failure(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):
