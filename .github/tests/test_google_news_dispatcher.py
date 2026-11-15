@@ -1,4 +1,6 @@
+import contextlib
 import importlib
+import io
 import json
 import os
 import sqlite3
@@ -163,7 +165,9 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                     env[self.profiles[0].webhook_env] = value
                 session = QueueSession([])
                 with self.assertRaisesRegex(RuntimeError, expected_code):
-                    self.dispatcher.validate_webhooks(self.profiles, env, session)
+                    self.dispatcher.validate_webhooks(
+                        self.profiles, env, session, sleep=lambda _: None
+                    )
                 self.assertEqual([], session.calls)
 
     def test_invalid_child_result_is_reported_without_exposing_its_values(self):
@@ -205,7 +209,10 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             with self.subTest(expected_code=expected_code):
                 with self.assertRaisesRegex(RuntimeError, expected_code) as raised:
                     self.dispatcher.validate_webhooks(
-                        self.profiles, self.env, QueueSession([response])
+                        self.profiles,
+                        self.env,
+                        QueueSession([response]),
+                        sleep=lambda _: None,
                     )
                 self.assertNotIn("body must not leak", str(raised.exception))
 
@@ -220,7 +227,9 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
 
         with self.assertLogs(self.dispatcher.LOGGER, level="ERROR") as captured:
             with self.assertRaisesRegex(RuntimeError, "webhook_preflight_failed"):
-                self.dispatcher.validate_webhooks(profiles, self.env, session)
+                self.dispatcher.validate_webhooks(
+                    profiles, self.env, session, sleep=lambda _: None
+                )
 
         logs = "\n".join(captured.output)
         self.assertEqual(2, len(session.calls))
@@ -240,7 +249,9 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "webhook_rate_limited"):
-            self.dispatcher.validate_webhooks(profiles, self.env, session)
+            self.dispatcher.validate_webhooks(
+                profiles, self.env, session, sleep=lambda _: None
+            )
 
         self.assertEqual(1, len(session.calls))
 
@@ -489,6 +500,197 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual("failed", payload["status"])
         self.assertEqual("webhook_name_mismatch", payload["error_code"])
         self.assertEqual([], payload["profiles"])
+
+    def test_failed_profile_emits_safe_error_annotation(self):
+        profile = self.profiles[0]
+
+        def runner(command, env, check):
+            self.result_module.write_profile_result(
+                env["GOOGLE_NEWS_RESULT_PATH"],
+                env["GOOGLE_NEWS_PROFILE_ID"],
+                "failed",
+                0,
+                3,
+                "http_429",
+            )
+            return SimpleNamespace(returncode=1)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.dispatcher.run_profiles(
+                [profile],
+                self.env,
+                self.state_dir,
+                manual_test=False,
+                subprocess_runner=runner,
+                sleep=lambda _: None,
+            )
+
+        rendered = output.getvalue()
+        self.assertIn("::error title=Google News profile failed::", rendered)
+        self.assertIn("profile={}".format(profile.profile_id), rendered)
+        self.assertIn("code=http_429", rendered)
+        self.assertIn("pending=3", rendered)
+        self.assertNotIn("discord.com", rendered)
+        self.assertNotIn("token1", rendered)
+
+    def test_shared_circuit_emits_deferred_warning_with_resume_time(self):
+        profiles = self.profiles[:2]
+        blocked_until = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        def runner(command, env, check):
+            if env["GOOGLE_NEWS_PROFILE_ID"] == profiles[0].profile_id:
+                with sqlite3.connect(env["GOOGLE_NEWS_RESOLVER_DB_PATH"]) as connection:
+                    connection.execute(
+                        """
+                        INSERT OR REPLACE INTO google_news_resolver_state (
+                            state_key, blocked_until, last_error_code, updated_at
+                        ) VALUES ('global', ?, 'http_429', ?)
+                        """,
+                        (blocked_until.isoformat(), datetime.now(timezone.utc).isoformat()),
+                    )
+                self.result_module.write_profile_result(
+                    env["GOOGLE_NEWS_RESULT_PATH"],
+                    env["GOOGLE_NEWS_PROFILE_ID"],
+                    "failed",
+                    0,
+                    0,
+                    "http_429",
+                )
+                return SimpleNamespace(returncode=1)
+            raise AssertionError("deferred profile must not start a handler")
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            summary = self.dispatcher.run_profiles(
+                profiles,
+                self.env,
+                self.state_dir,
+                manual_test=False,
+                subprocess_runner=runner,
+                sleep=lambda _: None,
+            )
+
+        rendered = output.getvalue()
+        self.assertIn("::warning title=Google News delivery deferred::", rendered)
+        self.assertIn("profiles={}".format(profiles[1].profile_id), rendered)
+        self.assertIn(blocked_until.isoformat(), rendered)
+        self.assertEqual(blocked_until.isoformat(), summary.circuit_blocked_until)
+        self.assertEqual("http_429", summary.circuit_error_code)
+
+    def test_unexpected_dispatch_error_is_summarized_without_raw_message(self):
+        with mock.patch.object(
+            self.dispatcher, "load_profiles", return_value=self.profiles
+        ), mock.patch.object(
+            self.dispatcher,
+            "run_dispatch",
+            side_effect=sqlite3.OperationalError("disk I/O error: /private/path"),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                exit_code = self.dispatcher.main(
+                    ["--state-dir", self.state_dir, "--manual-test"]
+                )
+
+        self.assertEqual(1, exit_code)
+        payload = json.loads(
+            (Path(self.state_dir) / "run-summary.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("failed", payload["status"])
+        self.assertEqual("unexpected_operational_error", payload["error_code"])
+        rendered = output.getvalue()
+        self.assertIn("::error title=Google News dispatcher failed::", rendered)
+        self.assertIn("unexpected_operational_error", rendered)
+        self.assertNotIn("/private/path", rendered)
+
+    def test_preflight_retries_transient_server_error_once(self):
+        profile = self.profiles[0]
+        session = QueueSession(
+            [
+                FakeResponse(503),
+                FakeResponse(payload={"name": profile.expected_webhook_name}),
+            ]
+        )
+        calls = []
+
+        summary = self.dispatcher.run_dispatch(
+            [profile],
+            self.env,
+            self.state_dir,
+            manual_test=True,
+            session=session,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual("success", summary.status)
+        self.assertEqual(2, len(session.calls))
+        self.assertEqual(1, len(calls))
+
+    def test_preflight_retry_exhaustion_is_annotated_and_fails_closed(self):
+        profile = self.profiles[0]
+        session = QueueSession([FakeResponse(503), FakeResponse(503)])
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(RuntimeError, "webhook_preflight_failed"):
+                self.dispatcher.run_dispatch(
+                    [profile],
+                    self.env,
+                    self.state_dir,
+                    manual_test=True,
+                    session=session,
+                    subprocess_runner=mock.Mock(),
+                    sleep=lambda _: None,
+                )
+
+        rendered = output.getvalue()
+        self.assertIn("::error title=Discord webhook preflight failed::", rendered)
+        self.assertIn("profile={}".format(profile.profile_id), rendered)
+        self.assertIn("reason=http_503", rendered)
+        self.assertNotIn("discord.com", rendered)
+
+    def test_dispatch_prunes_expired_state_before_summary(self):
+        profile = self.profiles[0]
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        database_path = state_path / profile.state_db
+        with sqlite3.connect(str(database_path)) as connection:
+            connection.execute(
+                "CREATE TABLE news_items (pub_date TEXT, guid TEXT PRIMARY KEY, "
+                "title TEXT, link TEXT, related_news TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO news_items (pub_date, guid, title, link, related_news) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    (
+                        datetime.now(timezone.utc) - timedelta(days=40)
+                    ).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+                    "expired-guid",
+                    "Expired article",
+                    "https://publisher.example/expired",
+                    "[]",
+                ),
+            )
+
+        calls = []
+        summary = self.dispatcher.run_profiles(
+            [profile],
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        with sqlite3.connect(str(database_path)) as connection:
+            remaining = connection.execute(
+                "SELECT COUNT(*) FROM news_items WHERE guid = 'expired-guid'"
+            ).fetchone()[0]
+        self.assertEqual(0, remaining)
+        self.assertEqual(1, summary.retention["items"])
+        self.assertEqual(1, summary.to_dict()["retention"]["items"])
 
 
 if __name__ == "__main__":
