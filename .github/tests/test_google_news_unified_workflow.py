@@ -192,13 +192,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("time_budget_exhausted", source)
                 self.assertIn("Time budget reached for", source)
 
-    def test_scheduled_workflow_notifies_admin_on_failure(self):
-        source = self.source()
-        self.assertIn("Notify admin of failed run", source)
-        self.assertIn("if: failure()", source)
-        self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
-        self.assertIn("type(error).__name__", source)
-        self.assertNotIn("print(webhook", source)
+    def test_workflows_notify_admin_on_failure(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("Notify admin of failed run", source)
+                self.assertIn("if: failure()", source)
+                self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
+                self.assertIn("type(error).__name__", source)
+                self.assertNotIn("print(webhook", source)
 
 
 if __name__ == "__main__":

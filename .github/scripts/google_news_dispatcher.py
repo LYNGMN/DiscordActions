@@ -447,19 +447,26 @@ def _emit_profile_annotations(
     circuit_state: Optional[CircuitState],
 ) -> None:
     emitted = 0
-    for result in results:
-        if result.status != "failed":
-            continue
+    failed = [result for result in results if result.status == "failed"]
+    if len(failed) > ANNOTATION_LIMIT - 1:
         emitted = _emit_annotation(
             "error",
-            "Google News profile failed",
-            "profile={} code={} pending={}".format(
-                result.profile_id,
-                result.error_code or "unknown_failure",
-                result.pending_count,
-            ),
+            "Google News profiles failed",
+            _failure_summary(failed),
             emitted,
         )
+    else:
+        for result in failed:
+            emitted = _emit_annotation(
+                "error",
+                "Google News profile failed",
+                "profile={} code={} pending={}".format(
+                    result.profile_id,
+                    result.error_code or "unknown_failure",
+                    result.pending_count,
+                ),
+                emitted,
+            )
     skipped_by_code: Dict[str, List[str]] = {}
     for result in results:
         if result.status != "skipped":
@@ -477,6 +484,16 @@ def _emit_profile_annotations(
             body,
             emitted,
         )
+
+
+def _failure_summary(failed: Sequence[ProfileRunResult]) -> str:
+    parts = ["count={}".format(len(failed))]
+    parts.extend(
+        "{}={}".format(result.profile_id, result.error_code or "unknown_failure")
+        for result in failed
+    )
+    body = " ".join(parts)
+    return body[:900] + ("..." if len(body) > 900 else "")
 
 
 def _emit_annotation(level: str, title: str, body: str, emitted: int) -> int:

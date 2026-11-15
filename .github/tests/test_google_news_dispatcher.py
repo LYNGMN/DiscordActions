@@ -827,6 +827,43 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual("43669743020", summary.run_id)
         self.assertEqual("43669743020", summary.to_dict()["run_id"])
 
+    def test_many_failed_profiles_are_aggregated_without_hiding_any(self):
+        profiles = self.profiles
+
+        def runner(command, env, check):
+            self.result_module.write_profile_result(
+                env["GOOGLE_NEWS_RESULT_PATH"],
+                env["GOOGLE_NEWS_PROFILE_ID"],
+                "failed",
+                0,
+                2,
+                "http_429",
+            )
+            return SimpleNamespace(returncode=1)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            summary = self.dispatcher.run_profiles(
+                profiles,
+                self.env,
+                self.state_dir,
+                manual_test=False,
+                subprocess_runner=runner,
+                sleep=lambda _: None,
+            )
+
+        rendered = output.getvalue()
+        annotations = [
+            line for line in rendered.splitlines() if line.startswith("::")
+        ]
+        error_lines = [line for line in annotations if line.startswith("::error")]
+        self.assertEqual(1, len(error_lines))
+        self.assertIn("count={}".format(len(profiles)), error_lines[0])
+        for profile in profiles:
+            self.assertIn(profile.profile_id, error_lines[0])
+        self.assertLessEqual(len(annotations), 10)
+        self.assertEqual("failed", summary.status)
+
     def test_run_budget_skips_remaining_profiles(self):
         profiles = self.profiles[:2]
         runner = mock.Mock()
