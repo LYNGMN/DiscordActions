@@ -21,7 +21,10 @@ DEFAULT_SCHEDULED_DELIVERY_LIMIT = 25
 MAX_SCHEDULED_DELIVERY_LIMIT = 100
 DEFAULT_RETENTION_DAYS = 30
 MAX_RETENTION_DAYS = 365
+DEFAULT_URL_CACHE_RETENTION_DAYS = 7
+MAX_URL_CACHE_RETENTION_DAYS = 365
 VACUUM_INTERVAL_SECONDS = 24 * 60 * 60
+VACUUM_ROW_THRESHOLD = 10000
 LAST_VACUUM_KEY = "last_vacuum_at"
 MAX_DELIVERY_ATTEMPTS = 3
 EXPIRY_CHUNK_SIZE = 400
@@ -48,6 +51,16 @@ def state_retention_days(value: str = "30") -> int:
     parsed = int(value)
     if parsed > MAX_RETENTION_DAYS:
         raise ValueError("invalid_google_news_state_retention_days")
+    return parsed
+
+
+def url_cache_retention_days(value: str = "7") -> int:
+    """Bound the resolver cache independently from article history."""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,2}", value):
+        raise ValueError("invalid_google_news_url_cache_retention_days")
+    parsed = int(value)
+    if parsed > MAX_URL_CACHE_RETENTION_DAYS:
+        raise ValueError("invalid_google_news_url_cache_retention_days")
     return parsed
 
 SAFE_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -753,6 +766,7 @@ def apply_state_retention(
     database_paths: Iterable[str],
     retention_days: int = DEFAULT_RETENTION_DAYS,
     now: Optional[datetime] = None,
+    url_cache_retention_days: int = DEFAULT_URL_CACHE_RETENTION_DAYS,
 ) -> Dict[str, int]:
     """Delete finished history older than retention_days and compact the files.
 
@@ -765,8 +779,17 @@ def apply_state_retention(
         or not 1 <= retention_days <= MAX_RETENTION_DAYS
     ):
         raise ValueError("invalid_google_news_state_retention_days")
+    if (
+        isinstance(url_cache_retention_days, bool)
+        or not isinstance(url_cache_retention_days, int)
+        or not 1 <= url_cache_retention_days <= MAX_URL_CACHE_RETENTION_DAYS
+    ):
+        raise ValueError("invalid_google_news_url_cache_retention_days")
     current = _aware_utc(now) if now is not None else datetime.now(timezone.utc)
     cutoff = (current - timedelta(days=retention_days)).isoformat()
+    url_cache_cutoff = (
+        current - timedelta(days=url_cache_retention_days)
+    ).isoformat()
     totals = {
         "items": 0,
         "messages": 0,
@@ -781,7 +804,9 @@ def apply_state_retention(
         if not os.path.isfile(database_path):
             continue
         seen.add(database_path)
-        deleted = _prune_database(database_path, cutoff, current)
+        deleted = _prune_database(
+            database_path, cutoff, url_cache_cutoff, current
+        )
         for key in ("items", "messages", "identities", "url_cache"):
             totals[key] += deleted[key]
         totals["databases"] += 1
@@ -791,6 +816,7 @@ def apply_state_retention(
 def _prune_database(
     database_path: str,
     cutoff: str,
+    url_cache_cutoff: str,
     now: datetime,
 ) -> Dict[str, int]:
     deleted = {"items": 0, "messages": 0, "identities": 0, "url_cache": 0}
@@ -830,11 +856,15 @@ def _prune_database(
         if _table_exists(connection, "google_news_url_cache"):
             cursor = connection.execute(
                 "DELETE FROM google_news_url_cache WHERE updated_at < ?",
-                (cutoff,),
+                (url_cache_cutoff,),
             )
             deleted["url_cache"] = max(0, cursor.rowcount)
         connection.commit()
-        if any(deleted.values()) and _vacuum_due(connection, now):
+        deleted_total = sum(deleted.values())
+        if deleted_total and (
+            deleted_total >= VACUUM_ROW_THRESHOLD
+            or _vacuum_due(connection, now)
+        ):
             connection.execute("VACUUM")
             _set_metadata_value(connection, LAST_VACUUM_KEY, now.isoformat())
     return deleted

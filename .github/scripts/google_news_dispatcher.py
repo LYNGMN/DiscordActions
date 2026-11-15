@@ -23,10 +23,12 @@ from delivery_admin_alert import current_actions_url, notify_admin_text
 
 from google_news_delivery_state import (
     DEFAULT_RETENTION_DAYS,
+    DEFAULT_URL_CACHE_RETENTION_DAYS,
     apply_state_retention,
     count_unfinished_deliveries,
     expire_stale_deliveries,
     state_retention_days,
+    url_cache_retention_days as parse_url_cache_retention_days,
 )
 from google_news_profile_result import ERROR_CODE, STATUSES
 from google_news_publisher_names import PublisherRegistry, load_default_registry
@@ -290,6 +292,7 @@ def run_profiles(
     backlog_limit: int = DEFAULT_BACKLOG_LIMIT,
     backlog_age_days: int = DEFAULT_BACKLOG_AGE_DAYS,
     admin_notifier: Callable[[str, str], bool] = notify_admin_text,
+    url_cache_retention_days: int = DEFAULT_URL_CACHE_RETENTION_DAYS,
 ) -> DispatchSummary:
     if (
         isinstance(backlog_limit, bool)
@@ -382,7 +385,12 @@ def run_profiles(
                 sleep(1.0)
 
     circuit_state = circuit_reader.get_open_circuit()
-    retention = _prune_state_databases(state_path, database_map, retention_days)
+    retention = _prune_state_databases(
+        state_path,
+        database_map,
+        retention_days,
+        url_cache_retention_days,
+    )
     emitted = _emit_profile_annotations(results, circuit_state)
     _emit_backlog_annotations(backlog_events, emitted)
     _notify_backlog_expiry(backlog_events, env, admin_notifier)
@@ -443,6 +451,7 @@ def run_dispatch(
     run_deadline: Optional[float] = None,
     backlog_limit: int = DEFAULT_BACKLOG_LIMIT,
     backlog_age_days: int = DEFAULT_BACKLOG_AGE_DAYS,
+    url_cache_retention_days: int = DEFAULT_URL_CACHE_RETENTION_DAYS,
     session: Optional[requests.Session] = None,
     subprocess_runner: Callable = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
@@ -483,6 +492,7 @@ def run_dispatch(
         run_deadline=run_deadline,
         backlog_limit=backlog_limit,
         backlog_age_days=backlog_age_days,
+        url_cache_retention_days=url_cache_retention_days,
     )
 
 
@@ -576,11 +586,16 @@ def _prune_state_databases(
     state_path: Path,
     database_map: Mapping[str, str],
     retention_days: int,
+    url_cache_retention_days: int,
 ) -> Dict[str, int]:
     paths = [str(state_path / name) for name in database_map.values()]
     paths.append(str(state_path / "resolver.db"))
     try:
-        return apply_state_retention(paths, retention_days=retention_days)
+        return apply_state_retention(
+            paths,
+            retention_days=retention_days,
+            url_cache_retention_days=url_cache_retention_days,
+        )
     except (OSError, sqlite3.Error, ValueError) as error:
         LOGGER.warning(
             "Google News state retention skipped (오류 유형: %s)",
@@ -797,6 +812,12 @@ def main(argv=None) -> int:
                 str(DEFAULT_BACKLOG_AGE_DAYS),
             )
         )
+        url_cache_days = parse_url_cache_retention_days(
+            os.environ.get(
+                "GOOGLE_NEWS_URL_CACHE_RETENTION_DAYS",
+                str(DEFAULT_URL_CACHE_RETENTION_DAYS),
+            )
+        )
         all_profiles = load_profiles(arguments.profiles)
         profiles = select_profiles(all_profiles, arguments.profile_id)
         summary = run_dispatch(
@@ -809,6 +830,7 @@ def main(argv=None) -> int:
             run_deadline=time.time() + budget_seconds,
             backlog_limit=backlog_limit,
             backlog_age_days=backlog_age_days,
+            url_cache_retention_days=url_cache_days,
             profile_databases={
                 profile.profile_id: profile.state_db
                 for profile in all_profiles

@@ -227,6 +227,13 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("'googlenews-reset.yml'", source)
         self.assertIn("if: failure()", source)
 
+    def test_url_cache_retention_is_configured(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("GOOGLE_NEWS_URL_CACHE_RETENTION_DAYS", source)
+                self.assertIn("|| '7'", source)
+
     def test_auto_backlog_expiry_is_configured_and_reported(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):
             with self.subTest(workflow=workflow.name):
