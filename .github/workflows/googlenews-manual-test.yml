@@ -245,3 +245,56 @@ jobs:
           path: .google-news-state/unmapped-google-news-publishers.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Notify admin of failed run
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          import requests
+
+          webhook = os.environ.get("DISCORD_WEBHOOK_ADMIN", "").strip()
+          run_url = os.environ.get("RUN_URL", "")
+          if not webhook:
+              print("DISCORD_WEBHOOK_ADMIN is not configured")
+              raise SystemExit(0)
+
+          lines = ["**Google News 실행 실패**", run_url]
+          try:
+              with open(".google-news-state/run-summary.json", encoding="utf-8") as handle:
+                  summary = json.load(handle)
+          except (OSError, ValueError):
+              summary = {}
+          if summary.get("error_code"):
+              lines.append("error: {}".format(summary["error_code"]))
+          failed = [
+              profile
+              for profile in summary.get("profiles", [])
+              if profile.get("status") == "failed"
+          ]
+          if failed:
+              lines.append(
+                  "failed profiles: "
+                  + ", ".join(
+                      "{} ({})".format(
+                          profile.get("profile_id"),
+                          profile.get("error_code") or "unknown",
+                      )
+                      for profile in failed[:10]
+                  )
+              )
+          try:
+              response = requests.post(
+                  webhook,
+                  json={"content": "\n".join(lines), "username": "Discord Actions"},
+                  timeout=(5.0, 15.0),
+              )
+              response.raise_for_status()
+          except Exception as error:
+              print("admin notification failed: {}".format(type(error).__name__))
+          PY
