@@ -152,7 +152,7 @@ DISCORD_WEBHOOK_GN_KEYWORD_IU
 | `feed_oldest_first` | 기본값. 현재 RSS 응답에 들어 있는 항목을 오래된 항목부터 전송 |
 | `feed_newest_first` | 현재 RSS 응답에 들어 있는 항목을 새 항목부터 전송 |
 
-전송량과 보관 기간도 선택 Repository Variable로 조정할 수 있습니다. `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE`은 한 실행에서 프로필마다 새로 전송할 기사 수를 제한하고(기본 25, 최대 100), 남은 기사는 다음 실행으로 넘깁니다. `GOOGLE_NEWS_STATE_RETENTION_DAYS`는 상태 아티팩트에 보관할 지난 기사 기록의 기간입니다(기본 14, 1~365). 전송 대기·재시도 중인 항목은 기간과 관계없이 보관합니다.
+전송량과 보관 기간도 선택 Repository Variable로 조정할 수 있습니다. `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE`은 한 실행에서 프로필마다 새로 전송할 기사 수를 제한하고(기본 25, 최대 100), 남은 기사는 다음 실행으로 넘깁니다. `GOOGLE_NEWS_STATE_RETENTION_DAYS`는 상태 아티팩트에 보관할 지난 기사 기록의 기간입니다(기본 14, 1~365). `GOOGLE_NEWS_RUN_BUDGET_SECONDS`는 한 실행에 쓸 시간(기본 1080초, 60~1200)이며, 시간이 다 되면 남은 작업을 다음 실행으로 넘기고 상태를 저장한 뒤 정상 종료합니다. 전송 대기·재시도 중인 항목은 기간과 관계없이 보관합니다.
 
 ### 키워드 뉴스 판정 방식
 

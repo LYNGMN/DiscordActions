@@ -24,6 +24,42 @@ GOOGLE_NEWS_AVATAR_URL = (
 TRUNCATION_MARKER = "\n…"
 DATE_MARKER = "\n📅 "
 URL_TOKEN = re.compile(r"https?://[^\s<>]+")
+RUN_DEADLINE_ENV = "GOOGLE_NEWS_RUN_DEADLINE"
+RUN_DEADLINE_BUFFER_SECONDS = 20.0
+
+
+class RunDeadlineExceeded(RuntimeError):
+    """The shared run budget is exhausted; remaining work moves to the next run."""
+
+    def __init__(self) -> None:
+        super().__init__("run_deadline_exceeded")
+        self.error_code = "run_deadline_exceeded"
+        self.attempt_count = 0
+
+
+def remaining_run_seconds(now: Optional[float] = None) -> Optional[float]:
+    raw = os.environ.get(RUN_DEADLINE_ENV)
+    if not raw:
+        return None
+    try:
+        deadline = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(deadline):
+        return None
+    return deadline - (time.time() if now is None else now)
+
+
+def run_deadline_reached(
+    buffer_seconds: float = RUN_DEADLINE_BUFFER_SECONDS,
+) -> bool:
+    remaining = remaining_run_seconds()
+    return remaining is not None and remaining <= buffer_seconds
+
+
+def ensure_run_budget() -> None:
+    if run_deadline_reached():
+        raise RunDeadlineExceeded()
 
 
 class DiscordMessageId(str):
@@ -125,6 +161,7 @@ def send_webhook_message(
     resolver_db_path: Optional[str] = None,
 ) -> str:
     """Post with bounded retries and preserve response-unknown evidence."""
+    ensure_run_budget()
     safe_payload = dict(payload)
     safe_payload["username"] = GOOGLE_NEWS_USERNAME
     safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
@@ -151,6 +188,7 @@ def send_webhook_message(
             if not transient_retry_used:
                 ambiguous_retry = True
                 transient_retry_used = True
+                ensure_run_budget()
                 sleep(2.0)
                 continue
             _annotate_delivery_error(error, ambiguous_retry, attempt_count)
@@ -160,6 +198,12 @@ def send_webhook_message(
             retry_after = _retry_after_seconds(response)
             if retry_after is None:
                 retry_after = DEFAULT_RATE_LIMIT_WAIT_SECONDS
+            remaining = remaining_run_seconds()
+            if (
+                remaining is not None
+                and retry_after + RUN_DEADLINE_BUFFER_SECONDS > remaining
+            ):
+                raise RunDeadlineExceeded()
             if (
                 rate_limit_retries < MAX_RATE_LIMIT_RETRIES
                 and retry_after <= max_rate_limit_wait_seconds
@@ -191,6 +235,7 @@ def send_webhook_message(
 
         if response.status_code >= 500 and not transient_retry_used:
             transient_retry_used = True
+            ensure_run_budget()
             sleep(2.0)
             continue
 
@@ -234,7 +279,12 @@ def send_webhook_message(
             raise error
         bucket_wait = _exhausted_bucket_wait_seconds(response)
         if bucket_wait is not None:
-            sleep(min(bucket_wait, max_rate_limit_wait_seconds))
+            remaining = remaining_run_seconds()
+            if (
+                remaining is None
+                or bucket_wait + RUN_DEADLINE_BUFFER_SECONDS <= remaining
+            ):
+                sleep(min(bucket_wait, max_rate_limit_wait_seconds))
         return DiscordMessageId(
             message_id,
             ambiguous_retry,

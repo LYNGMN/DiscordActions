@@ -152,7 +152,7 @@ Scheduled delivery continues automatically while the workflow is enabled. The op
 | `feed_oldest_first` | Default. Send older positions in the current RSS response first |
 | `feed_newest_first` | Send newer positions in the current RSS response first |
 
-Two more optional Repository Variables tune volume and history. `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE` caps new Discord deliveries per profile in one run (default 25, maximum 100) and leaves the rest for later runs. `GOOGLE_NEWS_STATE_RETENTION_DAYS` sets how many days of finished article history travel in the state artifact (default 14, range 1-365). Pending or retryable deliveries are kept regardless of age.
+Two more optional Repository Variables tune volume and history. `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE` caps new Discord deliveries per profile in one run (default 25, maximum 100) and leaves the rest for later runs. `GOOGLE_NEWS_STATE_RETENTION_DAYS` sets how many days of finished article history travel in the state artifact (default 14, range 1-365). `GOOGLE_NEWS_RUN_BUDGET_SECONDS` bounds one run in seconds (default 1080, range 60-1200); when it is reached, remaining work moves to the next run and the state is saved before a normal exit. Pending or retryable deliveries are kept regardless of age.
 
 ### Accurate keyword matching
 

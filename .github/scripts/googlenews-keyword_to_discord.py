@@ -28,7 +28,12 @@ from google_news_delivery_state import (
     record_filtered_item,
     reserve_delivery_with_messages,
 )
-from google_news_discord_delivery import send_webhook_message, split_discord_content
+from google_news_discord_delivery import (
+    RunDeadlineExceeded,
+    run_deadline_reached,
+    send_webhook_message,
+    split_discord_content,
+)
 from google_news_feed_filter import compile_google_news_feed_filter
 from feed_localization import (
     format_google_news_datetime,
@@ -385,6 +390,8 @@ def record_profile_result(status, processed_count, error_code=None):
 
 
 def deliver_reserved_item(guid):
+    if run_deadline_reached():
+        raise RunDeadlineExceeded()
     outcome = deliver_queued_item(
         DB_PATH,
         guid,
@@ -421,10 +428,14 @@ def resume_pending_deliveries(max_items=None):
         pending_guids = pending_guids[:1]
     elif max_items is not None:
         pending_guids = pending_guids[:max_items]
+    delivered = 0
     for guid in pending_guids:
         try:
             deliver_reserved_item(guid)
+            delivered += 1
         except Exception as error:
+            if getattr(error, "error_code", None) == "run_deadline_exceeded":
+                raise
             notify_admin(
                 DISCORD_WEBHOOK_ADMIN,
                 "Google News",
@@ -433,7 +444,7 @@ def resume_pending_deliveries(max_items=None):
                 getattr(error, "error_code", "final_failure"),
             )
             raise
-    return len(pending_guids)
+    return delivered
 
 def extract_news_items(description, resolver, article_guid=""):
     """HTML 설명에서 뉴스 항목을 추출합니다."""
@@ -685,6 +696,10 @@ def main():
         delivery_limit = 1 if MANUAL_TEST_MODE else MAX_SCHEDULED_DELIVERIES
         resumed_count = resume_pending_deliveries(max_items=delivery_limit)
         processed_count += resumed_count
+        if run_deadline_reached(buffer_seconds=60):
+            print("::warning title=Google News time budget reached::Remaining deliveries resume next run")
+            record_profile_result("success", processed_count)
+            return 0
         if MANUAL_TEST_MODE and resumed_count:
             record_profile_result("success", processed_count)
             return 0
@@ -768,6 +783,10 @@ def main():
         profile_failure_code = "profile_run_failed"
         queued_items = []
         for item in news_items:
+            if run_deadline_reached():
+                print("::warning title=Google News time budget reached::Remaining deliveries resume next run")
+                record_profile_result("success", processed_count)
+                return 0
             current_guid = "unknown"
             try:
                 guid = item.find('guid').text
@@ -846,6 +865,8 @@ def main():
                         error, "error_code", "profile_run_failed"
                     )
                     logging.error("뉴스 항목 전송 실패 (오류 유형: %s)", type(error).__name__)
+                    if profile_failure_code == "run_deadline_exceeded":
+                        break
                     print("::warning title=Google News delivery failed::A queued delivery remains pending")
                     notify_admin(
                         DISCORD_WEBHOOK_ADMIN,
@@ -857,6 +878,10 @@ def main():
                     break
 
         if profile_failed:
+            if profile_failure_code == "run_deadline_exceeded":
+                print("::warning title=Google News time budget reached::Remaining deliveries resume next run")
+                record_profile_result("success", processed_count)
+                return 0
             failure = RuntimeError("profile_run_failed")
             failure.error_code = profile_failure_code
             raise failure
@@ -876,6 +901,10 @@ def main():
         record_profile_result("failed", processed_count, error.error_code)
         return 1
     except Exception as error:
+        if getattr(error, "error_code", None) == "run_deadline_exceeded":
+            print("::warning title=Google News time budget reached::Remaining deliveries resume next run")
+            record_profile_result("success", processed_count)
+            return 0
         logging.error("프로필 실행 실패 (오류 유형: %s)", type(error).__name__)
         record_profile_result(
             "failed",
