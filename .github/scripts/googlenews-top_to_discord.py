@@ -79,7 +79,7 @@ RSS_URL_TOP = os.environ.get('RSS_URL_TOP')
 PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
 RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
 VALIDATE_ONLY = os.environ.get('GOOGLE_NEWS_VALIDATE_ONLY', 'false').lower() == 'true'
-MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '1000'))
+MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '40'))
 MAX_SCHEDULED_DELIVERIES = scheduled_delivery_limit(
     os.environ.get('GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE', '25')
 )
