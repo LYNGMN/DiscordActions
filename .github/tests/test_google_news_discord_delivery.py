@@ -38,6 +38,7 @@ class FakeResponse:
 class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
     def setUp(self):
         self.delivery = load_module()
+        self.delivery._AVATAR_WARNING_EMITTED = False
 
     def test_approved_branding_overrides_caller_values_without_mutation(self):
         payload = {
@@ -64,6 +65,49 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
         )
         self.assertEqual("Stale Name", payload["username"])
         self.assertEqual("https://example.com/stale.png", payload["avatar_url"])
+
+    def test_warns_once_when_discord_ignores_the_avatar_override(self):
+        response = FakeResponse()
+        response.json = lambda: {"id": "1234567890", "author": {"avatar": None}}
+
+        with mock.patch.object(
+            self.delivery.requests, "post", return_value=response
+        ), mock.patch("builtins.print") as printed:
+            self.delivery.send_webhook_message(
+                "https://example.com/webhook", {"content": "first"}
+            )
+            self.delivery.send_webhook_message(
+                "https://example.com/webhook", {"content": "second"}
+            )
+
+        warnings = [
+            call.args[0]
+            for call in printed.call_args_list
+            if call.args and str(call.args[0]).startswith("::warning")
+        ]
+        self.assertEqual(1, len(warnings))
+        self.assertIn("avatar", warnings[0])
+        self.assertNotIn("example.com", warnings[0])
+
+    def test_no_warning_when_discord_applies_the_avatar_override(self):
+        response = FakeResponse()
+        response.json = lambda: {
+            "id": "1234567890",
+            "author": {"avatar": "9f8e7d6c5b4a"},
+        }
+
+        with mock.patch.object(
+            self.delivery.requests, "post", return_value=response
+        ), mock.patch("builtins.print") as printed:
+            self.delivery.send_webhook_message(
+                "https://example.com/webhook", {"content": "message"}
+            )
+
+        self.assertFalse([
+            call
+            for call in printed.call_args_list
+            if call.args and str(call.args[0]).startswith("::warning")
+        ])
 
     def test_long_content_is_limited_before_post_and_keeps_date(self):
         date_line = "📅 2026-08-30 04:00:20 PM"

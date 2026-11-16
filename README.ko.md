@@ -395,6 +395,7 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 �
 
 - 먼저 Actions 실행 결과와 업로드된 SQLite 상태 아티팩트를 확인합니다.
 - 웹훅 URL, API 키, 토큰은 로그나 문의 글에 공개하지 마세요.
+- Google News 메시지의 프로필 이미지가 Discord 기본 아이콘으로 보이면 Discord가 `avatar_url` 이미지를 적용하지 못한 것입니다. 이때 실행 로그에 `Discord avatar not applied` 경고가 남습니다. **Actions → Set Discord Webhook Avatars**를 실행하고 `confirm`에 `SET`을 입력하면 각 웹훅의 기본 프로필 이미지가 승인된 로고로 저장되어, 다음부터는 `avatar_url` 적용이 실패해도 로고가 표시됩니다. `confirm`을 비우면 변경 대상만 미리 확인합니다.
 - Google News 실행이 실패하면 Actions 화면의 오류·경고 표시에 `profile=`, `code=`, `pending=` 값이 남고, 실행 요약에 **Failed profiles**와 **Skipped profiles**가 표로 표시됩니다. Google News가 일시적으로 차단하면 남은 프로필은 건너뛰고 `Google News paused until`에 재개 예정 시각이 나옵니다. 같은 내용은 `.google-news-state/run-summary.json`에도 안전한 코드로 기록됩니다. `discord_http_400_api_240000`과 같은 코드는 Discord가 잠재적으로 유해한 링크가 포함된 메시지로 판단해 거부했다는 뜻입니다. URL 변환 캐시에 정확히 일치하는 주소가 있으면 검증된 `news.google.com` 기사 주소로 한 번만 바꿔 다시 전송합니다. SQLite에 저장된 메시지 원문은 바꾸지 않으며, 다시 실패한 항목은 순서를 유지한 채 다음 실행을 기다립니다. 그 밖의 Discord 4xx 오류는 무조건 반복 전송하지 않습니다. 자세한 코드는 [Discord API 오류 코드 문서](https://docs.discord.com/developers/topics/opcodes-and-status-codes)를 참고하세요.
 - Discord가 영구적으로 거부하는 4xx 오류가 3회 누적된 메시지는 `failed`로 종결하고 다음 항목으로 넘어갑니다. 같은 항목이 대기열 맨 앞에서 채널 전체를 계속 막지 않으며, 관리자 알림이 한 번 더 전송됩니다. 429·5xx·네트워크 오류는 영구 실패로 취급하지 않고 계속 재시도합니다.
 - 웹훅 하나가 빠졌거나 이름이 바뀌어도 그 프로필만 실패로 기록되고, 나머지 채널은 계속 배송됩니다. 실패한 실행은 `DISCORD_WEBHOOK_ADMIN`이 설정된 경우 관리자 채널로 실행 링크와 실패 프로필 코드를 보냅니다. 모든 프로필이 Google News 차단으로 건너뛰면 실행은 성공이 아니라 실패로 표시됩니다.

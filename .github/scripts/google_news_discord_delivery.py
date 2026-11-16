@@ -26,6 +26,7 @@ DATE_MARKER = "\n📅 "
 URL_TOKEN = re.compile(r"https?://[^\s<>]+")
 RUN_DEADLINE_ENV = "GOOGLE_NEWS_RUN_DEADLINE"
 RUN_DEADLINE_BUFFER_SECONDS = 20.0
+_AVATAR_WARNING_EMITTED = False
 
 
 class RunDeadlineExceeded(RuntimeError):
@@ -277,6 +278,7 @@ def send_webhook_message(
             error = ValueError("invalid message id")
             _annotate_delivery_error(error, ambiguous_retry, attempt_count)
             raise error
+        _warn_if_avatar_override_ignored(body)
         bucket_wait = _exhausted_bucket_wait_seconds(response)
         if bucket_wait is not None:
             remaining = remaining_run_seconds()
@@ -291,6 +293,32 @@ def send_webhook_message(
             attempt_count,
             google_news_fallback,
         )
+
+
+def _warn_if_avatar_override_ignored(body) -> None:
+    """Warn once when Discord silently keeps the webhook default avatar.
+
+    Discord accepts ``avatar_url`` without validating that it can fetch the
+    image, so a failed fetch leaves the message with the webhook's default
+    avatar and no API error. The ``avatar`` hash of the returned message tells
+    us whether the override was applied.
+    """
+    global _AVATAR_WARNING_EMITTED
+    if _AVATAR_WARNING_EMITTED or not isinstance(body, dict):
+        return
+    author = body.get("author")
+    if not isinstance(author, dict) or "avatar" not in author:
+        return
+    if author.get("avatar"):
+        return
+    _AVATAR_WARNING_EMITTED = True
+    profile_id = os.environ.get("GOOGLE_NEWS_PROFILE_ID", "unknown")
+    logging.warning("discord_avatar_not_applied profile=%s", profile_id)
+    print(
+        "::warning title=Discord avatar not applied::profile={} Discord kept "
+        "the webhook default avatar instead of the approved logo. Run the Set "
+        "Discord Webhook Avatars workflow.".format(profile_id)
+    )
 
 
 def _discord_api_code(response) -> Optional[int]:
