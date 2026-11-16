@@ -66,6 +66,8 @@ PYTHON_BIN=python3.12 .github/scripts/compile_requirements.sh
 
 After regeneration, install `.github/requirements-youtube.txt` in a clean Python 3.12 environment with `--require-hashes`, run `python -m pip check`, and verify that running the script again produces no Git diff.
 
+Dependabot splits pip updates into patch and minor/major groups. The `Dependabot Auto Merge` workflow enables auto-merge only for non-security pip patch updates, and the required `test` check must pass first. Review and merge minor, major, security, and GitHub Actions updates manually. `main` requires the `test` check before Merge.
+
 # 한국어
 
 ## 기여 절차
@@ -133,3 +135,5 @@ PYTHON_BIN=python3.12 .github/scripts/compile_requirements.sh
 ```
 
 재생성 후에는 깨끗한 Python 3.12 환경에 `.github/requirements-youtube.txt`를 `--require-hashes` 옵션으로 설치합니다. 이어서 `python -m pip check`를 실행하고, 재생성 스크립트를 한 번 더 실행해 Git diff가 생기지 않는지 확인합니다.
+
+Dependabot은 pip 업데이트를 패치와 마이너·메이저 그룹으로 나눕니다. `Dependabot Auto Merge` 워크플로는 보안 업데이트가 아닌 pip 패치 업데이트에만 자동 병합을 켜며, 필수 `test` 검사를 먼저 통과해야 합니다. 마이너·메이저·보안·GitHub Actions 업데이트는 직접 검토하고 병합합니다. `main`은 병합 전에 `test` 검사를 요구합니다.

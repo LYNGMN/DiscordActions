@@ -405,6 +405,7 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 �
 - 대기 적체를 한 번에 정리하려면 **Actions → Google News Backlog Reset**을 수동 실행하고 `confirmation`에 `RESET`을 입력합니다. 대기 중이던 배송은 만료되고, 대기가 있던 채널에는 `---` 구분선이 한 번 전송됩니다. 이후 새로 발견된 기사부터 배송됩니다. 이 작업은 되돌릴 수 없습니다.
 - 상태 아티팩트 업로드가 일시 실패하면 한 번 더 시도합니다. 두 번 모두 실패하면 실행을 실패로 표시해, 다음 실행이 이전 상태를 복원해 중복 전송할 수 있음을 알립니다.
 - 예약 실행이 12시간 넘게 없으면 **Google News Schedule Health** 워크플로가 6시간마다 확인해 관리자 채널에 알립니다. 알림이 필요 없으면 이 워크플로를 비활성화하세요.
+- Dependabot은 pip 패치 업데이트만 `test` 검사 통과 후 자동 병합합니다. 마이너·메이저·보안·GitHub Actions 업데이트는 검토 후 직접 병합합니다. 보안 경고와 보안 업데이트는 활성화되어 있습니다.
 - 공개 저장소에 60일 동안 저장소 활동이 없으면 GitHub가 예약 워크플로를 자동으로 비활성화할 수 있습니다. Actions 화면에 해당 안내가 나타나면 워크플로를 다시 활성화하세요. 이 프로젝트는 GitHub의 이 정책을 우회하는 자동 Keepalive 방식을 사용하지 않습니다. 자세한 내용은 [GitHub 워크플로 활성화·비활성화 문서](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)를 참고하세요.
 - GitHub Actions의 예약 지연과 외부 API의 일시적 제한을 코드 오류와 구분하세요. 저장해 둔 미완료 전송은 다음 실행에서 기록된 순번부터 이어집니다.
 
