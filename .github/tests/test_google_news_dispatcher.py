@@ -1081,5 +1081,158 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                     self.dispatcher.run_budget_seconds(invalid)
 
 
+class DeliveryDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        self.dispatcher = load_module("google_news_dispatcher")
+        self.profile_result = load_module("google_news_profile_result")
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.state = Path(self.tempdir.name)
+
+    def result(self, status="success", processed=0, pending=3):
+        return self.dispatcher.ProfileRunResult(
+            "top_kr", status, processed, pending, 0, None
+        )
+
+    def summary(self, profiles):
+        return self.dispatcher.DispatchSummary(
+            status="success",
+            manual_test=False,
+            validate_only=False,
+            error_code=None,
+            started_at="2026-11-16T00:00:00+00:00",
+            finished_at="2026-11-16T00:00:02+00:00",
+            profiles=tuple(profiles),
+            run_id="12345",
+        )
+
+    def test_reads_diagnostic_counts_from_the_result_file(self):
+        path = self.state / "top_kr.json"
+        self.profile_result.write_profile_result(
+            str(path),
+            "top_kr",
+            "success",
+            1,
+            2,
+            None,
+            filtered_count=4,
+            duplicate_count=5,
+            queued_count=2,
+            deferred_count=1,
+            truncated_count=1,
+        )
+
+        result = self.dispatcher._read_profile_result("top_kr", str(path), 0)
+
+        self.assertEqual("success", result.status)
+        self.assertEqual(4, result.filtered_count)
+        self.assertEqual(5, result.duplicate_count)
+        self.assertEqual(2, result.queued_count)
+        self.assertEqual(1, result.deferred_count)
+        self.assertEqual(1, result.truncated_count)
+        self.assertEqual(4, result.to_dict()["filtered_count"])
+
+    def test_negative_diagnostic_counts_make_the_result_invalid(self):
+        path = self.state / "top_kr.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "profile_id": "top_kr",
+                    "status": "success",
+                    "processed_count": 0,
+                    "pending_count": 0,
+                    "ambiguous_retry_count": 0,
+                    "filtered_count": -1,
+                    "duplicate_count": 0,
+                    "queued_count": 0,
+                    "deferred_count": 0,
+                    "truncated_count": 0,
+                    "error_code": None,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.dispatcher._read_profile_result("top_kr", str(path), 0)
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual("invalid_result", result.error_code)
+
+    def test_stall_streak_resets_after_a_delivered_run(self):
+        self.assertEqual(1, self.dispatcher._update_stall_streak(self.state, True))
+        self.assertEqual(2, self.dispatcher._update_stall_streak(self.state, True))
+        self.assertEqual(0, self.dispatcher._update_stall_streak(self.state, False))
+
+    def test_first_stalled_run_alerts_and_later_runs_do_not_repeat(self):
+        result = self.result()
+        summary = self.summary([result])
+        alerts = []
+        notifier = lambda webhook, content: alerts.append(content) or True
+        env = {"DISCORD_WEBHOOK_ADMIN": "https://discord.com/api/webhooks/1/token"}
+        events_path = self.state / "events.jsonl"
+
+        with mock.patch.dict(
+            os.environ, {"RUN_EVENTS_PATH": str(events_path)}, clear=False
+        ), self.assertLogs("delivery_events", level="INFO") as captured, mock.patch(
+            "builtins.print"
+        ) as printed:
+            for _ in range(2):
+                self.dispatcher._report_run_totals(
+                    summary, [result], env, self.state, False, False, notifier
+                )
+
+        self.assertEqual(1, len(alerts))
+        self.assertIn("pending=3", alerts[0])
+        self.assertTrue(any("event=delivery_stalled" in line for line in captured.output))
+        self.assertGreaterEqual(
+            sum(1 for call in printed.call_args_list if "stalled" in str(call)),
+            2,
+        )
+        records = [
+            json.loads(line)
+            for line in events_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertTrue(any(record["event"] == "run_summary" for record in records))
+        self.assertTrue(any(record["event"] == "delivery_stalled" for record in records))
+        self.assertFalse(any("webhooks" in json.dumps(record) for record in records))
+
+    def test_manual_test_and_validate_runs_never_alert(self):
+        result = self.result()
+        summary = self.summary([result])
+        alerts = []
+        env = {"DISCORD_WEBHOOK_ADMIN": "https://discord.com/api/webhooks/1/token"}
+
+        with mock.patch("builtins.print"):
+            self.dispatcher._report_run_totals(
+                summary, [result], env, self.state, True, False, lambda w, c: alerts.append(c)
+            )
+            self.dispatcher._report_run_totals(
+                summary, [result], env, self.state, False, True, lambda w, c: alerts.append(c)
+            )
+
+        self.assertEqual([], alerts)
+
+    def test_profile_totals_sum_the_diagnostic_counts(self):
+        results = [
+            self.dispatcher.ProfileRunResult(
+                "top_kr", "success", 2, 3, 0, None,
+                filtered_count=4, duplicate_count=5, truncated_count=1,
+            ),
+            self.dispatcher.ProfileRunResult(
+                "top_us", "success", 1, 0, 0, None,
+                filtered_count=2, duplicate_count=1, truncated_count=0,
+            ),
+        ]
+
+        totals = self.dispatcher._profile_totals(results)
+
+        self.assertEqual(3, totals["processed"])
+        self.assertEqual(3, totals["pending"])
+        self.assertEqual(6, totals["filtered"])
+        self.assertEqual(6, totals["duplicates"])
+        self.assertEqual(1, totals["truncated"])
+
+
 if __name__ == "__main__":
     unittest.main()

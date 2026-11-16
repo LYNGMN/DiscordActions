@@ -20,6 +20,11 @@ def write_profile_result(
     pending_count: int,
     error_code: Optional[str] = None,
     ambiguous_retry_count: int = 0,
+    filtered_count: int = 0,
+    duplicate_count: int = 0,
+    queued_count: int = 0,
+    deferred_count: int = 0,
+    truncated_count: int = 0,
 ) -> Dict[str, object]:
     if not isinstance(profile_id, str) or not PROFILE_ID.fullmatch(profile_id):
         raise ValueError("invalid profile id")
@@ -30,6 +35,11 @@ def write_profile_result(
     ambiguous = _non_negative_count(
         ambiguous_retry_count, "ambiguous_retry_count"
     )
+    filtered = _non_negative_count(filtered_count, "filtered_count")
+    duplicates = _non_negative_count(duplicate_count, "duplicate_count")
+    queued = _non_negative_count(queued_count, "queued_count")
+    deferred = _non_negative_count(deferred_count, "deferred_count")
+    truncated = _non_negative_count(truncated_count, "truncated_count")
     if error_code is not None and (
         not isinstance(error_code, str) or not ERROR_CODE.fullmatch(error_code)
     ):
@@ -41,6 +51,11 @@ def write_profile_result(
         "processed_count": processed,
         "pending_count": pending,
         "ambiguous_retry_count": ambiguous,
+        "filtered_count": filtered,
+        "duplicate_count": duplicates,
+        "queued_count": queued,
+        "deferred_count": deferred,
+        "truncated_count": truncated,
         "error_code": error_code,
     }
     parent = os.path.dirname(os.path.abspath(path))

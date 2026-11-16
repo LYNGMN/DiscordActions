@@ -405,10 +405,31 @@ Edit `cron` under the workflow's `schedule`. Each expression has exactly five fi
 
 Scheduled GitHub Actions runs can start late. Weekly and monthly examples are calendar schedules, not fixed 7-day or 30-day durations. Google News RSS is not an archive: with long intervals, an article that has already disappeared from the feed cannot be recovered. Use the default 15-minute schedule when minimizing missed news matters.
 
+## Diagnostic logs
+
+Search the run log for `event=` to follow every delivery decision, including the ones that never reach Discord. The same records are written as JSON Lines to the `run-events.jsonl` file inside the `google-news-events` and `youtube-events` artifacts (retained for 14 days).
+
+| Event | What it records |
+| --- | --- |
+| `run_start` · `run_summary` | Run start plus processed, pending, filtered, duplicate, truncated counts and duration |
+| `profile_start` · `profile_summary` | Profile start plus fetched, filtered, duplicate, queued, deferred, truncated, pending counts and duration |
+| `feed_fetched` · `filter_summary` | Items read from the feed and items removed by filters |
+| `item_skip` | Skip reason (`filter_date`, `filter_keyword`, `duplicate`) and the item hash |
+| `item_queued` · `item_done` · `item_failed` | Queued, delivered, and failed deliveries with code, HTTP status, and attempts |
+| `message_sent` · `message_failed` · `message_exhausted` | Message chunk order (`sequence=2/3`), message ID, attempt count |
+| `content_truncated` | A message shortened to Discord's 2000-character limit |
+| `delivery_stalled` | A run that delivered nothing while deliveries are pending |
+| `backlog_expired` | Old pending deliveries expired automatically |
+
+- Items are recorded as a short hash (`item=`), never the original text. Webhook URLs, article bodies, and message content are never logged.
+- High-volume events such as `item_skip` and `item_queued` stay at `debug` level in the human log and are always written to the artifact.
+- When a scheduled run delivers nothing while deliveries are pending, the run summary shows a warning and the admin channel is notified on the first occurrence and every fourth one after that.
+
 ## Troubleshooting
 
 - Check the Actions result and its uploaded SQLite state artifact first.
 - Never publish webhook URLs, API keys, or tokens in logs or support posts.
+- If a Google News message shows the default Discord avatar, Discord did not apply the `avatar_url` image; the run log carries a `Discord avatar not applied` warning. Run **Actions → Set Discord Webhook Avatars** with `confirm` set to `SET` to store the approved logo as each webhook's default avatar, so the logo still appears when the per-message override fails. Leave `confirm` empty for a dry run that only lists the target profiles.
 - A failed Google News run reports `profile=`, `code=`, and `pending=` values in the Actions error and warning annotations, and the run summary shows **Failed profiles** and **Skipped profiles** tables. When Google News temporarily blocks requests, remaining profiles are skipped and `Google News paused until` shows the resume time. The same safe codes are written to `.google-news-state/run-summary.json`. A code such as `discord_http_400_api_240000` means Discord rejected message content because of a potentially harmful link. When the resolver cache contains an exact mapping, delivery automatically retries once with the validated `news.google.com` article URL. The saved message is not rewritten, and an unsuccessful item remains pending in order for the next run. Other Discord 4xx responses are not retried blindly. See [Discord API error codes](https://docs.discord.com/developers/topics/opcodes-and-status-codes).
 - A message rejected permanently with a 4xx error three times is finalized as `failed` and the queue moves on, so one bad item cannot block the channel indefinitely; the admin channel receives a final alert. 429, 5xx, and network failures are not treated as permanent and keep retrying.
 - A missing or renamed webhook fails only that profile; every other channel keeps delivering. When `DISCORD_WEBHOOK_ADMIN` is configured, a failed run posts the run link and failed profile codes to the admin channel. A run where every profile was skipped by a Google News block is reported as failed, not successful.
