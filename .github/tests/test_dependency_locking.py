@@ -86,13 +86,14 @@ class DependencyLockingTests(unittest.TestCase):
                 self.assertIn("python -m pip check", source)
                 self.assertNotIn("pip install --upgrade", source)
 
-    def test_dependabot_groups_python_and_actions_updates_without_auto_merge(self):
+    def test_dependabot_splits_python_patches_from_minor_and_major(self):
         source = (GITHUB_DIR / "dependabot.yml").read_text(encoding="utf-8")
 
         self.assertIn('package-ecosystem: "pip"', source)
         self.assertIn('package-ecosystem: "github-actions"', source)
         self.assertEqual(2, source.count("interval: \"weekly\""))
-        self.assertIn("python-dependencies:", source)
+        self.assertIn("python-patch:", source)
+        self.assertIn("python-minor-major:", source)
         self.assertIn("github-actions:", source)
         self.assertNotIn("automerge", source.lower())
 

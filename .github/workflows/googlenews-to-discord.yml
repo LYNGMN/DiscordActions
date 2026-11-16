@@ -149,7 +149,17 @@ jobs:
           DISCORD_WEBHOOK_GN_TOPIC_SCITECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SCITECH }}
           DISCORD_WEBHOOK_GN_KEYWORD_NOCODE: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_NOCODE }}
           DISCORD_WEBHOOK_GN_KEYWORD_IU: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_IU }}
+          RUN_EVENTS_PATH: .google-news-events/run-events.jsonl
         run: python .github/scripts/google_news_dispatcher.py --state-dir .google-news-state
+
+      - name: Upload delivery events
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: google-news-events
+          path: .google-news-events/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Write safe run summary
         if: always()
@@ -171,6 +181,10 @@ jobs:
             const processed = summary.profiles.reduce((total, item) => total + item.processed_count, 0);
             const pending = summary.profiles.reduce((total, item) => total + item.pending_count, 0);
             const ambiguous = summary.profiles.reduce((total, item) => total + item.ambiguous_retry_count, 0);
+            const filtered = summary.profiles.reduce((total, item) => total + (item.filtered_count ?? 0), 0);
+            const duplicates = summary.profiles.reduce((total, item) => total + (item.duplicate_count ?? 0), 0);
+            const deferred = summary.profiles.reduce((total, item) => total + (item.deferred_count ?? 0), 0);
+            const truncated = summary.profiles.reduce((total, item) => total + (item.truncated_count ?? 0), 0);
             const failedProfiles = summary.profiles.filter(item => item.status === 'failed');
             const skippedProfiles = summary.profiles.filter(item => item.status === 'skipped');
             const prunedItems = summary.retention?.items ?? 0;
@@ -185,6 +199,10 @@ jobs:
               .addRaw(`Processed articles: ${processed}\n`)
               .addRaw(`Pending deliveries: ${pending}\n`)
               .addRaw(`Ambiguous retries: ${ambiguous}\n`)
+              .addRaw(`Filtered articles: ${filtered}\n`)
+              .addRaw(`Duplicate articles: ${duplicates}\n`)
+              .addRaw(`Deferred by limit: ${deferred}\n`)
+              .addRaw(`Truncated messages: ${truncated}\n`)
               .addRaw(`Unmapped publishers: ${summary.unmapped_publisher_count ?? 0}\n`)
               .addRaw(`New unmapped publishers: ${summary.new_unmapped_publisher_count ?? 0}\n`)
               .addRaw(`Pruned state rows: ${prunedItems}\n`)

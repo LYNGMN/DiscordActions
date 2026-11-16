@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from xml.etree.ElementTree import Element
 
 from google_news_manual_test import prepare_baseline_item
+from run_events import emit_event, item_ref
 
 
 DISCORD_MESSAGE_ID = re.compile(r"^[0-9]+$")
@@ -81,6 +82,8 @@ class QueueDeliveryOutcome:
     ambiguous_retry_count: int
     failed_count: int = 0
     last_error_code: Optional[str] = None
+    message_count: int = 0
+    truncated_count: int = 0
 
 
 def prepare_scheduled_items(
@@ -410,22 +413,35 @@ def deliver_queued_item(
     db_path: str,
     guid: str,
     send_message: Callable[[str], str],
+    profile_id: Optional[str] = None,
 ) -> QueueDeliveryOutcome:
+    item = item_ref(guid)
     ambiguous_count = 0
     failed_count = 0
+    truncated_count = 0
     last_error_code = None
+    messages = pending_delivery_messages_with_attempts(db_path, guid)
+    message_count = len(messages)
     for (
         sequence,
         content,
         attempt_count,
         previous_error_code,
-    ) in pending_delivery_messages_with_attempts(db_path, guid):
+    ) in messages:
         if (
             attempt_count >= MAX_DELIVERY_ATTEMPTS
             and _is_permanent_delivery_error(previous_error_code)
         ):
             mark_delivery_message_exhausted(
                 db_path, guid, sequence, "max_attempts_exceeded"
+            )
+            emit_event(
+                "message_exhausted",
+                profile=profile_id,
+                item=item,
+                sequence=sequence,
+                total=message_count,
+                code="max_attempts_exceeded",
             )
             failed_count += 1
             last_error_code = "max_attempts_exceeded"
@@ -442,6 +458,16 @@ def deliver_queued_item(
                 sequence,
                 error_code,
                 getattr(error, "attempt_count", 1),
+            )
+            emit_event(
+                "message_failed",
+                profile=profile_id,
+                item=item,
+                sequence=sequence,
+                total=message_count,
+                code=error_code,
+                status=getattr(error, "http_status_code", None),
+                attempt=new_attempt_count,
             )
             if not (
                 _is_permanent_delivery_error(error_code)
@@ -461,11 +487,36 @@ def deliver_queued_item(
             last_error_code="ambiguous_retry" if ambiguous else None,
             attempt_count=getattr(message_id, "attempt_count", 1),
         )
+        if getattr(message_id, "content_truncated", False):
+            truncated_count += 1
+            emit_event(
+                "content_truncated",
+                profile=profile_id,
+                item=item,
+                sequence=sequence,
+                total=message_count,
+            )
+        emit_event(
+            "message_sent",
+            profile=profile_id,
+            item=item,
+            sequence=sequence,
+            total=message_count,
+            message_id=message_id,
+            attempt=getattr(message_id, "attempt_count", 1),
+            ambiguous=ambiguous,
+        )
         if ambiguous:
             ambiguous_count += 1
     if not finalize_delivery(db_path, guid):
         raise RuntimeError("delivery_not_complete")
-    return QueueDeliveryOutcome(ambiguous_count, failed_count, last_error_code)
+    return QueueDeliveryOutcome(
+        ambiguous_count,
+        failed_count,
+        last_error_code,
+        message_count=message_count,
+        truncated_count=truncated_count,
+    )
 
 
 def mark_delivery_message_sent(

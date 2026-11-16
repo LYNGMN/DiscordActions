@@ -157,7 +157,17 @@ jobs:
           DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW: ${{ secrets.DISCORD_WEBHOOK_YOUTUBE_DETAILVIEW }}
           DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
           YOUTUBE_DETAILVIEW: ${{ secrets.YOUTUBE_DETAILVIEW }}
+          RUN_EVENTS_PATH: .youtube-events/run-events.jsonl
         run: python .github/scripts/youtube_to_discord.py
+
+      - name: Upload delivery events
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: youtube-events
+          path: .youtube-events/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Write safe run summary
         if: always()

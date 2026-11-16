@@ -59,11 +59,35 @@ from google_news_publisher_review import (
 from google_news_related_links import resolve_related_url
 from google_news_request_guard import BlockedRequestError, GoogleNewsRequestGuard
 from google_news_url_resolver import GoogleNewsUrlResolver
+from run_events import emit_event, item_ref
 
 PUBLISHER_REGISTRY = load_default_registry()
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+RUN_METRICS = {
+    "fetched": 0,
+    "filtered": 0,
+    "duplicates": 0,
+    "queued": 0,
+    "deferred": 0,
+    "truncated": 0,
+}
+RUN_STARTED_AT = time.monotonic()
+
+
+def _error_code(error, default="profile_run_failed"):
+    code = getattr(error, "error_code", None)
+    return code if isinstance(code, str) and code else default
+
+
+def _error_detail(error):
+    return (
+        _error_code(error),
+        getattr(error, "http_status_code", None),
+        getattr(error, "attempt_count", None),
+    )
 
 # 환경 변수에서 필요한 정보를 가져옵니다.
 DISCORD_WEBHOOK_KEYWORD = os.environ.get('DISCORD_WEBHOOK_KEYWORD')
@@ -377,6 +401,22 @@ def send_discord_message(webhook_url, message, avatar_url=None, username=None):
 
 
 def record_profile_result(status, processed_count, error_code=None):
+    pending_count = count_pending_deliveries(DB_PATH)
+    emit_event(
+        "profile_summary",
+        profile=PROFILE_ID,
+        status=status,
+        processed=processed_count,
+        fetched=RUN_METRICS["fetched"],
+        filtered=RUN_METRICS["filtered"],
+        duplicates=RUN_METRICS["duplicates"],
+        queued=RUN_METRICS["queued"],
+        deferred=RUN_METRICS["deferred"],
+        truncated=RUN_METRICS["truncated"],
+        pending=pending_count,
+        code=error_code,
+        duration_ms=int((time.monotonic() - RUN_STARTED_AT) * 1000),
+    )
     if not RESULT_PATH:
         return
     write_profile_result(
@@ -384,9 +424,14 @@ def record_profile_result(status, processed_count, error_code=None):
         PROFILE_ID,
         status,
         processed_count,
-        count_pending_deliveries(DB_PATH),
+        pending_count,
         error_code,
         ambiguous_retry_count=count_ambiguous_retries(DB_PATH),
+        filtered_count=RUN_METRICS["filtered"],
+        duplicate_count=RUN_METRICS["duplicates"],
+        queued_count=RUN_METRICS["queued"],
+        deferred_count=RUN_METRICS["deferred"],
+        truncated_count=RUN_METRICS["truncated"],
     )
 
 
@@ -402,7 +447,9 @@ def deliver_reserved_item(guid):
             avatar_url=DISCORD_AVATAR_KEYWORD,
             username=DISCORD_USERNAME_KEYWORD,
         ),
+        profile_id=PROFILE_ID,
     )
+    RUN_METRICS["truncated"] += outcome.truncated_count
     if outcome.ambiguous_retry_count:
         print("::warning title=Google News ambiguous retry::A response-unknown delivery was retried")
         notify_admin(
@@ -591,6 +638,11 @@ def get_rss_url():
 def main():
     processed_count = 0
     already_known_count = 0
+    emit_event(
+        "profile_start",
+        profile=PROFILE_ID,
+        mode="manual" if MANUAL_TEST_MODE else "scheduled",
+    )
     try:
         rss_url, keyword, country_code = get_rss_url()
 
@@ -664,6 +716,7 @@ def main():
         news_items = parse_rss_feed(rss_data)
 
         total_items = len(news_items)
+        RUN_METRICS["fetched"] = total_items
         logging.info(f"총 {total_items}개의 뉴스 항목을 가져왔습니다.")
         
         if not INITIALIZE_KEYWORD:
@@ -691,7 +744,15 @@ def main():
             else:
                 record_filtered_item(DB_PATH, item, filter_fingerprint)
                 filtered_count += 1
+                emit_event(
+                    "item_skip",
+                    level="debug",
+                    profile=PROFILE_ID,
+                    reason=getattr(match_result, "reason", None) or "filter",
+                    item=item_ref(item.findtext('guid', '')),
+                )
         news_items = matched_items
+        RUN_METRICS["filtered"] = filtered_count
         logging.info(
             "키워드 판정 완료: 일치 %s개, 제외 %s개",
             len(news_items),
@@ -773,9 +834,24 @@ def main():
                     split_discord_content(discord_message),
                 ):
                     already_known_count += 1
+                    RUN_METRICS["duplicates"] = already_known_count
+                    emit_event(
+                        "item_skip",
+                        level="debug",
+                        profile=PROFILE_ID,
+                        reason="duplicate",
+                        item=item_ref(guid),
+                    )
                     continue
                 save_news_item(pub_date, guid, title, link, json.dumps(related_news, ensure_ascii=False))
                 queued_items.append((guid, title))
+                RUN_METRICS["queued"] = len(queued_items)
+                emit_event(
+                    "item_queued",
+                    level="debug",
+                    profile=PROFILE_ID,
+                    item=item_ref(guid),
+                )
                 logging.info(f"뉴스 항목 대기열 저장 완료: {title}")
 
             except Exception as error:
@@ -783,7 +859,22 @@ def main():
                 profile_failure_code = getattr(
                     error, "error_code", "profile_run_failed"
                 )
-                logging.error("뉴스 대기열 준비 실패 (오류 유형: %s)", type(error).__name__)
+                code, status, attempt = _error_detail(error)
+                logging.error(
+                    "뉴스 대기열 준비 실패 (코드: %s, 상태: %s, 시도: %s, 유형: %s)",
+                    code,
+                    status,
+                    attempt,
+                    type(error).__name__,
+                )
+                emit_event(
+                    "queue_failed",
+                    profile=PROFILE_ID,
+                    item=item_ref(current_guid),
+                    code=code,
+                    status=status,
+                    attempt=attempt,
+                )
                 print("::warning title=Google News queue preparation failed::No Discord delivery was started")
                 notify_admin(
                     DISCORD_WEBHOOK_ADMIN,
@@ -801,6 +892,7 @@ def main():
                 deliver=deliver_reserved_item,
                 profile_label=PROFILE_ID or "keyword",
                 admin_webhook=DISCORD_WEBHOOK_ADMIN,
+                profile_id=PROFILE_ID,
             )
             processed_count += batch.processed_count
             profile_failed = batch.failed
@@ -820,6 +912,8 @@ def main():
             processed_count,
             already_known_count,
         )
+        delivered_new = max(0, processed_count - resumed_count)
+        RUN_METRICS["deferred"] = max(0, len(queued_items) - delivered_new)
         logging.info(f"총 {processed_count}개의 뉴스 항목이 성공적으로 처리되었습니다.")
         logging.info("Google News URL 변환 요약: %s", resolver.get_stats())
         record_profile_result("success", processed_count)

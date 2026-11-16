@@ -21,6 +21,7 @@ GitHub Actions ── 최신 상태 artifact 복원 ──► dispatcher
         │                                      └─ run-summary.json
         ▼
 상태 artifact 업로드(Google News 3일) ──► 다음 실행이 복원
+        └─ 이벤트 아티팩트(14일) ──► 실행 진단
 ```
 
 GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거나 실패해도 하루 몇 회는 실행됩니다. 자세한 설정은 `ops/state-trigger/README.md`를 참고하세요.
@@ -36,7 +37,9 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
 | 디스패처 | 프로필 검증·preflight·subprocess·예산·회전·정리·요약 | `.github/scripts/google_news_dispatcher.py` |
 | 핸들러 | `top`/`topic`/`keyword`별 RSS URL·라벨·메시지 구성 | `googlenews-*_to_discord.py` |
 | 공용 상태 | SQLite 스키마, 대기열, 중복 판정, 보존 정리 | `google_news_delivery_state.py`, `youtube_delivery_state.py` |
-| 공용 전송 | Discord webhook 호출, 429/5xx 재시도, 2,000자 분할 | `google_news_discord_delivery.py`, `youtube_discord_delivery.py` |
+| 공용 전송 | Discord webhook 호출, 429/5xx 재시도, 2,000자 분할, 아바타 적용 경고 | `google_news_discord_delivery.py`, `youtube_discord_delivery.py` |
+| 이벤트 로그 | `event=` 로그와 `run-events.jsonl` 아티팩트(URL·본문 제외) | `run_events.py` |
+| 웹훅 아바타 | 승인된 로고를 웹훅 기본 아바타로 저장 | `set_webhook_avatars.py`, `set-webhook-avatars.yml` |
 | 핸들러 런타임 | 대기열 전송 루프, 예산 중단, 영구 실패 알림 | `google_news_handler_runtime.py` |
 | 설정 | 프로필 JSON과 공통 Repository Variable 검증 | `google_news_profiles.py`, `feed_filters.py` |
 
@@ -50,6 +53,7 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
 - `run-summary.json`: 이번 실행의 프로필별 결과(민감 정보 없음).
 - `unmapped-google-news-publishers.json`: 미등록 언론사 검토용(제목·URL·웹훅 없음).
 - `youtube_videos.db`, `youtube-run-summary.json`(YouTube).
+- 이벤트 로그는 상태 디렉터리가 아니라 `.google-news-events/`·`.youtube-events/`에 쓰이며 `google-news-events`·`youtube-events` 아티팩트로 14일 보관한다.
 
 계약:
 
@@ -88,6 +92,8 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
   - `FEED_COUNTRY`는 `feed_country_timezones.json`에 있는 코드
 - Webhook URL과 API 키는 GitHub Secrets에만 둔다. 프로필 JSON, 로그, 요약, artifact에는 넣지 않는다.
 - 모든 Discord payload는 `allowed_mentions: {"parse": []}`로 멘션을 끈다.
+- 아바타는 승인된 로고를 사용한다. Discord가 `avatar_url`을 적용하지 않으면 `Discord avatar not applied` 경고를 남기고, **Set Discord Webhook Avatars**로 웹훅 기본 아바타를 갱신한다.
+- 이벤트 로그에는 기사 본문·웹훅 URL·토큰을 넣지 않는다. `run_events.py`가 URL과 비밀값을 redact한다.
 
 ## 7. 실패 의미
 

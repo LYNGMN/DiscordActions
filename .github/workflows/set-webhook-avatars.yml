@@ -1,0 +1,78 @@
+name: Set Discord Webhook Avatars
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Set the approved logo for all profiles or one profile.'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - top_us
+          - top_kr
+          - top_jp
+          - top_cn
+          - topic_korea
+          - topic_seoul
+          - topic_ent
+          - topic_tech
+          - topic_scitech
+          - keyword_nocode
+          - keyword_iu
+      confirm:
+        description: 'Type SET to change Discord. Leave empty for a dry run.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: set-discord-webhook-avatars
+  cancel-in-progress: false
+
+jobs:
+  set-avatars:
+    name: Store the approved logo as each webhook avatar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --require-hashes -r .github/requirements.txt
+          python -m pip check
+
+      - name: Set webhook avatars
+        env:
+          SELECTED_PROFILE: ${{ inputs.profile }}
+          CONFIRMATION: ${{ inputs.confirm }}
+          DISCORD_WEBHOOK_GN_TOP_US: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_US }}
+          DISCORD_WEBHOOK_GN_TOP_KR: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_KR }}
+          DISCORD_WEBHOOK_GN_TOP_JP: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_JP }}
+          DISCORD_WEBHOOK_GN_TOP_CN: ${{ secrets.DISCORD_WEBHOOK_GN_TOP_CN }}
+          DISCORD_WEBHOOK_GN_TOPIC_KOREA: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_KOREA }}
+          DISCORD_WEBHOOK_GN_TOPIC_SEOUL: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SEOUL }}
+          DISCORD_WEBHOOK_GN_TOPIC_ENT: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_ENT }}
+          DISCORD_WEBHOOK_GN_TOPIC_TECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_TECH }}
+          DISCORD_WEBHOOK_GN_TOPIC_SCITECH: ${{ secrets.DISCORD_WEBHOOK_GN_TOPIC_SCITECH }}
+          DISCORD_WEBHOOK_GN_KEYWORD_NOCODE: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_NOCODE }}
+          DISCORD_WEBHOOK_GN_KEYWORD_IU: ${{ secrets.DISCORD_WEBHOOK_GN_KEYWORD_IU }}
+        shell: bash
+        run: |
+          python .github/scripts/set_webhook_avatars.py \
+            --profile "$SELECTED_PROFILE" \
+            --confirm "$CONFIRMATION"

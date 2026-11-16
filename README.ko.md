@@ -19,7 +19,7 @@ GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으
 4. **Actions**에서 **Google News Manual Delivery Test** 또는 **YouTube Manual Delivery Test**를 먼저 실행합니다. 두 워크플로는 Discord로 실제 메시지를 전송합니다. 운영 워크플로의 **Run workflow** 버튼은 외부 트리거와 비상 실행에 사용되며, 누르면 실제 메시지가 전송됩니다. 1건만 시험하려면 Manual Delivery Test를 사용하세요.
 5. 시험을 마친 뒤에는 두 운영 예약 워크플로를 활성 상태로 둡니다. Worker 트리거를 배포하면 15분마다, GitHub 예약 실행은 백업으로 하루 몇 회 자동 실행됩니다.
 
-현재 관리하는 Actions 목록은 운영 예약 워크플로 2개(**Google News to Discord**, **YouTube to Discord Notification**), 실제 전송 시험 워크플로 2개(**Google News Manual Delivery Test**, **YouTube Manual Delivery Test**), **Python Tests**, 운영 보조 워크플로 2개(**Google News Backlog Reset**, **Google News Schedule Health**)입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
+현재 관리하는 Actions 목록은 운영 예약 워크플로 2개(**Google News to Discord**, **YouTube to Discord Notification**), 실제 전송 시험 워크플로 2개(**Google News Manual Delivery Test**, **YouTube Manual Delivery Test**), **Python Tests**, 운영 보조 워크플로 4개(**Google News Backlog Reset**, **Google News Schedule Health**, **Set Discord Webhook Avatars**, **Dependabot Auto Merge**)입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
 
 ### 전용 수동 전송 시험
 
@@ -395,10 +395,31 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어지�
 
 GitHub의 `schedule`은 보장된 cron이 아닙니다. 이 저장소의 2026년 10~11월 기록에서는 15분 예약이 실제로 하루 4~5회만 실행됐고, 간격이 최대 10시간까지 벌어졌습니다. 그래서 `ops/state-trigger`의 Cloudflare Worker가 15분마다 두 운영 워크플로를 `workflow_dispatch`로 호출하도록 만들었습니다. 설정과 배포 방법은 [ops/state-trigger/README.md](ops/state-trigger/README.md)를 따르세요. Worker를 배포하지 않아도 GitHub `schedule`이 백업으로 남아 하루 몇 회는 실행됩니다.
 
+## 진단 로그
+
+실행 로그에서 `event=`로 검색하면 "무엇을 왜 건너뛰었는지"를 한 줄씩 따라갈 수 있습니다. 같은 내용이 `google-news-events`·`youtube-events` 아티팩트의 `run-events.jsonl`에 JSON Lines로 남습니다(14일 보관).
+
+| 이벤트 | 남는 내용 |
+| --- | --- |
+| `run_start` · `run_summary` | 실행 시작과 전체 처리·대기·필터·중복·잘림·소요 시간 |
+| `profile_start` · `profile_summary` | 프로필 시작과 가져옴·필터·중복·대기열·연기·잘림·대기·소요 시간 |
+| `feed_fetched` · `filter_summary` | 피드에서 가져온 수와 필터에서 제외된 수 |
+| `item_skip` | 건너뛴 이유(`filter_date`, `filter_keyword`, `duplicate`)와 항목 해시 |
+| `item_queued` · `item_done` · `item_failed` | 대기열 저장·전송 완료·전송 실패(코드·HTTP 상태·시도 횟수) |
+| `message_sent` · `message_failed` · `message_exhausted` | 메시지 조각 순서(`sequence=2/3`), 메시지 ID, 시도 횟수 |
+| `content_truncated` | 2000자를 넘어 잘린 메시지 |
+| `delivery_stalled` | 0건 배송인데 대기 항목이 남은 상태 |
+| `backlog_expired` | 오래된 대기 항목 자동 만료 |
+
+- 항목은 원문 대신 8자 해시(`item=`)로 남깁니다. 웹훅 URL, 기사 본문, 메시지 내용은 로그에 남기지 않습니다.
+- 건수가 많은 `item_skip`·`item_queued`는 로그에는 `debug`로만 남기고 아티팩트에는 모두 기록합니다. 그래서 사람이 읽는 로그는 짧게 유지됩니다.
+- 0건 배송인데 대기 항목이 있으면 실행 요약에 경고가 남고 관리자 채널로 알립니다(첫 발생과 이후 4회마다).
+
 ## 문제 해결
 
 - 먼저 Actions 실행 결과와 업로드된 SQLite 상태 아티팩트를 확인합니다.
 - 웹훅 URL, API 키, 토큰은 로그나 문의 글에 공개하지 마세요.
+- Google News 메시지의 프로필 이미지가 Discord 기본 아이콘으로 보이면 Discord가 `avatar_url` 이미지를 적용하지 못한 것입니다. 이때 실행 로그에 `Discord avatar not applied` 경고가 남습니다. **Actions → Set Discord Webhook Avatars**를 실행하고 `confirm`에 `SET`을 입력하면 각 웹훅의 기본 프로필 이미지가 승인된 로고로 저장되어, 다음부터는 `avatar_url` 적용이 실패해도 로고가 표시됩니다. `confirm`을 비우면 변경 대상만 미리 확인합니다.
 - Google News 실행이 실패하면 Actions 화면의 오류·경고 표시에 `profile=`, `code=`, `pending=` 값이 남고, 실행 요약에 **Failed profiles**와 **Skipped profiles**가 표로 표시됩니다. Google News가 일시적으로 차단하면 남은 프로필은 건너뛰고 `Google News paused until`에 재개 예정 시각이 나옵니다. 같은 내용은 `.google-news-state/run-summary.json`에도 안전한 코드로 기록됩니다. `discord_http_400_api_240000`과 같은 코드는 Discord가 잠재적으로 유해한 링크가 포함된 메시지로 판단해 거부했다는 뜻입니다. URL 변환 캐시에 정확히 일치하는 주소가 있으면 검증된 `news.google.com` 기사 주소로 한 번만 바꿔 다시 전송합니다. SQLite에 저장된 메시지 원문은 바꾸지 않으며, 다시 실패한 항목은 순서를 유지한 채 다음 실행을 기다립니다. 그 밖의 Discord 4xx 오류는 무조건 반복 전송하지 않습니다. 자세한 코드는 [Discord API 오류 코드 문서](https://docs.discord.com/developers/topics/opcodes-and-status-codes)를 참고하세요.
 - Discord가 영구적으로 거부하는 4xx 오류가 3회 누적된 메시지는 `failed`로 종결하고 다음 항목으로 넘어갑니다. 같은 항목이 대기열 맨 앞에서 채널 전체를 계속 막지 않으며, 관리자 알림이 한 번 더 전송됩니다. 429·5xx·네트워크 오류는 영구 실패로 취급하지 않고 계속 재시도합니다.
 - 웹훅 하나가 빠졌거나 이름이 바뀌어도 그 프로필만 실패로 기록되고, 나머지 채널은 계속 배송됩니다. 실패한 실행은 `DISCORD_WEBHOOK_ADMIN`이 설정된 경우 관리자 채널로 실행 링크와 실패 프로필 코드를 보냅니다. 모든 프로필이 Google News 차단으로 건너뛰면 실행은 성공이 아니라 실패로 표시됩니다.
@@ -409,6 +430,7 @@ GitHub의 `schedule`은 보장된 cron이 아닙니다. 이 저장소의 2026년
 - 대기 적체를 한 번에 정리하려면 **Actions → Google News Backlog Reset**을 수동 실행하고 `confirmation`에 `RESET`을 입력합니다. 대기 중이던 배송은 만료되고, 대기가 있던 채널에는 `---` 구분선이 한 번 전송됩니다. 이후 새로 발견된 기사부터 배송됩니다. 이 작업은 되돌릴 수 없습니다.
 - 상태 아티팩트 업로드가 일시 실패하면 한 번 더 시도합니다. 두 번 모두 실패하면 실행을 실패로 표시해, 다음 실행이 이전 상태를 복원해 중복 전송할 수 있음을 알립니다.
 - **Google News Schedule Health** 워크플로가 6시간마다 Google News와 YouTube의 마지막 성공 실행을 확인합니다. `GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS`(기본 6시간)를 넘으면 관리자 채널에 알립니다. Worker 트리거가 안정화되면 3시간으로 낮추세요. 알림이 필요 없으면 이 워크플로를 비활성화하세요.
+- Dependabot은 pip 패치 업데이트만 `test` 검사 통과 후 자동 병합합니다. 마이너·메이저·보안·GitHub Actions 업데이트는 검토 후 직접 병합합니다. 보안 경고와 보안 업데이트는 활성화되어 있습니다.
 - 공개 저장소에 60일 동안 저장소 활동이 없으면 GitHub가 예약 워크플로를 자동으로 비활성화할 수 있습니다. Actions 화면에 해당 안내가 나타나면 워크플로를 다시 활성화하세요. 이 프로젝트는 GitHub의 이 정책을 우회하는 자동 Keepalive 방식을 사용하지 않습니다. 자세한 내용은 [GitHub 워크플로 활성화·비활성화 문서](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)를 참고하세요.
 - GitHub Actions의 예약 지연과 외부 API의 일시적 제한을 코드 오류와 구분하세요. 저장해 둔 미완료 전송은 다음 실행에서 기록된 순번부터 이어집니다.
 
