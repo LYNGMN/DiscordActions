@@ -447,6 +447,11 @@ def build_handler_environment(
     if admin_webhook:
         environment["DISCORD_WEBHOOK_ADMIN"] = admin_webhook
 
+    for context_key in ("RUN_EVENTS_PATH", "GITHUB_RUN_ID"):
+        value = base_env.get(context_key)
+        if isinstance(value, str) and value:
+            environment[context_key] = value
+
     handler_key = profile.handler.upper()
     environment["DISCORD_WEBHOOK_{}".format(handler_key)] = webhook_url
     environment["DISCORD_USERNAME_{}".format(handler_key)] = profile.visible_username

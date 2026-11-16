@@ -187,6 +187,7 @@ jobs:
           name: google-news-events
           path: .google-news-events/
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 14
 
       - name: Write safe run summary

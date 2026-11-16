@@ -167,6 +167,7 @@ jobs:
           name: youtube-events
           path: .youtube-events/
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 14
 
       - name: Write safe run summary
