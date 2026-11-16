@@ -72,3 +72,6 @@ tagged release.
 - YouTube run summaries carry `run_id`; the workflow ignores a stale summary
   left by a previous run.
 - Mutable action tags and missing `persist-credentials: false` were removed.
+- A corrupt SQLite state file is quarantined outside the state directory, the
+  run summary records the repair, and the profile starts from a fresh database
+  instead of blocking every later run.

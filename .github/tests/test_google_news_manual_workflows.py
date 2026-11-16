@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -41,6 +42,20 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             self.assertIn("- {}".format(profile_id), source)
         self.assertIn("up to 11", source)
         self.assertIn("최대 11", source)
+
+    def test_manual_choices_cover_every_profile(self):
+        config = json.loads(
+            (ROOT / ".github" / "config" / "google_news_profiles.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile_ids = [profile["id"] for profile in config]
+        source = MANUAL_WORKFLOW.read_text(encoding="utf-8")
+
+        for profile_id in profile_ids:
+            self.assertIn("- {}".format(profile_id), source)
+        self.assertIn("up to {}".format(len(profile_ids)), source)
+        self.assertIn("최대 {}건".format(len(profile_ids)), source)
 
     def test_manual_workflow_selects_one_profile_or_all_and_sends_real_messages(self):
         source = MANUAL_WORKFLOW.read_text(encoding="utf-8")

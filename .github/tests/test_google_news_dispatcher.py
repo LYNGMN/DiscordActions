@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -608,6 +609,59 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertEqual(
             ["success", "success", "success"],
             [item.status for item in summary.profiles],
+        )
+
+    def test_corrupt_state_database_is_quarantined(self):
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        db_path = state_path / "top_us.db"
+        db_path.write_bytes(b"not a database")
+
+        repaired = self.dispatcher._check_state_databases(
+            state_path, ["top_us.db", "resolver.db"]
+        )
+
+        self.assertEqual(1, len(repaired))
+        self.assertEqual("top_us.db", repaired[0]["database"])
+        self.assertFalse(db_path.exists())
+        quarantine = Path(repaired[0]["quarantine"])
+        self.addCleanup(shutil.rmtree, quarantine, True)
+        self.assertTrue((quarantine / "top_us.db").exists())
+
+    def test_healthy_state_database_is_not_quarantined(self):
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(state_path / "top_us.db")) as connection:
+            connection.execute("CREATE TABLE marker (value TEXT)")
+
+        repaired = self.dispatcher._check_state_databases(
+            state_path, ["top_us.db"]
+        )
+
+        self.assertEqual([], repaired)
+        self.assertTrue((state_path / "top_us.db").exists())
+
+    def test_run_summary_reports_a_quarantined_database(self):
+        profiles = self.profiles[:2]
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        (state_path / "top_us.db").write_bytes(b"not a database")
+        calls = []
+
+        summary = self.dispatcher.run_profiles(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual(2, len(calls))
+        self.assertEqual(1, len(summary.state_repairs))
+        self.assertEqual("top_us.db", summary.state_repairs[0]["database"])
+        self.addCleanup(
+            shutil.rmtree, summary.state_repairs[0]["quarantine"], True
         )
 
     def test_rotation_starts_at_the_saved_profile(self):

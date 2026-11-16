@@ -1,3 +1,4 @@
+import json
 import re
 import unittest
 from pathlib import Path
@@ -69,6 +70,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             "DISPLAY_LANGUAGE",
         ):
             self.assertIn("{}:".format(setting), source)
+
+    def test_webhook_secret_list_matches_the_profile_registry(self):
+        config = json.loads(
+            (WORKFLOWS_DIR.parent / "config" / "google_news_profiles.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected = {profile["webhook_env"] for profile in config}
+        self.assertEqual(expected, set(EXPECTED_WEBHOOK_SECRETS))
 
     def test_webhook_secrets_are_scoped_only_to_the_dispatcher_step(self):
         source = self.source()

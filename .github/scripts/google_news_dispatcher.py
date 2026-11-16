@@ -153,6 +153,7 @@ class DispatchSummary:
     run_id: Optional[str] = None
     backlog_expired: int = 0
     backlog: Sequence[Mapping[str, object]] = ()
+    state_repairs: Sequence[Mapping[str, str]] = ()
 
     def to_dict(self):
         return {
@@ -171,6 +172,7 @@ class DispatchSummary:
             "run_id": self.run_id,
             "backlog_expired": self.backlog_expired,
             "backlog": [dict(item) for item in self.backlog],
+            "state_repairs": [dict(item) for item in self.state_repairs],
         }
 
 
@@ -367,6 +369,19 @@ def run_profiles(
         profile_databases
         or {profile.profile_id: profile.state_db for profile in profiles}
     )
+    state_repairs = _check_state_databases(
+        state_path, list(database_map.values()) + ["resolver.db"]
+    )
+    for repair in state_repairs:
+        LOGGER.error(
+            "Corrupt state database quarantined: %s", repair["database"]
+        )
+        print(
+            "::error title=Google News state database reset::{} was corrupt and "
+            "moved; that profile starts from a fresh database.".format(
+                repair["database"]
+            )
+        )
     before_unmapped = unmapped_publisher_keys(
         state_path, database_map, registry
     )
@@ -492,6 +507,7 @@ def run_profiles(
         run_id=os.environ.get("GITHUB_RUN_ID"),
         backlog_expired=backlog_expired,
         backlog=tuple(backlog_events),
+        state_repairs=tuple(state_repairs),
     )
     if not manual_test and not validate_only and profile_order:
         try:
@@ -560,6 +576,41 @@ def run_dispatch(
         backlog_age_days=backlog_age_days,
         url_cache_retention_days=url_cache_retention_days,
     )
+
+
+def _check_state_databases(
+    state_path: Path, database_names: Sequence[str]
+) -> List[Dict[str, str]]:
+    """Quarantine unreadable SQLite files so one bad file cannot stop a run.
+
+    The corrupt file is moved outside the state directory. The handler then
+    starts that profile from a fresh database, and the uploaded state is clean
+    for the next run. The trade-off is a possible re-send of recent items.
+    """
+    repaired = []
+    for name in sorted(set(database_names)):
+        if not name or os.path.basename(name) != name:
+            continue
+        path = state_path / name
+        if not path.is_file():
+            continue
+        try:
+            with sqlite3.connect(path) as connection:
+                row = connection.execute("PRAGMA quick_check").fetchone()
+            if not row or row[0] != "ok":
+                raise sqlite3.DatabaseError("quick_check failed")
+        except sqlite3.Error:
+            quarantine_dir = Path(tempfile.mkdtemp(prefix="google-news-corrupt-"))
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                candidate = Path(str(path) + suffix)
+                if candidate.exists():
+                    shutil.move(
+                        str(candidate), str(quarantine_dir / (name + suffix))
+                    )
+            repaired.append(
+                {"database": name, "quarantine": str(quarantine_dir)}
+            )
+    return repaired
 
 
 def _remove_stale_result_dirs(state_path: Path) -> None:
