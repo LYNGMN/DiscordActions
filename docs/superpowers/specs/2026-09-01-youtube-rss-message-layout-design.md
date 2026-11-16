@@ -1,3 +1,5 @@
+> **HISTORICAL**: 이 문서는 작성 당시의 계획/설계이며 현재 동작과 다를 수 있습니다. 현재 구조는 [docs/architecture.md](../../architecture.md)를 따르세요.
+
 # YouTube RSS Message Layout Design
 
 ## Goal

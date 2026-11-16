@@ -54,6 +54,25 @@ Every Pull Request must contain:
 
 Do not add a mandatory `Not included` list. If a scope boundary is essential to prevent a concrete misunderstanding, explain it briefly in Operational notes. Track separately planned work in its own Issue.
 
+### Google News profile or source changes
+
+A new profile is more than one JSON entry. Update all of these in the same
+change, then verify before opening the Pull Request:
+
+1. Add the profile to `.github/config/google_news_profiles.json` with all seven
+   top-level fields and only the handler's allowed environment keys.
+2. Add the webhook to both Google News production and manual workflows, and to
+   the chart in the README.
+3. Add the profile ID to the manual workflow's `profile` choice.
+4. Run `python .github/scripts/google_news_dispatcher.py --check-config` and
+   the full unit test suite.
+5. Run **Google News Manual Delivery Test** for the new profile once. It sends
+   a real message and shares the operating state.
+
+For a new source or handler, add the source-specific tests first, keep the
+shared queue and delivery logic in `google_news_*`, and document the new
+variable in both READMEs.
+
 ### Python dependency maintenance
 
 Runtime workflows use Python 3.12. Common direct dependencies belong in `.github/requirements.in`; YouTube-only direct dependencies belong in `.github/requirements-youtube.in`. Generated `.txt` files contain the complete dependency graph and SHA-256 hashes. Do not edit a generated lock file by hand.
@@ -64,7 +83,7 @@ Use Python 3.12 with `pip-tools==7.6.1`, then run:
 PYTHON_BIN=python3.12 .github/scripts/compile_requirements.sh
 ```
 
-After regeneration, install `.github/requirements-youtube.txt` in a clean Python 3.12 environment with `--require-hashes`, run `python -m pip check`, and verify that running the script again produces no Git diff.
+CI installs `.github/requirements.txt`, `.github/requirements-youtube.txt` and `.github/requirements-dev.txt` with `--require-hashes`. After regeneration, install the changed locks in a clean Python 3.12 environment, run `python -m pip check`, and verify that running the script again produces no Git diff.
 
 # 한국어
 
@@ -122,6 +141,23 @@ Pull Request는 실제로 구현한 변경을 기록합니다. 연결된 Issue, 
 
 `포함하지 않은 내용`을 필수 목록으로 만들지 않습니다. 구체적인 오해를 막기 위해 범위를 설명해야 할 때만 운영 참고사항에 짧게 작성합니다. 별도로 계획한 작업은 별도 Issue에서 관리합니다.
 
+### Google News 프로필·소스 변경
+
+새 프로필은 JSON 한 줄로 끝나지 않습니다. 같은 변경에서 아래를 모두 고친 뒤
+Pull Request 전에 확인합니다.
+
+1. `.github/config/google_news_profiles.json`에 7개 최상위 항목과 해당
+   handler가 허용한 environment 키만 넣습니다.
+2. Google News 운영·수동 워크플로의 webhook 목록과 README의 표에 추가합니다.
+3. 수동 워크플로의 `profile` choice에 프로필 ID를 추가합니다.
+4. `python .github/scripts/google_news_dispatcher.py --check-config`와 전체
+   단위 테스트를 실행합니다.
+5. **Google News Manual Delivery Test**로 새 프로필을 한 번 시험합니다. 실제
+   메시지가 전송되고 운영 상태를 함께 사용합니다.
+
+새 소스나 handler를 추가할 때는 소스별 테스트를 먼저 만들고, 대기열·전송
+공용 로직은 `google_news_*`에 둡니다. 새 변수는 두 README에 모두 적습니다.
+
 ### Python 종속성 관리
 
 실행 워크플로는 Python 3.12를 사용합니다. 공통 직접 종속성은 `.github/requirements.in`에, YouTube 전용 직접 종속성은 `.github/requirements-youtube.in`에 작성합니다. 생성된 `.txt` 파일에는 전체 하위 종속성과 SHA-256 해시가 들어 있습니다. 생성된 잠금 파일을 직접 수정하지 않습니다.
@@ -132,4 +168,4 @@ Python 3.12 환경에 `pip-tools==7.6.1`을 설치한 뒤 다음 명령을 실�
 PYTHON_BIN=python3.12 .github/scripts/compile_requirements.sh
 ```
 
-재생성 후에는 깨끗한 Python 3.12 환경에 `.github/requirements-youtube.txt`를 `--require-hashes` 옵션으로 설치합니다. 이어서 `python -m pip check`를 실행하고, 재생성 스크립트를 한 번 더 실행해 Git diff가 생기지 않는지 확인합니다.
+CI는 `.github/requirements.txt`, `.github/requirements-youtube.txt`, `.github/requirements-dev.txt`를 `--require-hashes` 옵션으로 설치합니다. 재생성 후에는 바뀐 잠금 파일을 깨끗한 Python 3.12 환경에 설치하고 `python -m pip check`를 실행한 뒤, 재생성 스크립트를 한 번 더 실행해 Git diff가 생기지 않는지 확인합니다.
