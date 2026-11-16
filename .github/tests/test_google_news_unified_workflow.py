@@ -274,6 +274,8 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             with self.subTest(workflow=workflow.name):
                 source = workflow.read_text(encoding="utf-8")
                 self.assertIn("'googlenews-reset.yml'", source)
+                self.assertIn("selectLatestArtifact", source)
+                self.assertIn("artifactName: 'google-news-state'", source)
 
     def test_health_workflow_alerts_when_scheduled_runs_stop(self):
         source = HEALTH_WORKFLOW.read_text(encoding="utf-8")

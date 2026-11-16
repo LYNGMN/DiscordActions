@@ -19,7 +19,7 @@ tagged release.
 - `profile-rotation.json`: the next run starts at the first profile skipped by
   the time budget.
 - `ops/state-artifact/select-state-artifact.cjs`: one tested selector for the
-  newest non-expired state artifact, shared by the four stateful workflows.
+  newest non-expired state artifact, shared by the five stateful workflows.
 - local HTTP contract tests for Discord 429/400/5xx handling, including the
   `allowed_mentions` payload boundary.
 - `GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS` (default 40) to bound original-URL

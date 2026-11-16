@@ -252,9 +252,12 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: false", source)
 
     def test_restore_uses_the_shared_selector_for_the_database(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            self.assertIn(
+                "selectLatestArtifact",
+                workflow.read_text(encoding="utf-8"),
+            )
         source = self.source()
-
-        self.assertIn("selectLatestArtifact", source)
         self.assertIn("'youtube_to_discord.yml'", source)
         self.assertIn("'youtube-manual-test.yml'", source)
         self.assertIn("artifactName: 'youtube_database'", source)

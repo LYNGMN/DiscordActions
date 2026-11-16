@@ -39,7 +39,7 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
 | 공용 상태 | SQLite 스키마, 대기열, 중복 판정, 보존 정리 | `google_news_delivery_state.py`, `youtube_delivery_state.py` |
 | 공용 전송 | Discord webhook 호출, 429/5xx 재시도, 2,000자 분할, 아바타 적용 경고 | `google_news_discord_delivery.py`, `youtube_discord_delivery.py` |
 | 이벤트 로그 | `event=` 로그와 `run-events.jsonl` 아티팩트(URL·본문 제외) | `run_events.py` |
-| 상태 선택 | 최신 비만료 상태 artifact 선택(워크플로 4개 공용) | `ops/state-artifact/select-state-artifact.cjs` |
+| 상태 선택 | 최신 비만료 상태 artifact 선택(워크플로 5개 공용) | `ops/state-artifact/select-state-artifact.cjs` |
 | 웹훅 아바타 | 승인된 로고를 웹훅 기본 아바타로 저장 | `set_webhook_avatars.py`, `set-webhook-avatars.yml` |
 | 핸들러 런타임 | 대기열 전송 루프, 예산 중단, 영구 실패 알림 | `google_news_handler_runtime.py` |
 | 설정 | 프로필 JSON과 공통 Repository Variable 검증 | `google_news_profiles.py`, `feed_filters.py` |
