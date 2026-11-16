@@ -5,6 +5,7 @@ import html
 import os
 import re
 import sqlite3
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,7 @@ DEFAULT_RETENTION_DAYS = 30
 MAX_RETENTION_DAYS = 365
 DEFAULT_URL_CACHE_RETENTION_DAYS = 7
 MAX_URL_CACHE_RETENTION_DAYS = 365
+DEFAULT_RETENTION_RESERVE_SECONDS = 180.0
 VACUUM_INTERVAL_SECONDS = 24 * 60 * 60
 VACUUM_ROW_THRESHOLD = 10000
 LAST_VACUUM_KEY = "last_vacuum_at"
@@ -87,9 +89,6 @@ class QueueDeliveryOutcome:
 def prepare_scheduled_items(
     items: Sequence[Element],
     db_path: str,
-    now: Optional[datetime] = None,
-    max_items: Optional[int] = None,
-    max_age_minutes: Optional[int] = None,
     delivery_order: str = "feed_oldest_first",
 ) -> List[Element]:
     item_list = list(items)
@@ -818,11 +817,15 @@ def apply_state_retention(
     retention_days: int = DEFAULT_RETENTION_DAYS,
     now: Optional[datetime] = None,
     url_cache_retention_days: int = DEFAULT_URL_CACHE_RETENTION_DAYS,
+    deadline: Optional[float] = None,
+    deadline_reserve_seconds: float = DEFAULT_RETENTION_RESERVE_SECONDS,
 ) -> Dict[str, int]:
     """Delete finished history older than retention_days and compact the files.
 
     Pending or retryable deliveries are never removed. The function is safe to
     call on a missing database and returns only counts for the run summary.
+    A prune or VACUUM is skipped when the run is too close to its deadline so
+    the state upload can still finish.
     """
     if (
         isinstance(retention_days, bool)
@@ -836,6 +839,19 @@ def apply_state_retention(
         or not 1 <= url_cache_retention_days <= MAX_URL_CACHE_RETENTION_DAYS
     ):
         raise ValueError("invalid_google_news_url_cache_retention_days")
+    if deadline is not None:
+        try:
+            reserve = max(0.0, float(deadline_reserve_seconds))
+            if time.time() + reserve >= float(deadline):
+                return {
+                    "items": 0,
+                    "messages": 0,
+                    "identities": 0,
+                    "url_cache": 0,
+                    "databases": 0,
+                }
+        except (TypeError, ValueError):
+            pass
     current = _aware_utc(now) if now is not None else datetime.now(timezone.utc)
     cutoff = (current - timedelta(days=retention_days)).isoformat()
     url_cache_cutoff = (

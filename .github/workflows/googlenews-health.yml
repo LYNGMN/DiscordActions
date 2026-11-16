@@ -1,4 +1,4 @@
-name: Google News Schedule Health
+name: Discord Actions Schedule Health
 
 on:
   schedule:
@@ -14,54 +14,87 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check latest scheduled delivery
-        uses: actions/github-script@v9
+      - name: Check scheduled deliveries
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         env:
           DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
+          MAX_AGE_HOURS: ${{ vars.GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS || '6' }}
         with:
           script: |
             const { owner, repo } = context.repo;
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              owner,
-              repo,
-              workflow_id: 'googlenews-to-discord.yml',
-              branch: 'main',
-              status: 'completed',
-              per_page: 1,
-            });
-            const latest = data.workflow_runs[0];
-            const ageHours = latest
-              ? (Date.now() - new Date(latest.created_at).getTime()) / 3600000
-              : Infinity;
-            const runUrl = latest
-              ? latest.html_url
-              : `${context.serverUrl}/${owner}/${repo}/actions/workflows/googlenews-to-discord.yml`;
-            core.info(
-              `Latest completed run: ${latest ? latest.created_at : 'none'} (${ageHours.toFixed(1)} hours ago)`
-            );
-            if (ageHours < 12) {
-              core.info('Scheduled delivery is recent enough.');
+            const threshold = Number(process.env.MAX_AGE_HOURS || '6');
+            if (!Number.isFinite(threshold) || threshold <= 0) {
+              core.setFailed(`Invalid GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS: ${process.env.MAX_AGE_HOURS}`);
               return;
             }
-
+            const workflows = [
+              { id: 'googlenews-to-discord.yml', label: 'Google News' },
+              { id: 'youtube_to_discord.yml', label: 'YouTube' },
+            ];
+            const problems = [];
+            for (const workflow of workflows) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflow.id,
+                branch: 'main',
+                status: 'completed',
+                per_page: 5,
+              });
+              const runs = data.workflow_runs || [];
+              const latest = runs[0];
+              const latestSuccess = runs.find(run => run.conclusion === 'success');
+              const ageHours = latest
+                ? (Date.now() - new Date(latest.created_at).getTime()) / 3600000
+                : Infinity;
+              const successAgeHours = latestSuccess
+                ? (Date.now() - new Date(latestSuccess.created_at).getTime()) / 3600000
+                : Infinity;
+              core.info(
+                `${workflow.label}: latest=${latest ? latest.created_at : 'none'} (${ageHours.toFixed(1)}h), ` +
+                  `success=${latestSuccess ? latestSuccess.created_at : 'none'} (${successAgeHours.toFixed(1)}h)`
+              );
+              if (ageHours >= threshold || successAgeHours >= threshold) {
+                problems.push({ ...workflow, ageHours, successAgeHours, latest, latestSuccess });
+              }
+            }
+            if (problems.length === 0) {
+              core.info(`All deliveries have a successful run within ${threshold} hours.`);
+              return;
+            }
             const webhook = (process.env.DISCORD_WEBHOOK_ADMIN || '').trim();
             if (!webhook) {
               core.setFailed(
-                `No scheduled Google News run in ${ageHours.toFixed(1)} hours and DISCORD_WEBHOOK_ADMIN is not configured.`
+                `No successful delivery within ${threshold} hours and DISCORD_WEBHOOK_ADMIN is not configured.`
               );
               return;
             }
-
-            const content = [
-              '**Google News 예약 실행이 없습니다**',
-              `마지막 완료 실행: ${latest ? latest.created_at : '없음'}`,
-              `경과: ${ageHours.toFixed(1)}시간`,
-              runUrl,
-            ].join('\n');
+            const lines = [
+              '**Discord Actions 예약 실행이 멈췄습니다**',
+              `기준: ${threshold}시간`,
+            ];
+            for (const problem of problems) {
+              const latestText = problem.latest
+                ? `${problem.ageHours.toFixed(1)}시간 전`
+                : '없음';
+              const successText = problem.latestSuccess
+                ? `${problem.successAgeHours.toFixed(1)}시간 전`
+                : '없음';
+              lines.push(
+                `- ${problem.label}: 마지막 실행 ${latestText}, 마지막 성공 ${successText}`
+              );
+              if (problem.latest) {
+                lines.push(`  ${problem.latest.html_url}`);
+              }
+            }
             const response = await fetch(webhook, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content, username: 'Discord Actions' }),
+              body: JSON.stringify({
+                content: lines.join('\n'),
+                username: 'Discord Actions',
+                allowed_mentions: { parse: [] },
+              }),
             });
             if (!response.ok) {
               core.setFailed(`Admin notification failed with HTTP ${response.status}`);

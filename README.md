@@ -1,6 +1,6 @@
 # Discord Actions
 
-Discord Actions checks Google News and YouTube with GitHub Actions and sends new items to Discord webhooks. No separate server is required. The default polling interval is 15 minutes.
+Discord Actions checks Google News and YouTube with GitHub Actions and sends new items to Discord webhooks. No separate server is required. It is designed for a 15-minute cadence; while GitHub's scheduler is unreliable, a Cloudflare Worker trigger is used alongside it (see the schedule section).
 
 ## Behavior
 
@@ -16,10 +16,10 @@ Discord Actions checks Google News and YouTube with GitHub Actions and sends new
 1. Fork this repository or create a repository from the template.
 2. Open **Settings → Secrets and variables → Actions**.
 3. Add only the Secrets and Variables required by the service you use. Never paste their values into documentation, issues, or Actions logs.
-4. Open **Actions** and run **Google News Manual Delivery Test** or **YouTube Manual Delivery Test** first. These workflows send real Discord messages; the scheduled operating workflows no longer have a **Run workflow** button.
-5. Leave the two scheduled operating workflows enabled after the test. They continue automatically every 15 minutes; no separate enable variable is required.
+4. Open **Actions** and run **Google News Manual Delivery Test** or **YouTube Manual Delivery Test** first. These workflows send real Discord messages. The operating workflows do have a **Run workflow** button for the external trigger and emergencies; pressing it sends real messages. Use Manual Delivery Test when you need exactly one item.
+5. Leave the two scheduled operating workflows enabled after the test. With the Worker trigger they run every 15 minutes; the GitHub schedule remains as a fallback and fires a few times a day.
 
-The maintained Actions list contains two scheduled operating workflows (**Google News to Discord** and **YouTube to Discord Notification**), two actual-delivery test workflows (**Google News Manual Delivery Test** and **YouTube Manual Delivery Test**), and **Python Tests**. The former separate Top, Topic, and Keyword Google News workflows were replaced by the unified profile workflow. Historical runs remain as operational evidence even after an obsolete workflow file is removed.
+The maintained Actions list contains two scheduled operating workflows (**Google News to Discord** and **YouTube to Discord Notification**), two actual-delivery test workflows (**Google News Manual Delivery Test** and **YouTube Manual Delivery Test**), **Python Tests**, and four operating helpers (**Google News Backlog Reset**, **Google News Schedule Health**, **Set Discord Webhook Avatars**, and **Dependabot Auto Merge**). The former separate Top, Topic, and Keyword Google News workflows were replaced by the unified profile workflow. Historical runs remain as operational evidence even after an obsolete workflow file is removed.
 
 ### Dedicated manual delivery tests
 
@@ -152,7 +152,7 @@ Scheduled delivery continues automatically while the workflow is enabled. The op
 | `feed_oldest_first` | Default. Send older positions in the current RSS response first |
 | `feed_newest_first` | Send newer positions in the current RSS response first |
 
-Two more optional Repository Variables tune volume and history. The URL-resolution cache is pruned separately with `GOOGLE_NEWS_URL_CACHE_RETENTION_DAYS` (default 7 days). `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE` caps new Discord deliveries per profile in one run (default 25, maximum 100) and leaves the rest for later runs. `GOOGLE_NEWS_STATE_RETENTION_DAYS` sets how many days of finished article history travel in the state artifact (default 30, range 1-365). `GOOGLE_NEWS_RUN_BUDGET_SECONDS` bounds one run in seconds (default 1080, range 60-1200); when it is reached, remaining work moves to the next run and the state is saved before a normal exit. Pending or retryable deliveries are kept regardless of age.
+Several optional Repository Variables tune volume and history. The URL-resolution cache is pruned separately with `GOOGLE_NEWS_URL_CACHE_RETENTION_DAYS` (default 7 days). `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE` caps new Discord deliveries per profile in one run (default 25, maximum 100) and leaves the rest for later runs. `GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS` caps how many original URLs are resolved over the network per profile in one run (default 40, range 0-1000); links beyond that use the validated Google News article URL. `GOOGLE_NEWS_STATE_RETENTION_DAYS` sets how many days of finished article history travel in the state artifact (default 30, range 1-365). `GOOGLE_NEWS_RUN_BUDGET_SECONDS` bounds one run in seconds (default 1080, range 60-1200); when it is reached, remaining work moves to the next run and the state is saved before a normal exit. The job timeout is 35 minutes, and pruning or VACUUM is skipped when less than three minutes remain so the state upload wins. The state artifact is kept for 3 days because only the newest one is restored. Pending items are kept while the backlog is under 500; at 500 or more, items older than 3 days expire (see Troubleshooting).
 
 ### Accurate keyword matching
 
@@ -198,7 +198,7 @@ This excludes an item only when its main RSS title contains `운세`. An occurre
 
 Filtered items retain a configuration fingerprint. They are skipped under the same setting and re-evaluated while still present in RSS after the mode or aliases change. `ADVANCED_FILTER_KEYWORD` remains an additional narrowing condition after this match.
 
-The main story and every related story attempt original-URL resolution. A related story that cannot be resolved uses only a validated Google News article fallback. Long related-story lists are split into follow-up messages without changing order.
+The main story and related stories attempt original-URL resolution, up to `GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS` (default 40) per profile per run. Links beyond that limit, and related stories that cannot be resolved, use only a validated Google News article fallback. Long related-story lists are split into follow-up messages without changing order.
 
 ### Publisher display names and review artifact
 
@@ -403,7 +403,11 @@ Edit `cron` under the workflow's `schedule`. Each expression has exactly five fi
 | Every Monday at 09:00 | `0 9 * * 1` | `0 9 * * 1` |
 | First day of each month at 09:00 | `0 9 1 * *` | `0 9 1 * *` |
 
-Scheduled GitHub Actions runs can start late. Weekly and monthly examples are calendar schedules, not fixed 7-day or 30-day durations. Google News RSS is not an archive: with long intervals, an article that has already disappeared from the feed cannot be recovered. Use the default 15-minute schedule when minimizing missed news matters.
+Scheduled GitHub Actions runs can start late or be dropped. Since late August 2026 there have been reports of 3-12 hour delays and missing runs, and this repository's own history shows about four to five runs a day instead of every 15 minutes. The external trigger is recommended for that reason. Weekly and monthly examples are calendar schedules, not fixed 7-day or 30-day durations. Google News RSS is not an archive: with long intervals, an article that has already disappeared from the feed cannot be recovered. Use the default 15-minute schedule when minimizing missed news matters.
+
+### External trigger (recommended)
+
+GitHub's `schedule` is not a guaranteed cron. This repository's October-November 2026 history shows the 15-minute schedule firing only four to five times a day, with gaps of up to ten hours. The Cloudflare Worker in `ops/state-trigger` calls both operating workflows through `workflow_dispatch` every 15 minutes. Follow [ops/state-trigger/README.md](ops/state-trigger/README.md) to deploy it. The GitHub `schedule` stays in place as a fallback, so delivery continues a few times a day even without the Worker.
 
 ## Diagnostic logs
 
@@ -439,7 +443,7 @@ Search the run log for `event=` to follow every delivery decision, including the
 - At the start of a scheduled run, if a profile has at least `GOOGLE_NEWS_BACKLOG_LIMIT` pending deliveries (default 500), unfinished items older than `GOOGLE_NEWS_BACKLOG_AGE_DAYS` (default 3 days) are expired and the admin channel is alerted. No divider is posted to regular channels.
 - To clear a large backlog once, run **Actions → Google News Backlog Reset** manually and type `RESET` in `confirmation`. Pending deliveries are expired and affected channels receive a single `---` divider; new items discovered afterwards are delivered normally. This is irreversible.
 - A failed state artifact upload is retried once. If both attempts fail, the workflow fails so the next run's possible fallback to an older state and duplicate deliveries are visible.
-- If no scheduled Google News run has completed for 12 hours, the **Google News Schedule Health** workflow checks every six hours and alerts the admin channel. Disable that workflow if you do not want the alert.
+- Every six hours the **Google News Schedule Health** workflow checks the last successful Google News and YouTube runs. It alerts the admin channel when either is older than `GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS` (default 6 hours); lower it to 3 once the Worker trigger is stable. Disable the workflow if you do not want the alert.
 - Dependabot auto-merges pip patch updates only after the `test` check passes. Review and merge minor, major, security, and GitHub Actions updates manually. Dependabot alerts and security updates are enabled.
 - GitHub can automatically disable scheduled workflows in a public repository after 60 days without repository activity. Re-enable the affected workflow from **Actions** when GitHub shows that notice. This project does not use an automated keepalive workaround for that platform policy. See [GitHub's workflow enable/disable documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 - Distinguish GitHub scheduling delays and external API limits from code failures. Saved incomplete deliveries resume in sequence on the next run.

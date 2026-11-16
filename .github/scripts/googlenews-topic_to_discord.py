@@ -35,6 +35,7 @@ from google_news_discord_delivery import (
     split_discord_content,
 )
 from google_news_feed_filter import compile_google_news_feed_filter
+from google_news_handler_runtime import deliver_queued_items
 from feed_localization import (
     format_google_news_datetime,
     labels_for,
@@ -103,7 +104,7 @@ RSS_URL_TOPIC = os.environ.get('RSS_URL_TOPIC', '')
 PROFILE_ID = os.environ.get('GOOGLE_NEWS_PROFILE_ID', '')
 RESULT_PATH = os.environ.get('GOOGLE_NEWS_RESULT_PATH', '')
 VALIDATE_ONLY = os.environ.get('GOOGLE_NEWS_VALIDATE_ONLY', 'false').lower() == 'true'
-MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '1000'))
+MAX_NETWORK_RESOLUTIONS = int(os.environ.get('GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS', '40'))
 MAX_SCHEDULED_DELIVERIES = scheduled_delivery_limit(
     os.environ.get('GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE', '25')
 )
@@ -1274,70 +1275,6 @@ def apply_advanced_filter(title, description, advanced_filter):
 
     return True
 
-def parse_date_filter(filter_string):
-    since_date = None
-    until_date = None
-    past_date = None
-
-    logging.info(f"파싱 중인 날짜 필터 문자열: {filter_string}")
-
-    if not filter_string:
-        logging.warning("날짜 필터 문자열이 비어있습니다.")
-        return since_date, until_date, past_date
-
-    since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
-    until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
-    
-    if since_match:
-        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        logging.info(f"since_date 파싱 결과: {since_date}")
-    if until_match:
-        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        logging.info(f"until_date 파싱 결과: {until_date}")
-
-    past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
-    if past_match:
-        value = int(past_match.group(1))
-        unit = past_match.group(2)
-        now = datetime.now(timezone.utc)
-        if unit == 'h':
-            past_date = now - timedelta(hours=value)
-        elif unit == 'd':
-            past_date = now - timedelta(days=value)
-        elif unit == 'm':
-            past_date = now - timedelta(days=value*30)  # 근사값 사용
-        elif unit == 'y':
-            past_date = now - timedelta(days=value*365)  # 근사값 사용
-        logging.info(f"past_date 파싱 결과: {past_date}")
-    else:
-        logging.warning("past: 형식의 날짜 필터를 찾을 수 없습니다.")
-
-    logging.info(f"최종 파싱 결과 - since_date: {since_date}, until_date: {until_date}, past_date: {past_date}")
-    return since_date, until_date, past_date
-
-def is_within_date_range(pub_date, since_date, until_date, past_date):
-    pub_datetime = parser.parse(pub_date).replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
-    
-    logging.info(f"검사 중인 기사 날짜: {pub_datetime}")
-    logging.info(f"현재 날짜: {now}")
-    logging.info(f"설정된 필터 - since_date: {since_date}, until_date: {until_date}, past_date: {past_date}")
-
-    if past_date:
-        result = pub_datetime >= past_date
-        logging.info(f"past_date 필터 적용 결과: {result}")
-        return result
-    
-    if since_date and pub_datetime < since_date:
-        logging.info(f"since_date 필터에 의해 제외됨")
-        return False
-    if until_date and pub_datetime > until_date:
-        logging.info(f"until_date 필터에 의해 제외됨")
-        return False
-    
-    logging.info(f"모든 날짜 필터를 통과함")
-    return True
-
 def main():
     """메인 함수: RSS 피드를 가져와 처리하고 Discord로 전송합니다."""
     processed_count = 0
@@ -1590,49 +1527,17 @@ def main():
                 break
 
         if not profile_failed:
-            for guid, title in queued_items[:max(0, delivery_limit - resumed_count)]:
-                try:
-                    deliver_reserved_item(guid)
-                    processed_count += 1
-                    emit_event(
-                        "item_done",
-                        profile=PROFILE_ID,
-                        item=item_ref(guid),
-                        delivered=processed_count,
-                    )
-                    logging.info(f"뉴스 항목 처리 완료: {title}")
-                except Exception as error:
-                    profile_failed = True
-                    profile_failure_code = getattr(
-                        error, "error_code", "profile_run_failed"
-                    )
-                    code, status, attempt = _error_detail(error)
-                    logging.error(
-                        "뉴스 항목 전송 실패 (코드: %s, 상태: %s, 시도: %s, 유형: %s)",
-                        code,
-                        status,
-                        attempt,
-                        type(error).__name__,
-                    )
-                    emit_event(
-                        "item_failed",
-                        profile=PROFILE_ID,
-                        item=item_ref(guid),
-                        code=code,
-                        status=status,
-                        attempt=attempt,
-                    )
-                    if profile_failure_code == "run_deadline_exceeded":
-                        break
-                    print("::warning title=Google News delivery failed::A queued delivery remains pending")
-                    notify_admin(
-                        DISCORD_WEBHOOK_ADMIN,
-                        "Google News",
-                        PROFILE_ID or "topic",
-                        guid,
-                        getattr(error, "error_code", "final_failure"),
-                    )
-                    break
+            batch = deliver_queued_items(
+                queued_items,
+                delivery_limit=max(0, delivery_limit - resumed_count),
+                deliver=deliver_reserved_item,
+                profile_label=PROFILE_ID or "topic",
+                admin_webhook=DISCORD_WEBHOOK_ADMIN,
+                profile_id=PROFILE_ID,
+            )
+            processed_count += batch.processed_count
+            profile_failed = batch.failed
+            profile_failure_code = batch.error_code or profile_failure_code
 
         if profile_failed:
             if profile_failure_code == "run_deadline_exceeded":

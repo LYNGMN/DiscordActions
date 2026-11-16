@@ -245,7 +245,7 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual("/state/top_us.db", environment["GOOGLE_NEWS_DB_PATH"])
         self.assertEqual("/state/resolver.db", environment["GOOGLE_NEWS_RESOLVER_DB_PATH"])
         self.assertEqual("true", environment["MANUAL_TEST_MODE"])
-        self.assertEqual("1000", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
+        self.assertEqual("40", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
         self.assertEqual("25", environment["GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE"])
         self.assertEqual(
             FAKE_WEBHOOK_BASE + "/3/redacted", environment["DISCORD_WEBHOOK_ADMIN"]
@@ -257,6 +257,27 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual("12345", environment["GITHUB_RUN_ID"])
         self.assertNotIn("DISCORD_WEBHOOK_GN_KEYWORD_IU", environment)
         self.assertNotIn("UNRELATED_SECRET", environment)
+
+    def test_network_resolution_limit_is_configurable(self):
+        profile = self.module.validate_profile_data(valid_registry())[0]
+        base_env = {
+            "DISCORD_WEBHOOK_GN_TOP_US": FAKE_WEBHOOK_BASE + "/1/redacted",
+            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "7",
+        }
+
+        environment = self.module.build_handler_environment(
+            profile, base_env, "/state", "/state/resolver.db", False
+        )
+
+        self.assertEqual("7", environment["GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS"])
+        self.assertEqual(40, self.module.parse_max_network_resolutions("40"))
+        self.assertEqual(0, self.module.parse_max_network_resolutions("0"))
+        for invalid in ("", "abc", "-1", "1001", " 40"):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_google_news_max_network_resolutions"
+                ):
+                    self.module.parse_max_network_resolutions(invalid)
 
     def test_keyword_match_mode_is_validated(self):
         invalid = valid_registry()
@@ -327,6 +348,113 @@ class GoogleNewsProfileTests(unittest.TestCase):
                 "FEED_KEYWORD_SCOPE": "title",
             }
         )
+
+    def test_handler_mode_combinations_are_rejected_before_runtime(self):
+        def assert_invalid(mutate):
+            data = copy.deepcopy(valid_registry())
+            mutate(data)
+            with self.assertRaises(ValueError):
+                self.module.validate_profile_data(data)
+
+        assert_invalid(
+            lambda data: data[0]["environment"].update(
+                {
+                    "RSS_URL_TOP": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+                }
+            )
+        )
+        assert_invalid(
+            lambda data: data[0]["environment"].update({"TOP_MODE": "True"})
+        )
+        assert_invalid(
+            lambda data: data[0]["environment"].update({"TOP_COUNTRY": "ZZ"})
+        )
+        assert_invalid(
+            lambda data: data[0]["environment"].update({"FEED_COUNTRY": "ZZ"})
+        )
+        assert_invalid(
+            lambda data: data[1]["environment"].update(
+                {"AFTER_DATE": "2026-01-01"}
+            )
+        )
+        assert_invalid(lambda data: data[1]["environment"].update({"HL": ""}))
+        assert_invalid(
+            lambda data: data[1]["environment"].update(
+                {"AFTER_DATE": "2026-13-01"}
+            )
+        )
+        assert_invalid(
+            lambda data: data[1]["environment"].update({"KEYWORD_MODE": "false"})
+        )
+        assert_invalid(
+            lambda data: data[1]["environment"].update(
+                {"RSS_URL_KEYWORD": "https://evil.example/rss"}
+            )
+        )
+
+        def add_invalid_topic(data, topic, params):
+            data.append(
+                {
+                    "id": "topic_test",
+                    "handler": "topic",
+                    "webhook_env": "DISCORD_WEBHOOK_GN_TOPIC_TEST",
+                    "expected_webhook_name": "Google News - TOPIC - TEST",
+                    "state_db": "topic_test.db",
+                    "visible_username": "Google News",
+                    "environment": {
+                        "TOPIC_MODE": "true",
+                        "TOPIC_KEYWORD": topic,
+                        "TOPIC_PARAMS": params,
+                    },
+                }
+            )
+
+        assert_invalid(
+            lambda data: add_invalid_topic(
+                data, "does_not_exist", "?hl=ko&gl=KR&ceid=KR%3Ako"
+            )
+        )
+        assert_invalid(
+            lambda data: add_invalid_topic(data, "korea", "not-a-query")
+        )
+        assert_invalid(
+            lambda data: add_invalid_topic(
+                data, "korea", "?hl=ko&gl=ZZ&ceid=KR%3Ako"
+            )
+        )
+
+    def test_supported_topics_match_the_runtime_topic_map(self):
+        import ast
+
+        source = (
+            SCRIPTS_DIR / "googlenews-topic_to_discord.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        actual = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                getattr(target, "id", None) == "TOPIC_MAP"
+                for target in node.targets
+            ):
+                actual = {key.value for key in node.value.keys}
+        self.assertEqual(actual, set(self.module.SUPPORTED_TOPICS))
+
+    def test_every_top_country_has_a_timezone_entry(self):
+        import ast
+
+        source = (
+            SCRIPTS_DIR / "googlenews-top_to_discord.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        actual = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                getattr(target, "id", None) == "country_configs"
+                for target in node.targets
+            ):
+                actual = {key.value for key in node.value.keys}
+        self.assertTrue(actual)
+        self.assertEqual(set(), actual - set(self.module.COUNTRY_TIMEZONES))
 
     def test_missing_selected_webhook_is_rejected(self):
         profile = self.module.validate_profile_data(copy.deepcopy(valid_registry()))[0]

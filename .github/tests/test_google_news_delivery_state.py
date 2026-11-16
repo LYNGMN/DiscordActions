@@ -721,6 +721,45 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertEqual(remaining, message_guids)
         self.assertEqual(remaining, identity_guids)
 
+    def test_state_retention_is_skipped_when_the_run_deadline_is_near(self):
+        now = datetime(2026, 11, 15, tzinfo=timezone.utc)
+        expired = (now - timedelta(days=40)).isoformat()
+        self.assertTrue(
+            self.module.reserve_delivery_with_messages(
+                self.db_path,
+                "expired-sent",
+                "제목",
+                "https://publisher.example/expired",
+                ["본문"],
+            )
+        )
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE news_items SET delivery_status = 'sent', created_at = ? "
+                "WHERE guid = 'expired-sent'",
+                (expired,),
+            )
+            connection.execute(
+                "UPDATE google_news_delivery_messages SET status = 'sent' "
+                "WHERE guid = 'expired-sent'"
+            )
+
+        stats = self.module.apply_state_retention(
+            [self.db_path],
+            retention_days=14,
+            now=now,
+            deadline=0.0,
+        )
+
+        self.assertEqual(0, stats["items"])
+        with sqlite3.connect(self.db_path) as connection:
+            self.assertEqual(
+                1,
+                connection.execute(
+                    "SELECT COUNT(*) FROM news_items WHERE guid = 'expired-sent'"
+                ).fetchone()[0],
+            )
+
     def test_state_retention_backfills_legacy_pub_dates(self):
         now = datetime(2026, 11, 15, tzinfo=timezone.utc)
         with sqlite3.connect(self.db_path) as connection:

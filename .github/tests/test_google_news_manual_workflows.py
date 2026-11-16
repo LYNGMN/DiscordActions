@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -42,6 +43,20 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
         self.assertIn("up to 11", source)
         self.assertIn("최대 11", source)
 
+    def test_manual_choices_cover_every_profile(self):
+        config = json.loads(
+            (ROOT / ".github" / "config" / "google_news_profiles.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile_ids = [profile["id"] for profile in config]
+        source = MANUAL_WORKFLOW.read_text(encoding="utf-8")
+
+        for profile_id in profile_ids:
+            self.assertIn("- {}".format(profile_id), source)
+        self.assertIn("up to {}".format(len(profile_ids)), source)
+        self.assertIn("최대 {}건".format(len(profile_ids)), source)
+
     def test_manual_workflow_selects_one_profile_or_all_and_sends_real_messages(self):
         source = MANUAL_WORKFLOW.read_text(encoding="utf-8")
 
@@ -59,17 +74,15 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             self.assertIn("cancel-in-progress: false", source)
             self.assertIn("'googlenews-to-discord.yml'", source)
             self.assertIn("'googlenews-manual-test.yml'", source)
-            self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
+            self.assertIn("selectLatestArtifact", source)
+            self.assertIn("artifactName: 'google-news-state'", source)
             self.assertIn("name: google-news-state", source)
             self.assertIn("if: always()", source)
 
-    def test_ci_compiles_manual_test_module(self):
+    def test_ci_compiles_every_script(self):
         source = (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
 
-        self.assertIn(
-            ".github/scripts/google_news_manual_test.py",
-            source,
-        )
+        self.assertIn("python -m compileall -q .github/scripts", source)
 
     def test_obsolete_and_blocked_workflows_are_removed(self):
         for workflow_name in REMOVED_WORKFLOWS:

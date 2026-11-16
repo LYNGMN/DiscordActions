@@ -85,9 +85,11 @@ class YouTubeDiscordDeliveryTests(unittest.TestCase):
 
         self.assertEqual("YouTube", result["username"])
         self.assertEqual(APPROVED_AVATAR, result["avatar_url"])
+        self.assertEqual({"parse": []}, result["allowed_mentions"])
         self.assertEqual(APPROVED_AVATAR, result["embeds"][0]["footer"]["icon_url"])
         self.assertEqual(APPROVED_AVATAR, result["embeds"][1]["footer"]["icon_url"])
         self.assertNotIn("avatar_url", payload)
+        self.assertNotIn("allowed_mentions", payload)
         self.assertEqual("stale", payload["embeds"][0]["footer"]["icon_url"])
         self.assertNotIn("footer", payload["embeds"][1])
 

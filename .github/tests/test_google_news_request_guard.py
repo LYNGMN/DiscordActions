@@ -101,6 +101,26 @@ class GoogleNewsRequestGuardTests(unittest.TestCase):
             second.get_open_circuit().blocked_until,
         )
 
+    def test_rss_and_resolver_circuits_are_independent(self):
+        guard = self.make_guard(QueueSession())
+
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO google_news_resolver_state "
+                "(state_key, blocked_until, last_error_code, updated_at) "
+                "VALUES ('rss', ?, 'http_403', ?)",
+                (
+                    (self.fixed_now + timedelta(minutes=30)).isoformat(),
+                    self.fixed_now.isoformat(),
+                ),
+            )
+
+        self.assertIsNotNone(guard.get_open_circuit("rss"))
+        self.assertIsNone(guard.get_open_circuit("resolver"))
+
+        guard.clear_circuit("resolver")
+        self.assertIsNotNone(guard.get_open_circuit("rss"))
+
     def test_http_403_opens_the_same_persistent_circuit(self):
         guard = self.make_guard(QueueSession(get_responses=[FakeResponse(403)]))
 
@@ -110,7 +130,7 @@ class GoogleNewsRequestGuardTests(unittest.TestCase):
         state = guard.get_open_circuit()
         self.assertEqual("http_403", state.error_code)
         self.assertEqual(
-            self.fixed_now + timedelta(hours=1),
+            self.fixed_now + timedelta(minutes=30),
             state.blocked_until,
         )
 
@@ -176,7 +196,7 @@ class GoogleNewsRequestGuardTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as connection:
             row = connection.execute(
                 "SELECT blocked_until, last_error_code, updated_at "
-                "FROM google_news_resolver_state WHERE state_key = 'global'"
+                "FROM google_news_resolver_state WHERE state_key = 'rss'"
             ).fetchone()
         self.assertEqual("http_429", row[1])
         self.assertNotIn("must-not-leak", " ".join(row))

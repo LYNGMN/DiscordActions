@@ -4,13 +4,36 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from types import MappingProxyType
 from typing import Dict, List, Mapping
+from urllib.parse import parse_qs, urlparse
 
 from feed_filters import compile_feed_filter, resolve_feed_timezone
 from feed_localization import resolve_display_language
+from feed_timezones import COUNTRY_TIMEZONES
 
 
+DEFAULT_MAX_NETWORK_RESOLUTIONS = 40
+MAX_NETWORK_RESOLUTIONS = 1000
+SUPPORTED_TOPICS = frozenset(
+    {
+        "ai", "american_football", "art_design", "automation", "automotive",
+        "baseball", "basketball", "beauty", "business", "celebrity", "china",
+        "cricket", "cycling", "digital_currency", "economy", "education",
+        "energy", "entertainment", "environment", "fashion", "finance", "food",
+        "gadgets", "games", "geography", "golf", "headlines", "health",
+        "higher_education", "hockey", "home", "internet_security", "japan",
+        "job_market", "korea", "martial_arts", "medicine", "mental_health",
+        "mobile", "motorsports", "movies", "music", "neuroscience",
+        "nutrition", "online_education", "outdoor", "paleontology",
+        "personal_finance", "physics", "politics", "public_health", "robotics",
+        "science", "science_technology", "shopping", "soccer", "social_science",
+        "space", "sports", "sports_betting", "technology", "tennis", "theater",
+        "travel", "tv", "us", "virtual_reality", "water_sports", "wildlife",
+        "world",
+    }
+)
 PROFILE_FIELDS = {
     "id",
     "handler",
@@ -101,6 +124,121 @@ def _require_non_empty_string(item: Mapping[str, object], key: str, index: int) 
     return value
 
 
+def _mode_is_true(value: Mapping[str, str], key: str, index: int) -> bool:
+    item = value.get(key)
+    if item not in {"true", "false"}:
+        raise ValueError(
+            "profile {} has invalid {} (expected true or false)".format(index, key)
+        )
+    return item == "true"
+
+
+def _require_google_rss_url(
+    value: Mapping[str, str], key: str, index: int
+) -> None:
+    candidate = value.get(key, "")
+    parsed = urlparse(candidate)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "news.google.com"
+        or parsed.netloc != "news.google.com"
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError(
+            "profile {} {} must be an HTTPS news.google.com URL".format(index, key)
+        )
+
+
+def _validate_handler_modes(
+    handler: str, value: Mapping[str, str], index: int
+) -> None:
+    if handler == "top":
+        if _mode_is_true(value, "TOP_MODE", index):
+            if "RSS_URL_TOP" in value:
+                raise ValueError(
+                    "profile {} must not set RSS_URL_TOP when TOP_MODE is true".format(
+                        index
+                    )
+                )
+            country = value.get("TOP_COUNTRY", "")
+            if not re.fullmatch(r"[A-Z]{2}", country) or country not in COUNTRY_TIMEZONES:
+                raise ValueError("profile {} has invalid TOP_COUNTRY".format(index))
+        else:
+            _require_google_rss_url(value, "RSS_URL_TOP", index)
+        return
+
+    if handler == "topic":
+        if _mode_is_true(value, "TOPIC_MODE", index):
+            if "RSS_URL_TOPIC" in value:
+                raise ValueError(
+                    "profile {} must not set RSS_URL_TOPIC when TOPIC_MODE is true".format(
+                        index
+                    )
+                )
+            topic = value.get("TOPIC_KEYWORD", "")
+            if topic not in SUPPORTED_TOPICS:
+                raise ValueError("profile {} has invalid TOPIC_KEYWORD".format(index))
+            params = value.get("TOPIC_PARAMS", "")
+            if not params.startswith("?"):
+                raise ValueError("profile {} has invalid TOPIC_PARAMS".format(index))
+            query = parse_qs(params[1:], keep_blank_values=True)
+            if set(query) != {"hl", "gl", "ceid"}:
+                raise ValueError("profile {} has invalid TOPIC_PARAMS".format(index))
+            if any(len(items) != 1 or not items[0] for items in query.values()):
+                raise ValueError("profile {} has invalid TOPIC_PARAMS".format(index))
+            if (
+                not re.fullmatch(r"[A-Z]{2}", query["gl"][0])
+                or query["gl"][0] not in COUNTRY_TIMEZONES
+            ):
+                raise ValueError("profile {} has invalid TOPIC_PARAMS".format(index))
+        else:
+            _require_google_rss_url(value, "RSS_URL_TOPIC", index)
+        return
+
+    if _mode_is_true(value, "KEYWORD_MODE", index):
+        if "RSS_URL_KEYWORD" in value:
+            raise ValueError(
+                "profile {} must not set RSS_URL_KEYWORD when KEYWORD_MODE is true".format(
+                    index
+                )
+            )
+        for key in ("HL", "GL", "CEID"):
+            if not value.get(key, "").strip():
+                raise ValueError("profile {} has empty {}".format(index, key))
+        gl = value.get("GL", "")
+        if not re.fullmatch(r"[A-Z]{2}", gl) or gl not in COUNTRY_TIMEZONES:
+            raise ValueError("profile {} has invalid GL".format(index))
+        if not re.fullmatch(r"[A-Za-z0-9-]+:[A-Za-z0-9-]+", value.get("CEID", "")):
+            raise ValueError("profile {} has invalid CEID".format(index))
+        if value.get("CEID", "").split(":", 1)[0] != gl:
+            raise ValueError("profile {} CEID must match GL".format(index))
+        if not re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z]{2,4})?", value.get("HL", "")):
+            raise ValueError("profile {} has invalid HL".format(index))
+        when = value.get("WHEN", "")
+        after = value.get("AFTER_DATE", "")
+        before = value.get("BEFORE_DATE", "")
+        if when and (after or before):
+            raise ValueError(
+                "profile {} must not combine WHEN with AFTER_DATE or BEFORE_DATE".format(
+                    index
+                )
+            )
+        if when and not re.fullmatch(r"[1-9][0-9]*[hdwmy]", when):
+            raise ValueError("profile {} has invalid WHEN".format(index))
+        for key, item in (("AFTER_DATE", after), ("BEFORE_DATE", before)):
+            if not item:
+                continue
+            try:
+                datetime.strptime(item, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(
+                    "profile {} has invalid {}".format(index, key)
+                ) from None
+    else:
+        _require_google_rss_url(value, "RSS_URL_KEYWORD", index)
+
+
 def _validate_environment(handler: str, value: object, index: int) -> Mapping[str, str]:
     if not isinstance(value, dict):
         raise ValueError("profile {} environment must be an object".format(index))
@@ -125,6 +263,10 @@ def _validate_environment(handler: str, value: object, index: int) -> Mapping[st
                 index, ", ".join(sorted(unknown))
             )
         )
+    country = value.get("FEED_COUNTRY", "")
+    if country and (not re.fullmatch(r"[A-Z]{2}", country) or country not in COUNTRY_TIMEZONES):
+        raise ValueError("profile {} has invalid FEED_COUNTRY".format(index))
+    _validate_handler_modes(handler, value, index)
     if (
         handler == "keyword"
         and "KEYWORD_DISPLAY_NAME" in value
@@ -253,6 +395,15 @@ def load_profiles(path: str) -> List[GoogleNewsProfile]:
         return validate_profile_data(json.load(handle))
 
 
+def parse_max_network_resolutions(value: str = "40") -> int:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,4}", value):
+        raise ValueError("invalid_google_news_max_network_resolutions")
+    parsed = int(value)
+    if parsed > MAX_NETWORK_RESOLUTIONS:
+        raise ValueError("invalid_google_news_max_network_resolutions")
+    return parsed
+
+
 def build_handler_environment(
     profile: GoogleNewsProfile,
     base_env: Mapping[str, str],
@@ -275,7 +426,14 @@ def build_handler_environment(
             "GOOGLE_NEWS_PROFILE_ID": profile.profile_id,
             "GOOGLE_NEWS_DB_PATH": os.path.join(state_dir, profile.state_db),
             "GOOGLE_NEWS_RESOLVER_DB_PATH": resolver_db,
-            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "1000",
+            "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": str(
+                parse_max_network_resolutions(
+                    base_env.get(
+                        "GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS",
+                        str(DEFAULT_MAX_NETWORK_RESOLUTIONS),
+                    )
+                )
+            ),
             "GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE": base_env.get(
                 "GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE", "25"
             ),

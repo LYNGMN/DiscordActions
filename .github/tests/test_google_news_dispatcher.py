@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -465,6 +466,37 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             all(call[1]["GOOGLE_NEWS_VALIDATE_ONLY"] == "true" for call in calls)
         )
 
+    def test_check_config_validates_without_starting_handlers(self):
+        with (
+            mock.patch.object(
+                self.dispatcher, "load_profiles", return_value=self.profiles
+            ),
+            mock.patch.object(self.dispatcher, "run_dispatch") as run_dispatch,
+        ):
+            code = self.dispatcher.main(
+                ["--check-config", "--state-dir", self.state_dir]
+            )
+
+        self.assertEqual(0, code)
+        run_dispatch.assert_not_called()
+
+    def test_check_config_rejects_invalid_repo_settings(self):
+        with (
+            mock.patch.object(
+                self.dispatcher, "load_profiles", return_value=self.profiles
+            ),
+            mock.patch.dict(
+                os.environ, {"GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS": "abc"}
+            ),
+            mock.patch.object(self.dispatcher, "run_dispatch") as run_dispatch,
+        ):
+            code = self.dispatcher.main(
+                ["--check-config", "--state-dir", self.state_dir]
+            )
+
+        self.assertEqual(1, code)
+        run_dispatch.assert_not_called()
+
     def test_local_profile_failure_does_not_stop_later_profiles(self):
         profiles = self.profiles[:2]
         call_count = 0
@@ -508,7 +540,7 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                     """
                     INSERT OR REPLACE INTO google_news_resolver_state (
                         state_key, blocked_until, last_error_code, updated_at
-                    ) VALUES ('global', ?, 'http_429', ?)
+                    ) VALUES ('rss', ?, 'http_429', ?)
                     """,
                     (
                         (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
@@ -542,6 +574,162 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
         self.assertTrue(
             all(item.error_code == "circuit_open" for item in summary.profiles[1:])
         )
+
+    def test_resolver_only_circuit_does_not_skip_profiles(self):
+        profiles = self.profiles[:3]
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(state_path / "resolver.db")) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS google_news_resolver_state ("
+                "state_key TEXT PRIMARY KEY, blocked_until TEXT, "
+                "last_error_code TEXT, updated_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO google_news_resolver_state "
+                "(state_key, blocked_until, last_error_code, updated_at) "
+                "VALUES ('resolver', ?, 'http_403', ?)",
+                (
+                    (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        calls = []
+
+        summary = self.dispatcher.run_profiles(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual(3, len(calls))
+        self.assertEqual(
+            ["success", "success", "success"],
+            [item.status for item in summary.profiles],
+        )
+
+    def test_corrupt_state_database_is_quarantined(self):
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        db_path = state_path / "top_us.db"
+        db_path.write_bytes(b"not a database")
+
+        repaired = self.dispatcher._check_state_databases(
+            state_path, ["top_us.db", "resolver.db"]
+        )
+
+        self.assertEqual(1, len(repaired))
+        self.assertEqual("top_us.db", repaired[0]["database"])
+        self.assertFalse(db_path.exists())
+        quarantine = Path(repaired[0]["quarantine"])
+        self.addCleanup(shutil.rmtree, quarantine, True)
+        self.assertTrue((quarantine / "top_us.db").exists())
+
+    def test_healthy_state_database_is_not_quarantined(self):
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(state_path / "top_us.db")) as connection:
+            connection.execute("CREATE TABLE marker (value TEXT)")
+
+        repaired = self.dispatcher._check_state_databases(
+            state_path, ["top_us.db"]
+        )
+
+        self.assertEqual([], repaired)
+        self.assertTrue((state_path / "top_us.db").exists())
+
+    def test_run_summary_reports_a_quarantined_database(self):
+        profiles = self.profiles[:2]
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        (state_path / "top_us.db").write_bytes(b"not a database")
+        calls = []
+
+        summary = self.dispatcher.run_profiles(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual(2, len(calls))
+        self.assertEqual(1, len(summary.state_repairs))
+        self.assertEqual("top_us.db", summary.state_repairs[0]["database"])
+        self.addCleanup(
+            shutil.rmtree, summary.state_repairs[0]["quarantine"], True
+        )
+
+    def test_rotation_starts_at_the_saved_profile(self):
+        profiles = self.profiles[:3]
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        (state_path / "profile-rotation.json").write_text(
+            '{"next_profile_index": 2}', encoding="utf-8"
+        )
+        calls = []
+
+        self.dispatcher.run_profiles(
+            profiles,
+            self.env,
+            self.state_dir,
+            manual_test=False,
+            subprocess_runner=self.successful_runner(calls),
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual(
+            [
+                profiles[2].profile_id,
+                profiles[0].profile_id,
+                profiles[1].profile_id,
+            ],
+            [env["GOOGLE_NEWS_PROFILE_ID"] for _, env, _ in calls],
+        )
+        self.assertEqual(
+            0,
+            json.loads(
+                (state_path / "profile-rotation.json").read_text(encoding="utf-8")
+            )["next_profile_index"],
+        )
+
+    def test_next_rotation_index_resumes_at_the_first_budget_skip(self):
+        profiles = self.profiles[:3]
+        result = self.dispatcher.ProfileRunResult
+        results = [
+            result(profiles[0].profile_id, "success", 1, 0, 0, None),
+            result(
+                profiles[1].profile_id,
+                "skipped",
+                0,
+                0,
+                0,
+                "time_budget_exhausted",
+            ),
+            result(
+                profiles[2].profile_id,
+                "skipped",
+                0,
+                0,
+                0,
+                "time_budget_exhausted",
+            ),
+        ]
+
+        self.assertEqual(1, self.dispatcher.next_rotation_index(results, profiles))
+
+    def test_corrupt_rotation_file_starts_from_the_beginning(self):
+        state_path = Path(self.state_dir)
+        state_path.mkdir(parents=True, exist_ok=True)
+        (state_path / "profile-rotation.json").write_text(
+            "not json", encoding="utf-8"
+        )
+
+        self.assertEqual(0, self.dispatcher.load_profile_rotation(state_path))
 
     def test_dispatch_summary_contains_no_urls_or_environment_values(self):
         calls = []
@@ -626,7 +814,7 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
                         """
                         INSERT OR REPLACE INTO google_news_resolver_state (
                             state_key, blocked_until, last_error_code, updated_at
-                        ) VALUES ('global', ?, 'http_429', ?)
+                        ) VALUES ('rss', ?, 'http_429', ?)
                         """,
                         (blocked_until.isoformat(), datetime.now(timezone.utc).isoformat()),
                     )
@@ -791,7 +979,7 @@ class GoogleNewsDispatcherTests(unittest.TestCase):
             connection.execute(
                 "INSERT OR REPLACE INTO google_news_resolver_state "
                 "(state_key, blocked_until, last_error_code, updated_at) "
-                "VALUES ('global', ?, 'http_429', ?)",
+                "VALUES ('rss', ?, 'http_429', ?)",
                 (
                     (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                     datetime.now(timezone.utc).isoformat(),

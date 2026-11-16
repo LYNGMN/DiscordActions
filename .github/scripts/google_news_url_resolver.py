@@ -76,6 +76,7 @@ class GoogleNewsUrlResolver:
             db_path=db_path,
             timeout=timeout,
             utc_now=self._utc_now,
+            scope="resolver",
         )
         self.max_network_resolutions = max_network_resolutions
         self._network_resolution_attempts = 0
@@ -153,7 +154,7 @@ class GoogleNewsUrlResolver:
                 "run_deadline_exceeded",
             )
 
-        open_circuit = self.request_guard.get_open_circuit()
+        open_circuit = self.request_guard.get_open_circuit("resolver")
         if open_circuit is not None:
             self._stats["circuit_blocked_until"] = open_circuit.blocked_until.isoformat()
             self._increment_stat("circuit_skipped")
@@ -182,7 +183,7 @@ class GoogleNewsUrlResolver:
             self._increment_stat("fallbacks")
             return UrlResolution(source_url, "fallback", article_id, "circuit_open")
         except BlockedRequestError as error:
-            open_state = self.request_guard.get_open_circuit()
+            open_state = self.request_guard.get_open_circuit("resolver")
             if open_state is not None:
                 self._stats["circuit_blocked_until"] = open_state.blocked_until.isoformat()
             self._increment_stat("circuit_opened")
@@ -204,7 +205,7 @@ class GoogleNewsUrlResolver:
             self._increment_stat("fallbacks")
             return UrlResolution(source_url, "fallback", article_id, "invalid_url")
         self._save_success(article_id, source_url, resolved_url)
-        self.request_guard.clear_circuit()
+        self.request_guard.clear_circuit("resolver")
         self._stats["circuit_blocked_until"] = None
         self._increment_stat("resolved")
         return UrlResolution(resolved_url, "resolved", article_id)
@@ -506,7 +507,7 @@ class GoogleNewsUrlResolver:
         raise ValueError("decoded_url_missing")
 
     def _request_with_retry(self, method: str, url: str, **kwargs):
-        return self.request_guard.request(method, url, **kwargs)
+        return self.request_guard.request(method, url, scope="resolver", **kwargs)
 
     @staticmethod
     def _extract_article_id(source_url: str) -> Optional[str]:

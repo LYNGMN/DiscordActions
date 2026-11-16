@@ -1,3 +1,5 @@
+> **HISTORICAL**: 이 문서는 작성 당시의 계획/설계이며 현재 동작과 다를 수 있습니다. 현재 구조는 [docs/architecture.md](../../architecture.md)를 따르세요.
+
 # Google News Country-Specific Date and Time Format Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

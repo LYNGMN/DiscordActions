@@ -383,9 +383,13 @@ class GoogleNewsScriptIntegrationTests(unittest.TestCase):
                 )
                 self.assertIn("split_discord_content", source)
                 self.assertIn("queued_items.append", source)
+                self.assertIn("deliver_queued_items(", source)
+                self.assertIn(
+                    "delivery_limit=max(0, delivery_limit - resumed_count)", source
+                )
                 self.assertLess(
                     source.index("queued_items.append"),
-                    source.index("for guid, title in queued_items"),
+                    source.index("deliver_queued_items("),
                 )
                 self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
                 self.assertIn("write_profile_result", source)

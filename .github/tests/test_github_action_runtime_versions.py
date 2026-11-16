@@ -12,8 +12,10 @@ NODE24_ACTION_MAJORS = {
     "actions/upload-artifact": "7",
 }
 ACTION_REFERENCE = re.compile(
-    r"uses:\s+(actions/(?:checkout|setup-python|github-script|download-artifact|upload-artifact))@v(\d+)"
+    r"uses:\s+(actions/(?:checkout|setup-python|github-script|download-artifact|upload-artifact))"
+    r"@([0-9a-f]{40})\s+#\s+v(\d+)"
 )
+MUTABLE_TAG = re.compile(r"uses:\s+actions/[^\s@]+@v\d+")
 
 
 class GitHubActionRuntimeVersionTests(unittest.TestCase):
@@ -22,14 +24,21 @@ class GitHubActionRuntimeVersionTests(unittest.TestCase):
         for workflow in sorted(WORKFLOWS_DIR.glob("*.yml")):
             source = workflow.read_text(encoding="utf-8")
             references.extend(
-                (workflow.name, action, major)
-                for action, major in ACTION_REFERENCE.findall(source)
+                (workflow.name, action, commit, major)
+                for action, commit, major in ACTION_REFERENCE.findall(source)
             )
 
         self.assertTrue(references)
-        for workflow_name, action, major in references:
+        for workflow_name, action, commit, major in references:
             with self.subTest(workflow=workflow_name, action=action):
+                self.assertRegex(commit, r"^[0-9a-f]{40}$")
                 self.assertEqual(NODE24_ACTION_MAJORS[action], major)
+
+    def test_no_action_uses_a_mutable_tag(self):
+        for workflow in sorted(WORKFLOWS_DIR.glob("*.yml")):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertNotRegex(source, MUTABLE_TAG)
 
 
 if __name__ == "__main__":

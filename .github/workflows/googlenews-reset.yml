@@ -38,7 +38,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Prepare state directory
         run: |
@@ -47,55 +49,32 @@ jobs:
 
       - name: Find latest completed state artifact
         id: previous_state
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { owner, repo } = context.repo;
-            const workflowIds = [
-              'googlenews-to-discord.yml',
-              'googlenews-manual-test.yml',
-              'googlenews-reset.yml',
-            ];
-            const runs = [];
-            for (const workflowId of workflowIds) {
-              const { data: runPage } = await github.rest.actions.listWorkflowRuns({
-                owner,
-                repo,
-                workflow_id: workflowId,
-                status: 'completed',
-                per_page: 100,
-              });
-              runs.push(...runPage.workflow_runs);
-            }
-            runs.sort(
-              (left, right) => new Date(right.created_at) - new Date(left.created_at)
+            const { selectLatestArtifact } = require(
+              process.env.GITHUB_WORKSPACE +
+                '/ops/state-artifact/select-state-artifact.cjs'
             );
-            let artifactId = '';
-            let sourceRunId = '';
-            for (const run of runs) {
-              if (run.id === context.runId) continue;
-              const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
-                owner,
-                repo,
-                run_id: run.id,
-                per_page: 100,
-              });
-              const state = artifactPage.artifacts.find(
-                artifact => artifact.name === 'google-news-state' && !artifact.expired
-              );
-              if (state) {
-                artifactId = String(state.id);
-                sourceRunId = String(run.id);
-                break;
-              }
-            }
+            const { artifactId, sourceRunId } = await selectLatestArtifact({
+              github,
+              context,
+              workflowIds: [
+                'googlenews-to-discord.yml',
+                'googlenews-manual-test.yml',
+                'googlenews-reset.yml',
+              ],
+              artifactName: 'google-news-state',
+            });
             core.setOutput('artifact-id', artifactId);
             core.setOutput('source-run-id', sourceRunId);
 
       - name: Restore previous state
+        id: restore_state
         if: steps.previous_state.outputs.artifact-id != ''
-        uses: actions/download-artifact@v8
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .google-news-state
@@ -104,8 +83,27 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.previous_state.outputs.source-run-id }}
 
+      - name: Retry restore previous state
+        id: retry_restore
+        if: steps.restore_state.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8
+        with:
+          artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
+          path: .google-news-state
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.previous_state.outputs.source-run-id }}
+
+      - name: Fail when state restore failed
+        if: always() && steps.previous_state.outcome == 'success' && steps.previous_state.outputs.artifact-id != '' && steps.restore_state.outcome != 'success' && steps.retry_restore.outcome != 'success'
+        run: |
+          echo "::error title=Google News state restore failed::Keeping the previous artifact and skipping the state upload."
+          exit 1
+
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: '3.12'
           cache: pip
@@ -149,7 +147,7 @@ jobs:
 
       - name: Write reset summary
         if: always()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
             const fs = require('fs');
@@ -183,15 +181,40 @@ jobs:
             await core.summary.write();
 
       - name: Upload reset state
-        if: always()
-        uses: actions/upload-artifact@v7
+        id: upload_state
+        if: always() && steps.previous_state.outcome == 'success' && (steps.previous_state.outputs.artifact-id == '' || steps.restore_state.outcome == 'success' || steps.retry_restore.outcome == 'success')
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: google-news-state
           path: .google-news-state/
           if-no-files-found: error
           include-hidden-files: true
-          retention-days: 90
+          retention-days: 3
           overwrite: true
+
+      - name: Retry reset state upload
+        id: retry_state
+        if: always() && steps.upload_state.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: google-news-state
+          path: .google-news-state/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 3
+          overwrite: true
+
+      - name: Note recovered reset state upload
+        if: always() && steps.upload_state.outcome == 'failure' && steps.retry_state.outcome == 'success'
+        run: echo "::warning title=Google News reset state upload retried::The first upload failed and the retry succeeded"
+
+      - name: Fail when reset state upload failed
+        if: always() && steps.upload_state.outcome == 'failure' && steps.retry_state.outcome == 'failure'
+        run: |
+          echo "::error title=Google News reset state upload failed::The next run may restore the pre-reset artifact."
+          exit 1
 
       - name: Notify admin of failed run
         if: failure()
@@ -236,7 +259,11 @@ jobs:
           try:
               response = requests.post(
                   webhook,
-                  json={"content": "\n".join(lines), "username": "Discord Actions"},
+                  json={
+                      "content": "\n".join(lines),
+                      "username": "Discord Actions",
+                      "allowed_mentions": {"parse": []},
+                  },
                   timeout=(5.0, 15.0),
               )
               response.raise_for_status()

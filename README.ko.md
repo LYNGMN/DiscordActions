@@ -1,6 +1,6 @@
 # Discord Actions
 
-GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으로 확인하고 Discord 웹훅으로 전송합니다. 별도의 서버는 필요하지 않으며, 기본 확인 주기는 15분입니다.
+GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으로 확인하고 Discord 웹훅으로 전송합니다. 별도의 서버는 필요하지 않습니다. 15분 주기를 기본으로 설계되어 있으며, GitHub 예약 실행이 불안정한 동안에는 Cloudflare Worker 외부 트리거를 함께 사용합니다(아래 실행 주기 참고).
 
 ## 동작 방식
 
@@ -16,10 +16,10 @@ GitHub Actions를 사용해 Google News와 YouTube의 새 항목을 주기적으
 1. 이 저장소를 Fork하거나 Template을 사용해 새 저장소를 만듭니다.
 2. 저장소의 **Settings → Secrets and variables → Actions**로 이동합니다.
 3. 사용할 서비스에 필요한 Secret과 Variable만 등록합니다. 설정값은 README, 이슈, Actions 로그에 붙여 넣지 마세요.
-4. **Actions**에서 **Google News Manual Delivery Test** 또는 **YouTube Manual Delivery Test**를 먼저 실행합니다. 두 워크플로는 Discord로 실제 메시지를 전송합니다. 운영 예약 워크플로에서는 **Run workflow** 버튼을 제거했습니다.
-5. 시험을 마친 뒤에는 두 운영 예약 워크플로를 활성 상태로 둡니다. 별도의 활성화 Variable 없이 15분마다 자동으로 실행됩니다.
+4. **Actions**에서 **Google News Manual Delivery Test** 또는 **YouTube Manual Delivery Test**를 먼저 실행합니다. 두 워크플로는 Discord로 실제 메시지를 전송합니다. 운영 워크플로의 **Run workflow** 버튼은 외부 트리거와 비상 실행에 사용되며, 누르면 실제 메시지가 전송됩니다. 1건만 시험하려면 Manual Delivery Test를 사용하세요.
+5. 시험을 마친 뒤에는 두 운영 예약 워크플로를 활성 상태로 둡니다. Worker 트리거를 배포하면 15분마다, GitHub 예약 실행은 백업으로 하루 몇 회 자동 실행됩니다.
 
-현재 관리하는 Actions 목록은 운영 예약 워크플로 2개(**Google News to Discord**, **YouTube to Discord Notification**), 실제 전송 시험 워크플로 2개(**Google News Manual Delivery Test**, **YouTube Manual Delivery Test**), **Python Tests**입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
+현재 관리하는 Actions 목록은 운영 예약 워크플로 2개(**Google News to Discord**, **YouTube to Discord Notification**), 실제 전송 시험 워크플로 2개(**Google News Manual Delivery Test**, **YouTube Manual Delivery Test**), **Python Tests**, 운영 보조 워크플로 4개(**Google News Backlog Reset**, **Google News Schedule Health**, **Set Discord Webhook Avatars**, **Dependabot Auto Merge**)입니다. 예전에 Top, Topic, Keyword를 나누어 실행하던 Google News 워크플로는 통합 프로필 워크플로로 대체했습니다. 사용하지 않는 워크플로 파일을 제거해도 과거 실행 기록은 운영 확인 자료로 보존합니다.
 
 ### 전용 수동 전송 시험
 
@@ -152,7 +152,7 @@ DISCORD_WEBHOOK_GN_KEYWORD_IU
 | `feed_oldest_first` | 기본값. 현재 RSS 응답에 들어 있는 항목을 오래된 항목부터 전송 |
 | `feed_newest_first` | 현재 RSS 응답에 들어 있는 항목을 새 항목부터 전송 |
 
-전송량과 보관 기간도 선택 Repository Variable로 조정할 수 있습니다. URL 변환 캐시는 `GOOGLE_NEWS_URL_CACHE_RETENTION_DAYS`(기본 7일)로 기사 기록과 별도로 정리합니다. `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE`은 한 실행에서 프로필마다 새로 전송할 기사 수를 제한하고(기본 25, 최대 100), 남은 기사는 다음 실행으로 넘깁니다. `GOOGLE_NEWS_STATE_RETENTION_DAYS`는 상태 아티팩트에 보관할 지난 기사 기록의 기간입니다(기본 30, 1~365). `GOOGLE_NEWS_RUN_BUDGET_SECONDS`는 한 실행에 쓸 시간(기본 1080초, 60~1200)이며, 시간이 다 되면 남은 작업을 다음 실행으로 넘기고 상태를 저장한 뒤 정상 종료합니다. 전송 대기·재시도 중인 항목은 기간과 관계없이 보관합니다.
+전송량과 보관 기간도 선택 Repository Variable로 조정할 수 있습니다. URL 변환 캐시는 `GOOGLE_NEWS_URL_CACHE_RETENTION_DAYS`(기본 7일)로 기사 기록과 별도로 정리합니다. `GOOGLE_NEWS_MAX_DELIVERIES_PER_PROFILE`은 한 실행에서 프로필마다 새로 전송할 기사 수를 제한하고(기본 25, 최대 100), 남은 기사는 다음 실행으로 넘깁니다. `GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS`는 한 실행에서 프로필마다 원문 URL을 네트워크로 확인할 최대 개수입니다(기본 40, 0~1000). 이를 넘는 링크는 검증된 Google News 기사 링크를 사용합니다. `GOOGLE_NEWS_STATE_RETENTION_DAYS`는 상태 아티팩트에 보관할 지난 기사 기록의 기간입니다(기본 30, 1~365). `GOOGLE_NEWS_RUN_BUDGET_SECONDS`는 한 실행에 쓸 시간(기본 1080초, 60~1200)이며, 시간이 다 되면 남은 작업을 다음 실행으로 넘기고 상태를 저장한 뒤 정상 종료합니다. 실행 타임아웃은 35분이고, 남은 시간이 3분 미만이면 정리·압축을 건너뛰고 상태 업로드를 우선합니다. 상태 artifact는 복원용 최신 1개만 필요하므로 3일만 보관합니다. 대기 항목은 백로그가 500건 미만인 동안 보관하며, 500건 이상이면 3일 지난 항목을 자동 만료합니다(아래 문제 해결 참고).
 
 ### 키워드 뉴스 판정 방식
 
@@ -198,7 +198,7 @@ Google News 검색에는 복합 표현식이 필요하지만 Discord 메시지�
 
 필터에서 제외한 항목은 현재 필터 설정을 구분하는 설정 식별값과 함께 저장합니다. 같은 설정에서는 다시 판정하지 않지만, 판정 모드나 별칭을 바꾸면 RSS에 아직 남아 있는 항목을 다시 판정합니다. `ADVANCED_FILTER_KEYWORD`는 이 판정을 통과한 항목을 한 번 더 좁히는 추가 조건으로 계속 적용합니다.
 
-메인 기사와 모든 연관뉴스는 먼저 원문 URL 변환을 시도합니다. 원문 URL을 확인하지 못한 연관뉴스는 검증된 Google News 기사 링크를 대신 사용합니다. 연관뉴스 목록이 Discord의 2,000자 한도를 넘으면 순서를 유지한 채 후속 메시지로 나눠 전송합니다.
+메인 기사와 연관뉴스는 원문 URL 변환을 시도합니다. 한 실행에서 프로필당 최대 `GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS`(기본 40)개까지만 네트워크로 확인하고, 그 밖의 링크나 확인하지 못한 연관뉴스는 검증된 Google News 기사 링크를 사용합니다. 연관뉴스 목록이 Discord의 2,000자 한도를 넘으면 순서를 유지한 채 후속 메시지로 나눠 전송합니다.
 
 ### 언론사 표시 이름과 검토용 Artifact
 
@@ -389,7 +389,11 @@ RSS 채널 메시지는 게시일자와 썸네일을 표시합니다. RSS 재생
 | 매주 월요일 9시 | `0 9 * * 1` | `0 9 * * 1` |
 | 매월 1일 9시 | `0 9 1 * *` | `0 9 1 * *` |
 
-GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 수 있습니다. 주간·월간 예시는 고정된 7일·30일 간격이 아니라 달력의 월요일과 매월 1일을 기준으로 합니다. Google News RSS는 기사 보관소가 아니므로 실행 간격이 길면 실행 시점에 피드에서 사라진 기사를 다시 가져올 수 없습니다. 뉴스 누락을 최소화하려면 기본 15분 주기를 권장합니다.
+GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어지거나 누락될 수 있습니다. 2026년 8월 말 이후 3~12시간 지연·누락 사례가 보고됐고, 이 저장소의 기록에서도 15분 예약이 하루 4~5회만 실행됐습니다. 그래서 외부 트리거를 기본으로 권장합니다. 주간·월간 예시는 고정된 7일·30일 간격이 아니라 달력의 월요일과 매월 1일을 기준으로 합니다. Google News RSS는 기사 보관소가 아니므로 실행 간격이 길면 실행 시점에 피드에서 사라진 기사를 다시 가져올 수 없습니다. 뉴스 누락을 최소화하려면 기본 15분 주기를 권장합니다.
+
+### 외부 트리거(권장)
+
+GitHub의 `schedule`은 보장된 cron이 아닙니다. 이 저장소의 2026년 10~11월 기록에서는 15분 예약이 실제로 하루 4~5회만 실행됐고, 간격이 최대 10시간까지 벌어졌습니다. 그래서 `ops/state-trigger`의 Cloudflare Worker가 15분마다 두 운영 워크플로를 `workflow_dispatch`로 호출하도록 만들었습니다. 설정과 배포 방법은 [ops/state-trigger/README.md](ops/state-trigger/README.md)를 따르세요. Worker를 배포하지 않아도 GitHub `schedule`이 백업으로 남아 하루 몇 회는 실행됩니다.
 
 ## 진단 로그
 
@@ -425,7 +429,7 @@ GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 �
 - 예약 실행이 시작될 때 프로필 대기가 `GOOGLE_NEWS_BACKLOG_LIMIT`(기본 500) 이상이면 `GOOGLE_NEWS_BACKLOG_AGE_DAYS`(기본 3일)보다 오래된 미전송 항목을 자동 만료하고 관리자 채널에 알립니다. 일반 채널에는 구분선을 보내지 않습니다.
 - 대기 적체를 한 번에 정리하려면 **Actions → Google News Backlog Reset**을 수동 실행하고 `confirmation`에 `RESET`을 입력합니다. 대기 중이던 배송은 만료되고, 대기가 있던 채널에는 `---` 구분선이 한 번 전송됩니다. 이후 새로 발견된 기사부터 배송됩니다. 이 작업은 되돌릴 수 없습니다.
 - 상태 아티팩트 업로드가 일시 실패하면 한 번 더 시도합니다. 두 번 모두 실패하면 실행을 실패로 표시해, 다음 실행이 이전 상태를 복원해 중복 전송할 수 있음을 알립니다.
-- 예약 실행이 12시간 넘게 없으면 **Google News Schedule Health** 워크플로가 6시간마다 확인해 관리자 채널에 알립니다. 알림이 필요 없으면 이 워크플로를 비활성화하세요.
+- **Google News Schedule Health** 워크플로가 6시간마다 Google News와 YouTube의 마지막 성공 실행을 확인합니다. `GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS`(기본 6시간)를 넘으면 관리자 채널에 알립니다. Worker 트리거가 안정화되면 3시간으로 낮추세요. 알림이 필요 없으면 이 워크플로를 비활성화하세요.
 - Dependabot은 pip 패치 업데이트만 `test` 검사 통과 후 자동 병합합니다. 마이너·메이저·보안·GitHub Actions 업데이트는 검토 후 직접 병합합니다. 보안 경고와 보안 업데이트는 활성화되어 있습니다.
 - 공개 저장소에 60일 동안 저장소 활동이 없으면 GitHub가 예약 워크플로를 자동으로 비활성화할 수 있습니다. Actions 화면에 해당 안내가 나타나면 워크플로를 다시 활성화하세요. 이 프로젝트는 GitHub의 이 정책을 우회하는 자동 Keepalive 방식을 사용하지 않습니다. 자세한 내용은 [GitHub 워크플로 활성화·비활성화 문서](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)를 참고하세요.
 - GitHub Actions의 예약 지연과 외부 API의 일시적 제한을 코드 오류와 구분하세요. 저장해 둔 미완료 전송은 다음 실행에서 기록된 순번부터 이어집니다.

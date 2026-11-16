@@ -308,6 +308,84 @@ class YouTubeDeliveryStateTests(unittest.TestCase):
                 self.module.youtube_delivery_metrics(db_path),
             )
 
+    def test_permanent_failure_is_abandoned_after_three_attempts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "youtube.db")
+            with sqlite3.connect(db_path) as connection:
+                connection.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY)")
+                connection.execute("INSERT INTO videos (video_id) VALUES ('video-1')")
+            self.module.initialize_delivery_state(db_path)
+            self.module.queue_youtube_delivery(
+                db_path, "video-1", [("primary", {"content": "plain"})]
+            )
+
+            for _ in range(2):
+                finalized = self.module.mark_youtube_target_failed(
+                    db_path,
+                    "video-1",
+                    "primary",
+                    "discord_http_404",
+                    attempt_count=1,
+                    permanent=True,
+                )
+                self.assertFalse(finalized)
+
+            finalized = self.module.mark_youtube_target_failed(
+                db_path,
+                "video-1",
+                "primary",
+                "discord_http_404",
+                attempt_count=1,
+                permanent=True,
+            )
+            self.assertTrue(finalized)
+
+            with sqlite3.connect(db_path) as connection:
+                target = connection.execute(
+                    "SELECT status, attempt_count, last_error_code "
+                    "FROM youtube_delivery_targets WHERE video_id = 'video-1'"
+                ).fetchone()
+            self.assertEqual(("failed", 3, "discord_http_404"), target)
+            self.assertEqual([], self.module.pending_youtube_targets(db_path, "video-1"))
+            self.assertTrue(self.module.finalize_youtube_delivery(db_path, "video-1"))
+            with sqlite3.connect(db_path) as connection:
+                video_status = connection.execute(
+                    "SELECT delivery_status FROM videos WHERE video_id = 'video-1'"
+                ).fetchone()[0]
+            self.assertEqual("failed", video_status)
+            self.assertTrue(
+                self.module.is_youtube_item_handled(db_path, "video-1")
+            )
+
+    def test_retryable_failure_stays_pending_after_three_attempts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "youtube.db")
+            with sqlite3.connect(db_path) as connection:
+                connection.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY)")
+                connection.execute("INSERT INTO videos (video_id) VALUES ('video-1')")
+            self.module.initialize_delivery_state(db_path)
+            self.module.queue_youtube_delivery(
+                db_path, "video-1", [("primary", {"content": "plain"})]
+            )
+
+            for _ in range(3):
+                finalized = self.module.mark_youtube_target_failed(
+                    db_path,
+                    "video-1",
+                    "primary",
+                    "discord_http_503",
+                    attempt_count=1,
+                    permanent=False,
+                )
+                self.assertFalse(finalized)
+
+            with sqlite3.connect(db_path) as connection:
+                status = connection.execute(
+                    "SELECT status FROM youtube_delivery_targets "
+                    "WHERE video_id = 'video-1'"
+                ).fetchone()[0]
+            self.assertEqual("pending", status)
+
     def test_existing_target_payload_is_not_replaced_during_resume(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = str(Path(directory) / "youtube.db")

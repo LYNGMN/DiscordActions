@@ -23,7 +23,7 @@ class DependabotAutoMergeTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "dependabot/fetch-metadata@{} # v3.1.0".format(FETCH_METADATA_SHA),
+            "dependabot/fetch-metadata@{}  # v3.1.0".format(FETCH_METADATA_SHA),
             source,
         )
         self.assertIn(

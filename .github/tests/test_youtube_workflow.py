@@ -8,12 +8,21 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest import mock
 
+import requests
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "workflows" / "youtube_to_discord.yml"
 MANUAL_WORKFLOW = ROOT / "workflows" / "youtube-manual-test.yml"
 CI_WORKFLOW = ROOT / "workflows" / "test.yml"
 SCRIPT = ROOT / "scripts" / "youtube_to_discord.py"
+
+
+def step_block(source: str, name: str) -> str:
+    marker = "- name: {}".format(name)
+    start = source.index(marker)
+    end = source.find("\n      - name:", start + len(marker))
+    return source[start:] if end == -1 else source[start:end]
 
 
 def load_youtube_script():
@@ -228,33 +237,36 @@ class YouTubeWorkflowTests(unittest.TestCase):
 
             self.assertEqual(["B"], module.missing_youtube_detail_ids(module.DB_PATH))
 
-    def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
+    def test_scheduled_workflow_accepts_external_dispatch(self):
         source = self.source()
 
         self.assertIn("cron: '*/15 * * * *'", source)
         self.assertNotIn("timezone:", source)
         self.assertIn("YOUTUBE_DELIVERY_ORDER", source)
         self.assertNotIn("cron: '0 * * * *'", source)
-        self.assertNotIn("workflow_dispatch:", source)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("inputs:", source)
         self.assertNotIn("manual_test:", source)
         self.assertIn("YOUTUBE_MANUAL_TEST_MODE: 'false'", source)
         self.assertIn("group: youtube-to-discord", source)
         self.assertIn("cancel-in-progress: false", source)
 
-    def test_restore_selects_a_real_unexpired_database_artifact(self):
+    def test_restore_uses_the_shared_selector_for_the_database(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            self.assertIn(
+                "selectLatestArtifact",
+                workflow.read_text(encoding="utf-8"),
+            )
         source = self.source()
-
-        self.assertIn("status: 'completed'", source)
         self.assertIn("'youtube_to_discord.yml'", source)
         self.assertIn("'youtube-manual-test.yml'", source)
-        self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
-        self.assertIn("artifact.name === 'youtube_database'", source)
-        self.assertIn("!artifact.expired", source)
-        self.assertIn("core.setOutput('artifact-id'", source)
-        self.assertIn("core.setOutput('source-run-id'", source)
+        self.assertIn("artifactName: 'youtube_database'", source)
+        self.assertIn("core.setOutput('artifact-id', artifactId)", source)
+        self.assertIn("core.setOutput('source-run-id', sourceRunId)", source)
         self.assertIn("artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}", source)
         self.assertIn("run-id: ${{ steps.previous_state.outputs.source-run-id }}", source)
         self.assertIn("merge-multiple: true", source)
+        self.assertNotIn("artifact.name === 'youtube_database'", source)
         self.assertNotIn("status: 'success'", source)
 
     def test_missing_state_in_scheduled_mode_baselines_without_manual_delivery(self):
@@ -317,13 +329,98 @@ class YouTubeWorkflowTests(unittest.TestCase):
             section.index("fetch_configured_video_data("),
         )
 
-    def test_state_upload_runs_even_when_delivery_fails(self):
-        source = self.source()
-        upload_index = source.index("- name: Upload updated database")
-        upload_section = source[upload_index:]
+    def test_permanent_failure_is_abandoned_and_next_video_is_processed(self):
+        module = load_youtube_script()
+        with tempfile.TemporaryDirectory() as directory:
+            module.DB_PATH = str(Path(directory) / "youtube.db")
+            module.init_db()
+            with sqlite3.connect(module.DB_PATH) as connection:
+                connection.execute(
+                    "INSERT INTO videos (video_id, delivery_status) "
+                    "VALUES ('video-1', 'pending')"
+                )
+                connection.execute(
+                    "INSERT INTO videos (video_id, delivery_status) "
+                    "VALUES ('video-2', 'pending')"
+                )
+            module.queue_youtube_delivery(
+                module.DB_PATH, "video-1", [("primary", {"content": "one"})]
+            )
+            module.queue_youtube_delivery(
+                module.DB_PATH, "video-2", [("primary", {"content": "two"})]
+            )
 
-        self.assertIn("if: always()", upload_section)
-        self.assertIn("if-no-files-found: error", upload_section)
+            error = requests.HTTPError("404")
+            error.error_code = "discord_http_404"
+            error.attempt_count = 1
+            with (
+                mock.patch.object(module, "send_youtube_webhook", side_effect=error),
+                mock.patch.object(module, "notify_admin", return_value=False),
+                mock.patch.object(module.time, "sleep"),
+            ):
+                for _ in range(2):
+                    with self.assertRaises(requests.HTTPError):
+                        module.deliver_queued_video("video-1")
+                module.deliver_queued_video("video-1")
+
+            with sqlite3.connect(module.DB_PATH) as connection:
+                video_status = connection.execute(
+                    "SELECT delivery_status FROM videos WHERE video_id = 'video-1'"
+                ).fetchone()[0]
+            self.assertEqual("failed", video_status)
+            self.assertEqual(
+                [], module.pending_youtube_targets(module.DB_PATH, "video-1")
+            )
+
+            with (
+                mock.patch.object(
+                    module,
+                    "send_youtube_webhook",
+                    return_value=SimpleNamespace(
+                        message_id="123456789012345678",
+                        ambiguous_retry=False,
+                        attempt_count=1,
+                    ),
+                ),
+                mock.patch.object(module, "notify_admin", return_value=False),
+                mock.patch.object(module.time, "sleep"),
+            ):
+                module.deliver_queued_video("video-2")
+
+            with sqlite3.connect(module.DB_PATH) as connection:
+                sent_status = connection.execute(
+                    "SELECT delivery_status FROM videos WHERE video_id = 'video-2'"
+                ).fetchone()[0]
+            self.assertEqual("sent", sent_status)
+
+    def test_state_upload_runs_even_when_delivery_fails(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                upload_section = step_block(source, "Upload updated database")
+
+                self.assertIn("if: always()", upload_section)
+                self.assertIn("if-no-files-found: error", upload_section)
+                self.assertIn("retention-days: 14", upload_section)
+
+    def test_state_restore_failure_does_not_publish_empty_database(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("id: restore_state", source)
+                self.assertIn("id: retry_restore", source)
+                self.assertIn("Fail when state restore failed", source)
+                upload_section = step_block(source, "Upload updated database")
+                self.assertIn(
+                    "steps.previous_state.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.restore_state.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.retry_restore.outcome == 'success'", upload_section
+                )
+                self.assertIn("INITIALIZE_MODE_YOUTUBE", upload_section)
 
     def test_actions_summary_reports_pending_and_ambiguous_retries(self):
         source = self.source()
@@ -331,6 +428,24 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("Pending deliveries", source)
         self.assertIn("Ambiguous retries", source)
         self.assertIn("YOUTUBE_RUN_SUMMARY_PATH", source)
+
+    def test_repeated_failure_alerts_are_throttled(self):
+        source = self.source()
+        self.assertIn("previous.conclusion === 'failure'", source)
+        self.assertIn("60 * 60 * 1000", source)
+        self.assertIn("Skipping duplicate admin alert", source)
+        self.assertNotIn(
+            "previous.conclusion === 'failure'",
+            MANUAL_WORKFLOW.read_text(encoding="utf-8"),
+        )
+
+    def test_youtube_summary_ignores_a_stale_run(self):
+        for workflow in (WORKFLOW, MANUAL_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("summary.run_id", source)
+                self.assertIn("context.runId", source)
+                self.assertIn("No run summary was produced for this run.", source)
 
     def test_script_saves_baseline_before_delivery_and_exits_nonzero_on_error(self):
         source = SCRIPT.read_text(encoding="utf-8")
@@ -357,13 +472,8 @@ class YouTubeWorkflowTests(unittest.TestCase):
     def test_ci_compiles_youtube_runtime_modules(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn(".github/scripts/youtube_delivery_state.py", source)
-        self.assertIn(".github/scripts/youtube_discord_delivery.py", source)
-        self.assertIn(".github/scripts/youtube_video_source.py", source)
-        self.assertIn(".github/scripts/youtube_messages.py", source)
-        self.assertIn(".github/scripts/feed_filters.py", source)
-        self.assertIn(".github/scripts/feed_localization.py", source)
-        self.assertIn(".github/scripts/youtube_to_discord.py", source)
+        self.assertIn("python -m compileall -q .github/scripts", source)
+        self.assertIn(".github/requirements-youtube.txt", source)
 
     def test_rss_source_needs_no_api_key_but_rejects_search(self):
         module = load_youtube_script()

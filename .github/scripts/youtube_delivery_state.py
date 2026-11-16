@@ -8,6 +8,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 
 DISCORD_MESSAGE_ID = re.compile(r"^[0-9]+$")
+SAFE_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+YOUTUBE_PERMANENT_FAILURE_ATTEMPTS = 3
 
 
 def partition_youtube_items(
@@ -143,7 +145,7 @@ def save_youtube_video(
     video_data: Dict,
     delivery_status: str = "sent",
 ) -> None:
-    if delivery_status not in {"filtered", "pending", "sent"}:
+    if delivery_status not in {"filtered", "pending", "sent", "failed"}:
         raise ValueError("invalid YouTube delivery status")
     initialize_delivery_state(db_path)
     with sqlite3.connect(db_path) as connection:
@@ -168,7 +170,7 @@ def is_youtube_item_handled(
     status, stored_fingerprint = row
     if status == "filtered" and filter_fingerprint is not None:
         return stored_fingerprint == filter_fingerprint
-    return status in {"filtered", "pending", "sent"}
+    return status in {"filtered", "pending", "sent", "failed"}
 
 
 def record_filtered_youtube_video(
@@ -240,10 +242,10 @@ def _upsert_youtube_video(
         "caption=excluded.caption, "
         "source=excluded.source, "
         "delivery_status=CASE "
-        "WHEN videos.delivery_status IN ('pending', 'sent') THEN videos.delivery_status "
+        "WHEN videos.delivery_status IN ('pending', 'sent', 'failed') THEN videos.delivery_status "
         "ELSE excluded.delivery_status END, "
         "filter_fingerprint=CASE "
-        "WHEN videos.delivery_status IN ('pending', 'sent') THEN videos.filter_fingerprint "
+        "WHEN videos.delivery_status IN ('pending', 'sent', 'failed') THEN videos.filter_fingerprint "
         "ELSE excluded.filter_fingerprint END",
         values + (delivery_status, filter_fingerprint),
     )
@@ -307,33 +309,61 @@ def mark_youtube_target_failed(
     target: str,
     error_code: str,
     attempt_count: int = 1,
-) -> None:
-    if error_code not in {"ambiguous_retry", "final_failure"}:
-        error_code = "final_failure"
+    permanent: bool = False,
+) -> bool:
+    """Record a failed target and return True when it was abandoned.
+
+    Only permanent errors count toward the abandonment limit. Rate limits,
+    server errors and network failures stay pending so a later run retries.
+    """
+    normalized = str(error_code or "")
+    if normalized != "ambiguous_retry" and not SAFE_ERROR_CODE.fullmatch(normalized):
+        normalized = "final_failure"
+    increment = max(1, int(attempt_count))
     initialize_delivery_state(db_path)
     with sqlite3.connect(db_path) as connection:
         cursor = connection.execute(
             "UPDATE youtube_delivery_targets SET attempt_count = attempt_count + ?, "
-            "last_error_code = ? WHERE video_id = ? AND target = ? AND status = 'pending'",
-            (max(1, int(attempt_count)), error_code, video_id, target),
+            "last_error_code = ?, "
+            "status = CASE WHEN ? = 1 AND attempt_count + ? >= ? "
+            "THEN 'failed' ELSE status END "
+            "WHERE video_id = ? AND target = ? AND status = 'pending'",
+            (
+                increment,
+                normalized,
+                1 if permanent else 0,
+                increment,
+                YOUTUBE_PERMANENT_FAILURE_ATTEMPTS,
+                video_id,
+                target,
+            ),
         )
         if cursor.rowcount != 1:
             raise ValueError("YouTube delivery target not found")
+        row = connection.execute(
+            "SELECT status FROM youtube_delivery_targets "
+            "WHERE video_id = ? AND target = ?",
+            (video_id, target),
+        ).fetchone()
+    return bool(row and row[0] == "failed")
 
 
 def finalize_youtube_delivery(db_path: str, video_id: str) -> bool:
     initialize_delivery_state(db_path)
     with sqlite3.connect(db_path) as connection:
         counts = connection.execute(
-            "SELECT COUNT(*), SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) "
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) "
             "FROM youtube_delivery_targets WHERE video_id = ?",
             (video_id,),
         ).fetchone()
         if int(counts[0] or 0) == 0 or int(counts[1] or 0):
             return False
+        delivery_status = "failed" if int(counts[2] or 0) else "sent"
         connection.execute(
-            "UPDATE videos SET delivery_status = 'sent' WHERE video_id = ?",
-            (video_id,),
+            "UPDATE videos SET delivery_status = ? WHERE video_id = ?",
+            (delivery_status, video_id),
         )
         return True
 

@@ -40,6 +40,7 @@ from google_news_profiles import (
     GoogleNewsProfile,
     build_handler_environment,
     load_profiles,
+    parse_max_network_resolutions,
     validate_common_feed_environment,
 )
 from google_news_request_guard import CircuitState, GoogleNewsRequestGuard
@@ -81,6 +82,8 @@ MAX_BACKLOG_LIMIT = 10000
 DEFAULT_BACKLOG_AGE_DAYS = 3
 MIN_BACKLOG_AGE_DAYS = 1
 MAX_BACKLOG_AGE_DAYS = 30
+ROTATION_FILENAME = "profile-rotation.json"
+ROTATION_KEY = "next_profile_index"
 
 
 def parse_backlog_limit(value: str = "500") -> int:
@@ -166,6 +169,7 @@ class DispatchSummary:
     run_id: Optional[str] = None
     backlog_expired: int = 0
     backlog: Sequence[Mapping[str, object]] = ()
+    state_repairs: Sequence[Mapping[str, str]] = ()
 
     def to_dict(self):
         return {
@@ -184,7 +188,56 @@ class DispatchSummary:
             "run_id": self.run_id,
             "backlog_expired": self.backlog_expired,
             "backlog": [dict(item) for item in self.backlog],
+            "state_repairs": [dict(item) for item in self.state_repairs],
         }
+
+
+def load_profile_rotation(state_path: Path) -> int:
+    path = state_path / ROTATION_FILENAME
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    value = payload.get(ROTATION_KEY) if isinstance(payload, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def save_profile_rotation(state_path: Path, index: int) -> None:
+    path = state_path / ROTATION_FILENAME
+    temporary_path = path.with_name(path.name + ".tmp")
+    payload = {ROTATION_KEY: max(0, int(index))}
+    temporary_path.write_text(
+        json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary_path, path)
+
+
+def rotated_profiles(
+    profiles: Sequence[GoogleNewsProfile], start: int
+) -> List[GoogleNewsProfile]:
+    ordered = list(profiles)
+    if not ordered:
+        return ordered
+    offset = start % len(ordered)
+    return ordered[offset:] + ordered[:offset]
+
+
+def next_rotation_index(
+    results: Sequence[ProfileRunResult],
+    profiles: Sequence[GoogleNewsProfile],
+) -> int:
+    positions = {
+        profile.profile_id: index for index, profile in enumerate(profiles)
+    }
+    for result in results:
+        if (
+            result.status == "skipped"
+            and result.error_code == "time_budget_exhausted"
+        ):
+            return positions.get(result.profile_id, 0)
+    return 0
 
 
 def preflight_profiles(
@@ -323,11 +376,28 @@ def run_profiles(
     state_path = Path(state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
     _remove_stale_result_dirs(state_path)
+    profile_order = list(profiles)
+    if not manual_test and not validate_only and profile_order:
+        rotation_start = load_profile_rotation(state_path) % len(profile_order)
+        profiles = rotated_profiles(profile_order, rotation_start)
     registry = publisher_registry or load_default_registry()
     database_map = dict(
         profile_databases
         or {profile.profile_id: profile.state_db for profile in profiles}
     )
+    state_repairs = _check_state_databases(
+        state_path, list(database_map.values()) + ["resolver.db"]
+    )
+    for repair in state_repairs:
+        LOGGER.error(
+            "Corrupt state database quarantined: %s", repair["database"]
+        )
+        print(
+            "::error title=Google News state database reset::{} was corrupt and "
+            "moved; that profile starts from a fresh database.".format(
+                repair["database"]
+            )
+        )
     before_unmapped = unmapped_publisher_keys(
         state_path, database_map, registry
     )
@@ -450,6 +520,7 @@ def run_profiles(
         database_map,
         retention_days,
         url_cache_retention_days,
+        run_deadline,
     )
     emit_event(
         "state_pruned",
@@ -504,7 +575,18 @@ def run_profiles(
         run_id=os.environ.get("GITHUB_RUN_ID"),
         backlog_expired=backlog_expired,
         backlog=tuple(backlog_events),
+        state_repairs=tuple(state_repairs),
     )
+    if not manual_test and not validate_only and profile_order:
+        try:
+            save_profile_rotation(
+                state_path, next_rotation_index(results, profile_order)
+            )
+        except OSError as error:
+            LOGGER.warning(
+                "Could not save the profile rotation (오류 유형: %s)",
+                type(error).__name__,
+            )
     _write_summary(state_path / "run-summary.json", summary)
     _report_run_totals(
         summary,
@@ -571,6 +653,41 @@ def run_dispatch(
         backlog_age_days=backlog_age_days,
         url_cache_retention_days=url_cache_retention_days,
     )
+
+
+def _check_state_databases(
+    state_path: Path, database_names: Sequence[str]
+) -> List[Dict[str, str]]:
+    """Quarantine unreadable SQLite files so one bad file cannot stop a run.
+
+    The corrupt file is moved outside the state directory. The handler then
+    starts that profile from a fresh database, and the uploaded state is clean
+    for the next run. The trade-off is a possible re-send of recent items.
+    """
+    repaired = []
+    for name in sorted(set(database_names)):
+        if not name or os.path.basename(name) != name:
+            continue
+        path = state_path / name
+        if not path.is_file():
+            continue
+        try:
+            with sqlite3.connect(path) as connection:
+                row = connection.execute("PRAGMA quick_check").fetchone()
+            if not row or row[0] != "ok":
+                raise sqlite3.DatabaseError("quick_check failed")
+        except sqlite3.Error:
+            quarantine_dir = Path(tempfile.mkdtemp(prefix="google-news-corrupt-"))
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                candidate = Path(str(path) + suffix)
+                if candidate.exists():
+                    shutil.move(
+                        str(candidate), str(quarantine_dir / (name + suffix))
+                    )
+            repaired.append(
+                {"database": name, "quarantine": str(quarantine_dir)}
+            )
+    return repaired
 
 
 def _remove_stale_result_dirs(state_path: Path) -> None:
@@ -664,6 +781,7 @@ def _prune_state_databases(
     database_map: Mapping[str, str],
     retention_days: int,
     url_cache_retention_days: int,
+    run_deadline: Optional[float] = None,
 ) -> Dict[str, int]:
     paths = [str(state_path / name) for name in database_map.values()]
     paths.append(str(state_path / "resolver.db"))
@@ -672,6 +790,7 @@ def _prune_state_databases(
             paths,
             retention_days=retention_days,
             url_cache_retention_days=url_cache_retention_days,
+            deadline=run_deadline,
         )
     except (OSError, sqlite3.Error, ValueError) as error:
         LOGGER.warning(
@@ -986,6 +1105,11 @@ def main(argv=None) -> int:
     parser.add_argument("--manual-test", action="store_true")
     parser.add_argument("--profile-id")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument(
+        "--check-config",
+        action="store_true",
+        help="validate profiles and common settings without network access",
+    )
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     truncate_events_file(os.environ.get("RUN_EVENTS_PATH", ""))
@@ -1019,7 +1143,25 @@ def main(argv=None) -> int:
                 str(DEFAULT_URL_CACHE_RETENTION_DAYS),
             )
         )
+        parse_max_network_resolutions(
+            os.environ.get("GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS", "40")
+        )
         all_profiles = load_profiles(arguments.profiles)
+        if arguments.check_config:
+            try:
+                for profile in all_profiles:
+                    merged = dict(os.environ)
+                    merged.update(profile.environment)
+                    validate_common_feed_environment(merged)
+            except ValueError as error:
+                print(
+                    "::error title=Google News profile configuration invalid::{}".format(
+                        error
+                    )
+                )
+                return 1
+            print("Google News profile configuration ok: {}".format(len(all_profiles)))
+            return 0
         profiles = select_profiles(all_profiles, arguments.profile_id)
         emit_event(
             "run_start",

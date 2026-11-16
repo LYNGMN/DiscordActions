@@ -243,6 +243,14 @@ def create_embed_message(video, youtube, display_language):
         "attachments": []
     }
 
+def _is_permanent_delivery_error(error_code):
+    match = re.fullmatch(r"discord_http_(\d{3})", str(error_code or ""))
+    if not match:
+        return False
+    status = int(match.group(1))
+    return 400 <= status < 500 and status != 429
+
+
 def deliver_queued_video(video_id):
     for target, payload in pending_youtube_targets(DB_PATH, video_id):
         webhook_url = (
@@ -254,12 +262,13 @@ def deliver_queued_video(video_id):
             result = send_youtube_webhook(webhook_url, payload)
         except Exception as error:
             error_code = getattr(error, 'error_code', 'final_failure')
-            mark_youtube_target_failed(
+            finalized = mark_youtube_target_failed(
                 DB_PATH,
                 video_id,
                 target,
                 error_code,
                 attempt_count=getattr(error, 'attempt_count', 1),
+                permanent=_is_permanent_delivery_error(error_code),
             )
             emit_event(
                 "message_failed",
@@ -271,7 +280,10 @@ def deliver_queued_video(video_id):
                 status=getattr(error, "http_status_code", None),
                 attempt=getattr(error, "attempt_count", 1),
             )
-            print("::warning title=YouTube delivery failed::A queued delivery remains pending")
+            if not finalized:
+                print("::warning title=YouTube delivery failed::A queued delivery remains pending")
+                raise
+            print("::warning title=YouTube delivery abandoned::A permanently failed target was skipped")
             notify_admin(
                 DISCORD_WEBHOOK_ADMIN,
                 'YouTube',
@@ -279,7 +291,7 @@ def deliver_queued_video(video_id):
                 video_id,
                 error_code,
             )
-            raise
+            continue
         error_code = 'ambiguous_retry' if result.ambiguous_retry else None
         if error_code:
             logging.warning(
@@ -347,6 +359,7 @@ def write_run_summary(status):
         'status': status,
         'pending_count': metrics['pending_count'],
         'ambiguous_retry_count': metrics['ambiguous_retry_count'],
+        'run_id': os.environ.get('GITHUB_RUN_ID'),
     }
     with open(YOUTUBE_RUN_SUMMARY_PATH, 'w', encoding='utf-8') as handle:
         json.dump(payload, handle, sort_keys=True)
@@ -394,48 +407,6 @@ def apply_advanced_filter(title, advanced_filter):
                 if term in text_to_check:
                     return False
 
-    return True
-
-def parse_date_filter(filter_string):
-    since_date = None
-    until_date = None
-    past_date = None
-
-    since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
-    until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
-    
-    if since_match:
-        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d')
-    elif until_match:
-        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d')
-
-    past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
-    if past_match:
-        value = int(past_match.group(1))
-        unit = past_match.group(2)
-        now = datetime.now()
-        if unit == 'h':
-            past_date = now - timedelta(hours=value)
-        elif unit == 'd':
-            past_date = now - timedelta(days=value)
-        elif unit == 'm':
-            past_date = now - timedelta(days=value*30)  # 근사값 사용
-        elif unit == 'y':
-            past_date = now - timedelta(days=value*365)  # 근사값 사용
-
-    return since_date, until_date, past_date
-
-def is_within_date_range(published_at, since_date, until_date, past_date):
-    pub_datetime = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
-    
-    if past_date:
-        return pub_datetime >= past_date
-    
-    if since_date:
-        return pub_datetime >= since_date
-    if until_date:
-        return pub_datetime <= until_date
-    
     return True
 
 # 카테고리 ID를 이름으로 변환하는 캐시를 이용한 함수

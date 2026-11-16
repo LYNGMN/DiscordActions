@@ -52,23 +52,37 @@ class DependencyLockingTests(unittest.TestCase):
 
     def test_all_python_workflows_use_python_312_and_hashed_locks(self):
         expected_locks = {
-            "googlenews-to-discord.yml": ".github/requirements.txt",
-            "googlenews-manual-test.yml": ".github/requirements.txt",
-            "youtube_to_discord.yml": ".github/requirements-youtube.txt",
-            "youtube-manual-test.yml": ".github/requirements-youtube.txt",
-            "test.yml": ".github/requirements-youtube.txt",
+            "googlenews-to-discord.yml": [".github/requirements.txt"],
+            "googlenews-manual-test.yml": [".github/requirements.txt"],
+            "youtube_to_discord.yml": [".github/requirements-youtube.txt"],
+            "youtube-manual-test.yml": [".github/requirements-youtube.txt"],
+            "test.yml": [
+                ".github/requirements.txt",
+                ".github/requirements-youtube.txt",
+                ".github/requirements-dev.txt",
+            ],
         }
 
-        for workflow_name, lock_path in expected_locks.items():
+        for workflow_name, lock_paths in expected_locks.items():
             source = (WORKFLOWS_DIR / workflow_name).read_text(encoding="utf-8")
             with self.subTest(workflow=workflow_name):
                 self.assertIn("python-version: '3.12'", source)
                 self.assertIn("cache: pip", source)
-                self.assertIn("cache-dependency-path: {}".format(lock_path), source)
-                self.assertIn(
-                    "python -m pip install --require-hashes -r {}".format(lock_path),
-                    source,
-                )
+                if len(lock_paths) == 1:
+                    self.assertIn(
+                        "cache-dependency-path: {}".format(lock_paths[0]), source
+                    )
+                else:
+                    self.assertIn("cache-dependency-path: |", source)
+                    for lock_path in lock_paths:
+                        self.assertIn(lock_path, source)
+                for lock_path in lock_paths:
+                    self.assertIn(
+                        "python -m pip install --require-hashes -r {}".format(
+                            lock_path
+                        ),
+                        source,
+                    )
                 self.assertIn("python -m pip check", source)
                 self.assertNotIn("pip install --upgrade", source)
 
@@ -91,9 +105,10 @@ class DependencyLockingTests(unittest.TestCase):
         self.assertIn('REQUIRED_PIP_TOOLS_VERSION="7.6.1"', source)
         self.assertIn('PYTHON_BIN="${PYTHON_BIN:-python3.12}"', source)
         self.assertIn("requires Python 3.12", source)
-        self.assertEqual(2, source.count("CUSTOM_COMPILE_COMMAND="))
+        self.assertEqual(3, source.count("CUSTOM_COMPILE_COMMAND="))
         self.assertIn("requirements.in", source)
         self.assertIn("requirements-youtube.in", source)
+        self.assertIn("requirements-dev.in", source)
 
 
 if __name__ == "__main__":

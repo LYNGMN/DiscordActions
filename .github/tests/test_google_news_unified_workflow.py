@@ -1,9 +1,11 @@
+import json
 import re
 import unittest
 from pathlib import Path
 
 
 WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
+ROOT = WORKFLOWS_DIR.parents[1]
 WORKFLOW = WORKFLOWS_DIR / "googlenews-to-discord.yml"
 MANUAL_WORKFLOW = WORKFLOWS_DIR / "googlenews-manual-test.yml"
 HEALTH_WORKFLOW = WORKFLOWS_DIR / "googlenews-health.yml"
@@ -22,42 +24,26 @@ EXPECTED_WEBHOOK_SECRETS = (
     "DISCORD_WEBHOOK_GN_KEYWORD_NOCODE",
     "DISCORD_WEBHOOK_GN_KEYWORD_IU",
 )
-NEW_MODULES = (
-    "delivery_admin_alert.py",
-    "google_news_delivery_state.py",
-    "google_news_discord_delivery.py",
-    "google_news_dispatcher.py",
-    "google_news_feed_filter.py",
-    "google_news_keyword_matcher.py",
-    "google_news_manual_test.py",
-    "google_news_profile_result.py",
-    "google_news_reset.py",
-    "google_news_profiles.py",
-    "google_news_publisher_names.py",
-    "google_news_publisher_review.py",
-    "google_news_related_links.py",
-    "google_news_request_guard.py",
-    "google_news_url_resolver.py",
-    "feed_filters.py",
-    "feed_localization.py",
-    "youtube_delivery_state.py",
-    "youtube_discord_delivery.py",
-    "youtube_messages.py",
-    "youtube_video_source.py",
-    "youtube_to_discord.py",
-)
+def step_block(source: str, name: str) -> str:
+    marker = "- name: {}".format(name)
+    start = source.index(marker)
+    end = source.find("\n      - name:", start + len(marker))
+    return source[start:] if end == -1 else source[start:end]
+
+
 
 
 class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
     def source(self):
         return WORKFLOW.read_text(encoding="utf-8")
 
-    def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
+    def test_scheduled_workflow_accepts_external_dispatch(self):
         source = self.source()
         self.assertIn("cron: '*/15 * * * *'", source)
         self.assertNotIn("timezone:", source)
         self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
-        self.assertNotIn("workflow_dispatch:", source)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("inputs:", source)
         self.assertNotIn("manual_test:", source)
         self.assertNotIn("--manual-test", source)
         self.assertNotIn("validate_only:", source)
@@ -86,6 +72,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         ):
             self.assertIn("{}:".format(setting), source)
 
+    def test_webhook_secret_list_matches_the_profile_registry(self):
+        config = json.loads(
+            (WORKFLOWS_DIR.parent / "config" / "google_news_profiles.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected = {profile["webhook_env"] for profile in config}
+        self.assertEqual(expected, set(EXPECTED_WEBHOOK_SECRETS))
+
     def test_webhook_secrets_are_scoped_only_to_the_dispatcher_step(self):
         source = self.source()
         dispatcher_index = source.index("- name: Run unified Google News dispatcher")
@@ -105,16 +100,18 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertNotIn("googlenews-keyword_to_discord.py", source)
         self.assertNotIn("--manual-test", source)
 
-    def test_restore_uses_latest_completed_run_with_a_state_artifact(self):
+    def test_restore_uses_the_shared_selector_for_the_latest_state(self):
         source = self.source()
-        self.assertIn("status: 'completed'", source)
+        self.assertIn("selectLatestArtifact", source)
         self.assertIn("'googlenews-to-discord.yml'", source)
         self.assertIn("'googlenews-manual-test.yml'", source)
-        self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
-        self.assertIn("google-news-state", source)
-        self.assertIn("artifact-id", source)
-        self.assertIn("actions/download-artifact@v8", source)
+        self.assertIn("'googlenews-reset.yml'", source)
+        self.assertIn("artifactName: 'google-news-state'", source)
+        self.assertIn("core.setOutput('artifact-id', artifactId)", source)
+        self.assertIn("core.setOutput('source-run-id', sourceRunId)", source)
+        self.assertRegex(source, r"actions/download-artifact@[0-9a-f]{40}  # v8")
         self.assertIn("merge-multiple: true", source)
+        self.assertNotIn("new Date(right.created_at)", source)
         self.assertNotIn("status: 'success'", source)
 
     def test_restore_downloads_from_the_run_that_owns_the_artifact(self):
@@ -125,26 +122,48 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         )
 
     def test_restore_search_is_bounded_to_one_page_of_recent_runs(self):
-        source = self.source()
-        self.assertIn(
-            "const { data: runPage } = await github.rest.actions.listWorkflowRuns",
-            source,
-        )
-        self.assertIn("const runs = [];", source)
-        self.assertIn("runs.push(...runPage.workflow_runs);", source)
-        self.assertNotIn(
-            "github.paginate(\n              github.rest.actions.listWorkflowRuns",
-            source,
-        )
+        module = (
+            ROOT / "ops" / "state-artifact" / "select-state-artifact.cjs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("listWorkflowRuns", module)
+        self.assertIn("per_page: 100", module)
+        self.assertIn("context.runId", module)
+        self.assertNotIn("github.paginate", module)
+        finder = step_block(self.source(), "Find latest completed state artifact")
+        self.assertNotIn("listWorkflowRuns", finder)
 
     def test_state_is_uploaded_even_after_failure(self):
         source = self.source()
-        upload_index = source.index("- name: Upload updated state")
-        upload_section = source[upload_index:]
+        upload_section = step_block(source, "Upload updated state")
         self.assertIn("if: always()", upload_section)
-        self.assertIn("retention-days: 90", upload_section)
+        self.assertIn("retention-days: 3", upload_section)
         self.assertIn("path: .google-news-state/", upload_section)
         self.assertIn("include-hidden-files: true", upload_section)
+
+    def test_state_restore_failure_does_not_publish_empty_state(self):
+        for workflow, upload_name in (
+            (WORKFLOW, "Upload updated state"),
+            (MANUAL_WORKFLOW, "Upload updated state"),
+            (RESET_WORKFLOW, "Upload reset state"),
+        ):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("id: restore_state", source)
+                self.assertIn("id: retry_restore", source)
+                self.assertIn("Fail when state restore failed", source)
+                upload_section = step_block(source, upload_name)
+                self.assertIn(
+                    "steps.previous_state.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.restore_state.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.retry_restore.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.previous_state.outputs.artifact-id == ''", upload_section
+                )
 
     def test_scheduled_and_manual_workflows_upload_safe_publisher_review(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):
@@ -172,11 +191,17 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertNotIn("error.message", source)
                 self.assertNotIn("response.body", source)
 
-    def test_ci_compiles_every_new_runtime_module_on_python_312(self):
+    def test_ci_compiles_every_script_and_runs_static_checks(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python-version: '3.12'", source)
-        for module_name in NEW_MODULES:
-            self.assertIn(".github/scripts/{}".format(module_name), source)
+        self.assertIn("python -m compileall -q .github/scripts", source)
+        self.assertIn("ruff check .github/scripts .github/tests", source)
+        self.assertIn("yamllint -c .yamllint .github/workflows", source)
+        self.assertIn(
+            "node --test ops/state-trigger/test/*.test.mjs "
+            "ops/state-artifact/test/*.test.cjs",
+            source,
+        )
 
 
     def test_summaries_ignore_a_stale_run_summary(self):
@@ -249,17 +274,23 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
             with self.subTest(workflow=workflow.name):
                 source = workflow.read_text(encoding="utf-8")
                 self.assertIn("'googlenews-reset.yml'", source)
+                self.assertIn("selectLatestArtifact", source)
+                self.assertIn("artifactName: 'google-news-state'", source)
 
     def test_health_workflow_alerts_when_scheduled_runs_stop(self):
         source = HEALTH_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("cron: '0 */6 * * *'", source)
         self.assertIn("workflow_dispatch:", source)
         self.assertIn("googlenews-to-discord.yml", source)
+        self.assertIn("youtube_to_discord.yml", source)
         self.assertIn("status: 'completed'", source)
-        self.assertIn("12", source)
+        self.assertIn("per_page: 5", source)
+        self.assertIn("GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS", source)
+        self.assertIn("latestSuccess", source)
         self.assertIn("actions: read", source)
         self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
         self.assertIn("fetch(webhook", source)
+        self.assertIn("allowed_mentions", source)
         self.assertNotIn("console.log(webhook", source)
 
     def test_workflows_notify_admin_on_failure(self):
@@ -271,6 +302,14 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
                 self.assertIn("type(error).__name__", source)
                 self.assertNotIn("print(webhook", source)
+
+    def test_repeated_failure_alerts_are_throttled(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("id: alert_gate", source)
+        self.assertIn("previous.conclusion === 'failure'", source)
+        self.assertIn("60 * 60 * 1000", source)
+        self.assertIn("steps.alert_gate.outputs.notify == 'true'", source)
+        self.assertIn("Skipping duplicate admin alert", source)
 
 
 if __name__ == "__main__":

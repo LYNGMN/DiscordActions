@@ -13,55 +13,52 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: .github/requirements-youtube.txt
+          cache-dependency-path: |
+            .github/requirements.txt
+            .github/requirements-youtube.txt
+            .github/requirements-dev.txt
 
       - name: Install Dependencies
         run: |
+          python -m pip install --require-hashes -r .github/requirements.txt
           python -m pip install --require-hashes -r .github/requirements-youtube.txt
+          python -m pip install --require-hashes -r .github/requirements-dev.txt
           python -m pip check
 
       - name: Run Unit Tests
-        run: python -m unittest discover -s .github/tests -v
+        run: |
+          python -m coverage run --source=.github/scripts -m unittest discover -s .github/tests -v
+          python -m coverage report
 
-      - name: Compile Google News Scripts
+      - name: Validate Google News profile configuration
         run: >-
-          python -m py_compile
-          .github/scripts/feed_filters.py
-          .github/scripts/feed_localization.py
-          .github/scripts/delivery_admin_alert.py
-          .github/scripts/google_news_delivery_state.py
-          .github/scripts/google_news_discord_delivery.py
-          .github/scripts/google_news_dispatcher.py
-          .github/scripts/google_news_feed_filter.py
-          .github/scripts/google_news_keyword_matcher.py
-          .github/scripts/google_news_manual_test.py
-          .github/scripts/google_news_profile_result.py
-          .github/scripts/google_news_reset.py
-          .github/scripts/google_news_profiles.py
-          .github/scripts/google_news_publisher_names.py
-          .github/scripts/google_news_publisher_review.py
-          .github/scripts/google_news_related_links.py
-          .github/scripts/google_news_request_guard.py
-          .github/scripts/google_news_url_resolver.py
-          .github/scripts/googlenews-*_to_discord.py
+          python .github/scripts/google_news_dispatcher.py
+          --check-config
+          --state-dir "$(mktemp -d)"
 
-      - name: Compile YouTube Scripts
-        run: >-
-          python -m py_compile
-          .github/scripts/youtube_delivery_state.py
-          .github/scripts/youtube_discord_delivery.py
-          .github/scripts/youtube_messages.py
-          .github/scripts/youtube_video_source.py
-          .github/scripts/youtube_to_discord.py
+      - name: Compile Every Script
+        run: python -m compileall -q .github/scripts
+
+      - name: Lint Python
+        run: ruff check .github/scripts .github/tests
+
+      - name: Lint Workflows
+        run: yamllint -c .yamllint .github/workflows
+
+      - name: Test the External Trigger and State Selection
+        run: node --test ops/state-trigger/test/*.test.mjs ops/state-artifact/test/*.test.cjs
 
       - name: Validate JSON configuration
         run: |
