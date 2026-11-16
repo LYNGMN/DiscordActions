@@ -28,6 +28,7 @@ def branded_youtube_payload(payload: dict) -> dict:
     safe_payload = copy.deepcopy(payload)
     safe_payload["username"] = YOUTUBE_USERNAME
     safe_payload["avatar_url"] = YOUTUBE_AVATAR_URL
+    safe_payload["allowed_mentions"] = {"parse": []}
     for embed in safe_payload.get("embeds", []):
         footer = dict(embed.get("footer") or {})
         footer["icon_url"] = YOUTUBE_AVATAR_URL

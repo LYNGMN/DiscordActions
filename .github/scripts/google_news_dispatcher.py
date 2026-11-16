@@ -390,6 +390,7 @@ def run_profiles(
         database_map,
         retention_days,
         url_cache_retention_days,
+        run_deadline,
     )
     emitted = _emit_profile_annotations(results, circuit_state)
     _emit_backlog_annotations(backlog_events, emitted)
@@ -587,6 +588,7 @@ def _prune_state_databases(
     database_map: Mapping[str, str],
     retention_days: int,
     url_cache_retention_days: int,
+    run_deadline: Optional[float] = None,
 ) -> Dict[str, int]:
     paths = [str(state_path / name) for name in database_map.values()]
     paths.append(str(state_path / "resolver.db"))
@@ -595,6 +597,7 @@ def _prune_state_databases(
             paths,
             retention_days=retention_days,
             url_cache_retention_days=url_cache_retention_days,
+            deadline=run_deadline,
         )
     except (OSError, sqlite3.Error, ValueError) as error:
         LOGGER.warning(

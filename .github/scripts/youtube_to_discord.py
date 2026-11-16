@@ -242,6 +242,14 @@ def create_embed_message(video, youtube, display_language):
         "attachments": []
     }
 
+def _is_permanent_delivery_error(error_code):
+    match = re.fullmatch(r"discord_http_(\d{3})", str(error_code or ""))
+    if not match:
+        return False
+    status = int(match.group(1))
+    return 400 <= status < 500 and status != 429
+
+
 def deliver_queued_video(video_id):
     for target, payload in pending_youtube_targets(DB_PATH, video_id):
         webhook_url = (
@@ -253,14 +261,18 @@ def deliver_queued_video(video_id):
             result = send_youtube_webhook(webhook_url, payload)
         except Exception as error:
             error_code = getattr(error, 'error_code', 'final_failure')
-            mark_youtube_target_failed(
+            finalized = mark_youtube_target_failed(
                 DB_PATH,
                 video_id,
                 target,
                 error_code,
                 attempt_count=getattr(error, 'attempt_count', 1),
+                permanent=_is_permanent_delivery_error(error_code),
             )
-            print("::warning title=YouTube delivery failed::A queued delivery remains pending")
+            if not finalized:
+                print("::warning title=YouTube delivery failed::A queued delivery remains pending")
+                raise
+            print("::warning title=YouTube delivery abandoned::A permanently failed target was skipped")
             notify_admin(
                 DISCORD_WEBHOOK_ADMIN,
                 'YouTube',
@@ -268,7 +280,7 @@ def deliver_queued_video(video_id):
                 video_id,
                 error_code,
             )
-            raise
+            continue
         error_code = 'ambiguous_retry' if result.ambiguous_retry else None
         if error_code:
             logging.warning(
@@ -326,6 +338,7 @@ def write_run_summary(status):
         'status': status,
         'pending_count': metrics['pending_count'],
         'ambiguous_retry_count': metrics['ambiguous_retry_count'],
+        'run_id': os.environ.get('GITHUB_RUN_ID'),
     }
     with open(YOUTUBE_RUN_SUMMARY_PATH, 'w', encoding='utf-8') as handle:
         json.dump(payload, handle, sort_keys=True)

@@ -52,6 +52,7 @@ class AdminAlertTests(unittest.TestCase):
         self.assertEqual(1, len(calls))
         posted_url = calls[0][0][0]
         content = calls[0][1]["json"]["content"]
+        self.assertEqual({"parse": []}, calls[0][1]["json"]["allowed_mentions"])
         self.assertEqual("https://discord.example/secret-webhook", posted_url)
         self.assertIn("YouTube", content)
         self.assertIn("channel", content)

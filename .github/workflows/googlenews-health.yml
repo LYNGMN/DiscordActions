@@ -61,7 +61,11 @@ jobs:
             const response = await fetch(webhook, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content, username: 'Discord Actions' }),
+              body: JSON.stringify({
+                content,
+                username: 'Discord Actions',
+                allowed_mentions: { parse: [] },
+              }),
             });
             if (!response.ok) {
               core.setFailed(`Admin notification failed with HTTP ${response.status}`);

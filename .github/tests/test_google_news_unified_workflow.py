@@ -22,6 +22,13 @@ EXPECTED_WEBHOOK_SECRETS = (
     "DISCORD_WEBHOOK_GN_KEYWORD_NOCODE",
     "DISCORD_WEBHOOK_GN_KEYWORD_IU",
 )
+def step_block(source: str, name: str) -> str:
+    marker = "- name: {}".format(name)
+    start = source.index(marker)
+    end = source.find("\n      - name:", start + len(marker))
+    return source[start:] if end == -1 else source[start:end]
+
+
 NEW_MODULES = (
     "delivery_admin_alert.py",
     "google_news_delivery_state.py",
@@ -139,12 +146,36 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
 
     def test_state_is_uploaded_even_after_failure(self):
         source = self.source()
-        upload_index = source.index("- name: Upload updated state")
-        upload_section = source[upload_index:]
+        upload_section = step_block(source, "Upload updated state")
         self.assertIn("if: always()", upload_section)
-        self.assertIn("retention-days: 90", upload_section)
+        self.assertIn("retention-days: 3", upload_section)
         self.assertIn("path: .google-news-state/", upload_section)
         self.assertIn("include-hidden-files: true", upload_section)
+
+    def test_state_restore_failure_does_not_publish_empty_state(self):
+        for workflow, upload_name in (
+            (WORKFLOW, "Upload updated state"),
+            (MANUAL_WORKFLOW, "Upload updated state"),
+            (RESET_WORKFLOW, "Upload reset state"),
+        ):
+            with self.subTest(workflow=workflow.name):
+                source = workflow.read_text(encoding="utf-8")
+                self.assertIn("id: restore_state", source)
+                self.assertIn("id: retry_restore", source)
+                self.assertIn("Fail when state restore failed", source)
+                upload_section = step_block(source, upload_name)
+                self.assertIn(
+                    "steps.previous_state.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.restore_state.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.retry_restore.outcome == 'success'", upload_section
+                )
+                self.assertIn(
+                    "steps.previous_state.outputs.artifact-id == ''", upload_section
+                )
 
     def test_scheduled_and_manual_workflows_upload_safe_publisher_review(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):

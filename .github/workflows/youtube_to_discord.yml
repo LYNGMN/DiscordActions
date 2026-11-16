@@ -71,7 +71,9 @@ jobs:
             core.setOutput('source-run-id', sourceRunId);
 
       - name: Restore previous database
+        id: restore_state
         if: env.INITIALIZE_MODE_YOUTUBE != 'true' && steps.previous_state.outputs.artifact-id != ''
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
@@ -80,6 +82,25 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ steps.previous_state.outputs.source-run-id }}
+
+      - name: Retry restore previous database
+        id: retry_restore
+        if: steps.restore_state.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
+          path: .
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.previous_state.outputs.source-run-id }}
+
+      - name: Fail when state restore failed
+        if: always() && env.INITIALIZE_MODE_YOUTUBE != 'true' && steps.previous_state.outcome == 'success' && steps.previous_state.outputs.artifact-id != '' && steps.restore_state.outcome != 'success' && steps.retry_restore.outcome != 'success'
+        run: |
+          echo "::error title=YouTube state restore failed::Keeping the previous artifact and skipping the database upload."
+          exit 1
 
       - name: Inspect restored database
         id: state
@@ -146,6 +167,14 @@ jobs:
               return;
             }
             const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const summaryRunId = summary.run_id ? String(summary.run_id) : '';
+            if (summaryRunId && summaryRunId !== String(context.runId)) {
+              await core.summary
+                .addHeading('YouTube')
+                .addRaw('No run summary was produced for this run.')
+                .write();
+              return;
+            }
             await core.summary
               .addHeading('YouTube')
               .addRaw(`Status: ${summary.status}\n`)
@@ -154,7 +183,9 @@ jobs:
               .write();
 
       - name: Upload updated database
-        if: always()
+        id: upload_state
+        if: always() && steps.previous_state.outcome == 'success' && (env.INITIALIZE_MODE_YOUTUBE == 'true' || steps.previous_state.outputs.artifact-id == '' || steps.restore_state.outcome == 'success' || steps.retry_restore.outcome == 'success')
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: youtube_database
@@ -162,4 +193,51 @@ jobs:
             youtube_videos.db
             youtube-run-summary.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 14
+
+      - name: Retry database upload
+        id: retry_state
+        if: always() && steps.upload_state.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: youtube_database
+          path: |
+            youtube_videos.db
+            youtube-run-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Note recovered database upload
+        if: always() && steps.upload_state.outcome == 'failure' && steps.retry_state.outcome == 'success'
+        run: echo "::warning title=YouTube database upload retried::The first upload failed and the retry succeeded"
+
+      - name: Fail when database upload failed
+        if: always() && steps.upload_state.outcome == 'failure' && steps.retry_state.outcome == 'failure'
+        run: |
+          echo "::error title=YouTube database upload failed::The next run may restore an older database and resend videos."
+          exit 1
+
+      - name: Notify admin of failed run
+        if: failure()
+        uses: actions/github-script@v9
+        env:
+          DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
+        with:
+          script: |
+            const webhook = (process.env.DISCORD_WEBHOOK_ADMIN || '').trim();
+            if (!webhook) return;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const content = ['**YouTube 실행 실패**', runUrl].join('\n');
+            const response = await fetch(webhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content,
+                username: 'Discord Actions',
+                allowed_mentions: { parse: [] },
+              }),
+            });
+            if (!response.ok) {
+              core.warning(`Admin notification failed with HTTP ${response.status}`);
+            }

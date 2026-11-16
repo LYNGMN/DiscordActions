@@ -48,7 +48,11 @@ def notify_admin(
     try:
         response = post(
             webhook_url,
-            json={"content": "\n".join(lines), "username": "Discord Actions"},
+            json={
+                "content": "\n".join(lines),
+                "username": "Discord Actions",
+                "allowed_mentions": {"parse": []},
+            },
             headers={"Content-Type": "application/json"},
             timeout=(5.0, 15.0),
         )
@@ -65,7 +69,11 @@ def notify_admin_text(webhook_url: str, content: str, post=requests.post) -> boo
     try:
         response = post(
             webhook_url,
-            json={"content": content, "username": "Discord Actions"},
+            json={
+                "content": content,
+                "username": "Discord Actions",
+                "allowed_mentions": {"parse": []},
+            },
             headers={"Content-Type": "application/json"},
             timeout=(5.0, 15.0),
         )

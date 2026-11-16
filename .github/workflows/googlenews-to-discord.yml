@@ -15,7 +15,7 @@ concurrency:
 jobs:
   deliver:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -75,7 +75,9 @@ jobs:
             core.setOutput('source-run-id', sourceRunId);
 
       - name: Restore previous state
+        id: restore_state
         if: steps.previous_state.outputs.artifact-id != ''
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
@@ -84,6 +86,25 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ steps.previous_state.outputs.source-run-id }}
+
+      - name: Retry restore previous state
+        id: retry_restore
+        if: steps.restore_state.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
+          path: .google-news-state
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.previous_state.outputs.source-run-id }}
+
+      - name: Fail when state restore failed
+        if: always() && steps.previous_state.outcome == 'success' && steps.previous_state.outputs.artifact-id != '' && steps.restore_state.outcome != 'success' && steps.retry_restore.outcome != 'success'
+        run: |
+          echo "::error title=Google News state restore failed::Keeping the previous artifact and skipping the state upload."
+          exit 1
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -238,7 +259,7 @@ jobs:
 
       - name: Upload updated state
         id: upload_state
-        if: always()
+        if: always() && steps.previous_state.outcome == 'success' && (steps.previous_state.outputs.artifact-id == '' || steps.restore_state.outcome == 'success' || steps.retry_restore.outcome == 'success')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -246,7 +267,7 @@ jobs:
           path: .google-news-state/
           if-no-files-found: error
           include-hidden-files: true
-          retention-days: 90
+          retention-days: 3
           overwrite: true
 
       - name: Retry state upload
@@ -259,7 +280,7 @@ jobs:
           path: .google-news-state/
           if-no-files-found: error
           include-hidden-files: true
-          retention-days: 90
+          retention-days: 3
           overwrite: true
 
       - name: Note recovered state upload
@@ -327,7 +348,11 @@ jobs:
           try:
               response = requests.post(
                   webhook,
-                  json={"content": "\n".join(lines), "username": "Discord Actions"},
+                  json={
+                      "content": "\n".join(lines),
+                      "username": "Discord Actions",
+                      "allowed_mentions": {"parse": []},
+                  },
                   timeout=(5.0, 15.0),
               )
               response.raise_for_status()

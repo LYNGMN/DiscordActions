@@ -165,6 +165,7 @@ def send_webhook_message(
     safe_payload = dict(payload)
     safe_payload["username"] = GOOGLE_NEWS_USERNAME
     safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
+    safe_payload["allowed_mentions"] = {"parse": []}
     content = safe_payload.get("content")
     if isinstance(content, str):
         safe_payload["content"] = _limit_content(content)

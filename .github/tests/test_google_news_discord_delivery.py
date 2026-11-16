@@ -62,6 +62,8 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
             "https://discordactions.github.io/logo/media/original/news/googlenews.png",
             posted_payload["avatar_url"],
         )
+        self.assertEqual({"parse": []}, posted_payload["allowed_mentions"])
+        self.assertNotIn("allowed_mentions", payload)
         self.assertEqual("Stale Name", payload["username"])
         self.assertEqual("https://example.com/stale.png", payload["avatar_url"])
 
