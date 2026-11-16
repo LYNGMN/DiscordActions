@@ -42,6 +42,9 @@ tagged release.
   rule.
 - Historical design and plan documents under `docs/superpowers/` are marked
   as historical.
+- The three Google News handlers now share `google_news_handler_runtime.py`
+  for the queue delivery loop, module-deadline handling and permanent-failure
+  notification. Unused copies of the old date-filter helpers were removed.
 
 ### Fixed
 

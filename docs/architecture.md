@@ -37,6 +37,7 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
 | 핸들러 | `top`/`topic`/`keyword`별 RSS URL·라벨·메시지 구성 | `googlenews-*_to_discord.py` |
 | 공용 상태 | SQLite 스키마, 대기열, 중복 판정, 보존 정리 | `google_news_delivery_state.py`, `youtube_delivery_state.py` |
 | 공용 전송 | Discord webhook 호출, 429/5xx 재시도, 2,000자 분할 | `google_news_discord_delivery.py`, `youtube_discord_delivery.py` |
+| 핸들러 런타임 | 대기열 전송 루프, 예산 중단, 영구 실패 알림 | `google_news_handler_runtime.py` |
 | 설정 | 프로필 JSON과 공통 Repository Variable 검증 | `google_news_profiles.py`, `feed_filters.py` |
 
 ## 3. 상태 artifact 계약

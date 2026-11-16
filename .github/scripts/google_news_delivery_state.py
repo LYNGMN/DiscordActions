@@ -86,9 +86,6 @@ class QueueDeliveryOutcome:
 def prepare_scheduled_items(
     items: Sequence[Element],
     db_path: str,
-    now: Optional[datetime] = None,
-    max_items: Optional[int] = None,
-    max_age_minutes: Optional[int] = None,
     delivery_order: str = "feed_oldest_first",
 ) -> List[Element]:
     item_list = list(items)

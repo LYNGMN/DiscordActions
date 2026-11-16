@@ -388,48 +388,6 @@ def apply_advanced_filter(title, advanced_filter):
 
     return True
 
-def parse_date_filter(filter_string):
-    since_date = None
-    until_date = None
-    past_date = None
-
-    since_match = re.search(r'since:(\d{4}-\d{2}-\d{2})', filter_string)
-    until_match = re.search(r'until:(\d{4}-\d{2}-\d{2})', filter_string)
-    
-    if since_match:
-        since_date = datetime.strptime(since_match.group(1), '%Y-%m-%d')
-    elif until_match:
-        until_date = datetime.strptime(until_match.group(1), '%Y-%m-%d')
-
-    past_match = re.search(r'past:(\d+)([hdmy])', filter_string)
-    if past_match:
-        value = int(past_match.group(1))
-        unit = past_match.group(2)
-        now = datetime.now()
-        if unit == 'h':
-            past_date = now - timedelta(hours=value)
-        elif unit == 'd':
-            past_date = now - timedelta(days=value)
-        elif unit == 'm':
-            past_date = now - timedelta(days=value*30)  # 근사값 사용
-        elif unit == 'y':
-            past_date = now - timedelta(days=value*365)  # 근사값 사용
-
-    return since_date, until_date, past_date
-
-def is_within_date_range(published_at, since_date, until_date, past_date):
-    pub_datetime = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
-    
-    if past_date:
-        return pub_datetime >= past_date
-    
-    if since_date:
-        return pub_datetime >= since_date
-    if until_date:
-        return pub_datetime <= until_date
-    
-    return True
-
 # 카테고리 ID를 이름으로 변환하는 캐시를 이용한 함수
 category_cache = {}
 def get_category_name(
