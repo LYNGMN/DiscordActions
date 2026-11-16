@@ -227,6 +227,8 @@ class GoogleNewsProfileTests(unittest.TestCase):
             "DISCORD_WEBHOOK_GN_TOP_US": FAKE_WEBHOOK_BASE + "/1/redacted",
             "DISCORD_WEBHOOK_GN_KEYWORD_IU": FAKE_WEBHOOK_BASE + "/2/redacted",
             "DISCORD_WEBHOOK_ADMIN": FAKE_WEBHOOK_BASE + "/3/redacted",
+            "RUN_EVENTS_PATH": ".google-news-events/run-events.jsonl",
+            "GITHUB_RUN_ID": "12345",
             "UNRELATED_SECRET": "must-not-be-forwarded",
         }
 
@@ -248,6 +250,11 @@ class GoogleNewsProfileTests(unittest.TestCase):
         self.assertEqual(
             FAKE_WEBHOOK_BASE + "/3/redacted", environment["DISCORD_WEBHOOK_ADMIN"]
         )
+        self.assertEqual(
+            ".google-news-events/run-events.jsonl",
+            environment["RUN_EVENTS_PATH"],
+        )
+        self.assertEqual("12345", environment["GITHUB_RUN_ID"])
         self.assertNotIn("DISCORD_WEBHOOK_GN_KEYWORD_IU", environment)
         self.assertNotIn("UNRELATED_SECRET", environment)
 
