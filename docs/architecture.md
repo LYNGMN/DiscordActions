@@ -39,6 +39,7 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
 | 공용 상태 | SQLite 스키마, 대기열, 중복 판정, 보존 정리 | `google_news_delivery_state.py`, `youtube_delivery_state.py` |
 | 공용 전송 | Discord webhook 호출, 429/5xx 재시도, 2,000자 분할, 아바타 적용 경고 | `google_news_discord_delivery.py`, `youtube_discord_delivery.py` |
 | 이벤트 로그 | `event=` 로그와 `run-events.jsonl` 아티팩트(URL·본문 제외) | `run_events.py` |
+| 상태 선택 | 최신 비만료 상태 artifact 선택(워크플로 4개 공용) | `ops/state-artifact/select-state-artifact.cjs` |
 | 웹훅 아바타 | 승인된 로고를 웹훅 기본 아바타로 저장 | `set_webhook_avatars.py`, `set-webhook-avatars.yml` |
 | 핸들러 런타임 | 대기열 전송 루프, 예산 중단, 영구 실패 알림 | `google_news_handler_runtime.py` |
 | 설정 | 프로필 JSON과 공통 Repository Variable 검증 | `google_news_profiles.py`, `feed_filters.py` |
@@ -60,7 +61,7 @@ GitHub `schedule`은 백업 트리거로 남아 있습니다. Worker가 없거�
 1. **복원이 실패하면 업로드하지 않는다.** 복원 단계는 `continue-on-error`로 1회 재시도하고, 최종 실패 시 실행을 실패시킨다. 빈 상태가 최신 artifact가 되면 중복 방지와 백로그가 사라진다.
 2. **업로드는 복원 성공 또는 첫 실행일 때만 한다.** 첫 실행은 artifact가 없는 경우만 허용한다.
 3. **업로드 실패는 1회 재시도하고, 두 번 모두 실패하면 실행을 실패시킨다.** 다음 실행이 이전 상태를 복원해 중복 전송할 수 있음을 운영자가 알 수 있어야 한다.
-4. 상태 artifact 보존은 Google News 3일, YouTube 14일이다. 복원은 항상 최신 1개만 사용한다. 리뷰 artifact만 90일 보관한다.
+4. 상태 artifact 보존은 Google News 3일, YouTube 14일이다. 복원은 항상 최신 1개만 사용하며, 선택 로직은 `ops/state-artifact/select-state-artifact.cjs` 한 곳에 있다. 리뷰 artifact만 90일 보관한다.
 5. SQLite는 WAL을 켜지 않는다(기본 rollback journal). 프로세스 종료 후 디렉터리를 통째로 올리므로 DB와 journal이 함께 보존된다.
 6. dispatcher는 각 DB에 `PRAGMA quick_check`를 실행한다. 손상된 파일은 상태 디렉터리 밖으로 격리하고, 실행 요약 `state_repairs`에 기록한 뒤 해당 프로필은 새 DB로 시작한다. 오래된 항목이 다시 전송될 수 있지만 채널 전체가 영구히 멈추지는 않는다.
 
@@ -129,6 +130,6 @@ python3.12 -m venv /tmp/discordactions-venv
 PYTHONDONTWRITEBYTECODE=1 /tmp/discordactions-venv/bin/python -m unittest discover -s .github/tests
 /tmp/discordactions-venv/bin/ruff check .github/scripts .github/tests
 /tmp/discordactions-venv/bin/yamllint -c .yamllint .github/workflows
-node --test ops/state-trigger/test/*.test.mjs
+node --test ops/state-trigger/test/*.test.mjs ops/state-artifact/test/*.test.cjs
 python .github/scripts/google_news_dispatcher.py --check-config
 ```

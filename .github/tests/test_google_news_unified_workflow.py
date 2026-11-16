@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / "workflows"
+ROOT = WORKFLOWS_DIR.parents[1]
 WORKFLOW = WORKFLOWS_DIR / "googlenews-to-discord.yml"
 MANUAL_WORKFLOW = WORKFLOWS_DIR / "googlenews-manual-test.yml"
 HEALTH_WORKFLOW = WORKFLOWS_DIR / "googlenews-health.yml"
@@ -99,16 +100,18 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertNotIn("googlenews-keyword_to_discord.py", source)
         self.assertNotIn("--manual-test", source)
 
-    def test_restore_uses_latest_completed_run_with_a_state_artifact(self):
+    def test_restore_uses_the_shared_selector_for_the_latest_state(self):
         source = self.source()
-        self.assertIn("status: 'completed'", source)
+        self.assertIn("selectLatestArtifact", source)
         self.assertIn("'googlenews-to-discord.yml'", source)
         self.assertIn("'googlenews-manual-test.yml'", source)
-        self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
-        self.assertIn("google-news-state", source)
-        self.assertIn("artifact-id", source)
+        self.assertIn("'googlenews-reset.yml'", source)
+        self.assertIn("artifactName: 'google-news-state'", source)
+        self.assertIn("core.setOutput('artifact-id', artifactId)", source)
+        self.assertIn("core.setOutput('source-run-id', sourceRunId)", source)
         self.assertRegex(source, r"actions/download-artifact@[0-9a-f]{40}  # v8")
         self.assertIn("merge-multiple: true", source)
+        self.assertNotIn("new Date(right.created_at)", source)
         self.assertNotIn("status: 'success'", source)
 
     def test_restore_downloads_from_the_run_that_owns_the_artifact(self):
@@ -119,17 +122,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         )
 
     def test_restore_search_is_bounded_to_one_page_of_recent_runs(self):
-        source = self.source()
-        self.assertIn(
-            "const { data: runPage } = await github.rest.actions.listWorkflowRuns",
-            source,
-        )
-        self.assertIn("const runs = [];", source)
-        self.assertIn("runs.push(...runPage.workflow_runs);", source)
-        self.assertNotIn(
-            "github.paginate(\n              github.rest.actions.listWorkflowRuns",
-            source,
-        )
+        module = (
+            ROOT / "ops" / "state-artifact" / "select-state-artifact.cjs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("listWorkflowRuns", module)
+        self.assertIn("per_page: 100", module)
+        self.assertIn("context.runId", module)
+        self.assertNotIn("github.paginate", module)
+        finder = step_block(self.source(), "Find latest completed state artifact")
+        self.assertNotIn("listWorkflowRuns", finder)
 
     def test_state_is_uploaded_even_after_failure(self):
         source = self.source()
@@ -196,7 +197,11 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("python -m compileall -q .github/scripts", source)
         self.assertIn("ruff check .github/scripts .github/tests", source)
         self.assertIn("yamllint -c .yamllint .github/workflows", source)
-        self.assertIn("node --test ops/state-trigger/test/*.test.mjs", source)
+        self.assertIn(
+            "node --test ops/state-trigger/test/*.test.mjs "
+            "ops/state-artifact/test/*.test.cjs",
+            source,
+        )
 
 
     def test_summaries_ignore_a_stale_run_summary(self):

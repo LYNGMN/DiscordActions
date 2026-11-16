@@ -74,7 +74,8 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             self.assertIn("cancel-in-progress: false", source)
             self.assertIn("'googlenews-to-discord.yml'", source)
             self.assertIn("'googlenews-manual-test.yml'", source)
-            self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
+            self.assertIn("selectLatestArtifact", source)
+            self.assertIn("artifactName: 'google-news-state'", source)
             self.assertIn("name: google-news-state", source)
             self.assertIn("if: always()", source)
 

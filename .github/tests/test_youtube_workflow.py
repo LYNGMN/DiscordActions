@@ -251,20 +251,19 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("group: youtube-to-discord", source)
         self.assertIn("cancel-in-progress: false", source)
 
-    def test_restore_selects_a_real_unexpired_database_artifact(self):
+    def test_restore_uses_the_shared_selector_for_the_database(self):
         source = self.source()
 
-        self.assertIn("status: 'completed'", source)
+        self.assertIn("selectLatestArtifact", source)
         self.assertIn("'youtube_to_discord.yml'", source)
         self.assertIn("'youtube-manual-test.yml'", source)
-        self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
-        self.assertIn("artifact.name === 'youtube_database'", source)
-        self.assertIn("!artifact.expired", source)
-        self.assertIn("core.setOutput('artifact-id'", source)
-        self.assertIn("core.setOutput('source-run-id'", source)
+        self.assertIn("artifactName: 'youtube_database'", source)
+        self.assertIn("core.setOutput('artifact-id', artifactId)", source)
+        self.assertIn("core.setOutput('source-run-id', sourceRunId)", source)
         self.assertIn("artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}", source)
         self.assertIn("run-id: ${{ steps.previous_state.outputs.source-run-id }}", source)
         self.assertIn("merge-multiple: true", source)
+        self.assertNotIn("artifact.name === 'youtube_database'", source)
         self.assertNotIn("status: 'success'", source)
 
     def test_missing_state_in_scheduled_mode_baselines_without_manual_delivery(self):

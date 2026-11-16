@@ -54,45 +54,20 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { owner, repo } = context.repo;
-            const workflowIds = [
-              'googlenews-to-discord.yml',
-              'googlenews-manual-test.yml',
-              'googlenews-reset.yml',
-            ];
-            const runs = [];
-            for (const workflowId of workflowIds) {
-              const { data: runPage } = await github.rest.actions.listWorkflowRuns({
-                owner,
-                repo,
-                workflow_id: workflowId,
-                status: 'completed',
-                per_page: 100,
-              });
-              runs.push(...runPage.workflow_runs);
-            }
-            runs.sort(
-              (left, right) => new Date(right.created_at) - new Date(left.created_at)
+            const { selectLatestArtifact } = require(
+              process.env.GITHUB_WORKSPACE +
+                '/ops/state-artifact/select-state-artifact.cjs'
             );
-            let artifactId = '';
-            let sourceRunId = '';
-            for (const run of runs) {
-              if (run.id === context.runId) continue;
-              const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
-                owner,
-                repo,
-                run_id: run.id,
-                per_page: 100,
-              });
-              const state = artifactPage.artifacts.find(
-                artifact => artifact.name === 'google-news-state' && !artifact.expired
-              );
-              if (state) {
-                artifactId = String(state.id);
-                sourceRunId = String(run.id);
-                break;
-              }
-            }
+            const { artifactId, sourceRunId } = await selectLatestArtifact({
+              github,
+              context,
+              workflowIds: [
+                'googlenews-to-discord.yml',
+                'googlenews-manual-test.yml',
+                'googlenews-reset.yml',
+              ],
+              artifactName: 'google-news-state',
+            });
             core.setOutput('artifact-id', artifactId);
             core.setOutput('source-run-id', sourceRunId);
 

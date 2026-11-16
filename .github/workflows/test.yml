@@ -57,8 +57,8 @@ jobs:
       - name: Lint Workflows
         run: yamllint -c .yamllint .github/workflows
 
-      - name: Test the External Trigger
-        run: node --test ops/state-trigger/test/*.test.mjs
+      - name: Test the External Trigger and State Selection
+        run: node --test ops/state-trigger/test/*.test.mjs ops/state-artifact/test/*.test.cjs
 
       - name: Validate JSON configuration
         run: |

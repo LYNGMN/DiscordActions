@@ -18,6 +18,10 @@ tagged release.
 - `docs/architecture.md`, `docs/README.md`, `AGENTS.md` and this changelog.
 - `profile-rotation.json`: the next run starts at the first profile skipped by
   the time budget.
+- `ops/state-artifact/select-state-artifact.cjs`: one tested selector for the
+  newest non-expired state artifact, shared by the four stateful workflows.
+- local HTTP contract tests for Discord 429/400/5xx handling, including the
+  `allowed_mentions` payload boundary.
 - `GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS` (default 40) to bound original-URL
   resolution per profile per run.
 - `GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS` (default 6) for the health workflow.
