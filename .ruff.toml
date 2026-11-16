@@ -1,0 +1,5 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E9", "F63", "F7", "F82"]

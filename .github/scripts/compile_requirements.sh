@@ -31,3 +31,11 @@ CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --index-url
   --output-file=.github/requirements-youtube.txt \
   --strip-extras \
   .github/requirements-youtube.in
+
+CUSTOM_COMPILE_COMMAND="python -m piptools compile --generate-hashes --index-url=https://pypi.org/simple --output-file=.github/requirements-dev.txt --strip-extras .github/requirements-dev.in" \
+  "$PYTHON_BIN" -m piptools compile \
+  --generate-hashes \
+  --index-url=https://pypi.org/simple \
+  --output-file=.github/requirements-dev.txt \
+  --strip-extras \
+  .github/requirements-dev.in

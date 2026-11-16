@@ -29,30 +29,6 @@ def step_block(source: str, name: str) -> str:
     return source[start:] if end == -1 else source[start:end]
 
 
-NEW_MODULES = (
-    "delivery_admin_alert.py",
-    "google_news_delivery_state.py",
-    "google_news_discord_delivery.py",
-    "google_news_dispatcher.py",
-    "google_news_feed_filter.py",
-    "google_news_keyword_matcher.py",
-    "google_news_manual_test.py",
-    "google_news_profile_result.py",
-    "google_news_reset.py",
-    "google_news_profiles.py",
-    "google_news_publisher_names.py",
-    "google_news_publisher_review.py",
-    "google_news_related_links.py",
-    "google_news_request_guard.py",
-    "google_news_url_resolver.py",
-    "feed_filters.py",
-    "feed_localization.py",
-    "youtube_delivery_state.py",
-    "youtube_discord_delivery.py",
-    "youtube_messages.py",
-    "youtube_video_source.py",
-    "youtube_to_discord.py",
-)
 
 
 class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
@@ -121,7 +97,7 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("new Date(right.created_at) - new Date(left.created_at)", source)
         self.assertIn("google-news-state", source)
         self.assertIn("artifact-id", source)
-        self.assertIn("actions/download-artifact@v8", source)
+        self.assertRegex(source, r"actions/download-artifact@[0-9a-f]{40}  # v8")
         self.assertIn("merge-multiple: true", source)
         self.assertNotIn("status: 'success'", source)
 
@@ -204,11 +180,13 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertNotIn("error.message", source)
                 self.assertNotIn("response.body", source)
 
-    def test_ci_compiles_every_new_runtime_module_on_python_312(self):
+    def test_ci_compiles_every_script_and_runs_static_checks(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python-version: '3.12'", source)
-        for module_name in NEW_MODULES:
-            self.assertIn(".github/scripts/{}".format(module_name), source)
+        self.assertIn("python -m compileall -q .github/scripts", source)
+        self.assertIn("ruff check .github/scripts .github/tests", source)
+        self.assertIn("yamllint -c .yamllint .github/workflows", source)
+        self.assertIn("node --test ops/state-trigger/test/*.test.mjs", source)
 
 
     def test_summaries_ignore_a_stale_run_summary(self):

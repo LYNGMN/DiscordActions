@@ -470,13 +470,8 @@ class YouTubeWorkflowTests(unittest.TestCase):
     def test_ci_compiles_youtube_runtime_modules(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn(".github/scripts/youtube_delivery_state.py", source)
-        self.assertIn(".github/scripts/youtube_discord_delivery.py", source)
-        self.assertIn(".github/scripts/youtube_video_source.py", source)
-        self.assertIn(".github/scripts/youtube_messages.py", source)
-        self.assertIn(".github/scripts/feed_filters.py", source)
-        self.assertIn(".github/scripts/feed_localization.py", source)
-        self.assertIn(".github/scripts/youtube_to_discord.py", source)
+        self.assertIn("python -m compileall -q .github/scripts", source)
+        self.assertIn(".github/requirements-youtube.txt", source)
 
     def test_rss_source_needs_no_api_key_but_rejects_search(self):
         module = load_youtube_script()

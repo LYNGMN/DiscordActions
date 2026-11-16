@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check scheduled deliveries
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         env:
           DISCORD_WEBHOOK_ADMIN: ${{ secrets.DISCORD_WEBHOOK_ADMIN }}
           MAX_AGE_HOURS: ${{ vars.GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS || '6' }}

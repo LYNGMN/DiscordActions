@@ -38,7 +38,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Prepare state directory
         run: |
@@ -47,7 +49,7 @@ jobs:
 
       - name: Find latest completed state artifact
         id: previous_state
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -97,7 +99,7 @@ jobs:
         id: restore_state
         if: steps.previous_state.outputs.artifact-id != ''
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .google-news-state
@@ -110,7 +112,7 @@ jobs:
         id: retry_restore
         if: steps.restore_state.outcome == 'failure'
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8
         with:
           artifact-ids: ${{ steps.previous_state.outputs.artifact-id }}
           path: .google-news-state
@@ -126,7 +128,7 @@ jobs:
           exit 1
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: '3.12'
           cache: pip
@@ -170,7 +172,7 @@ jobs:
 
       - name: Write reset summary
         if: always()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
             const fs = require('fs');
@@ -207,7 +209,7 @@ jobs:
         id: upload_state
         if: always() && steps.previous_state.outcome == 'success' && (steps.previous_state.outputs.artifact-id == '' || steps.restore_state.outcome == 'success' || steps.retry_restore.outcome == 'success')
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: google-news-state
           path: .google-news-state/
@@ -220,7 +222,7 @@ jobs:
         id: retry_state
         if: always() && steps.upload_state.outcome == 'failure'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: google-news-state
           path: .google-news-state/

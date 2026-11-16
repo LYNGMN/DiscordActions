@@ -63,13 +63,10 @@ class GoogleNewsManualWorkflowTests(unittest.TestCase):
             self.assertIn("name: google-news-state", source)
             self.assertIn("if: always()", source)
 
-    def test_ci_compiles_manual_test_module(self):
+    def test_ci_compiles_every_script(self):
         source = (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
 
-        self.assertIn(
-            ".github/scripts/google_news_manual_test.py",
-            source,
-        )
+        self.assertIn("python -m compileall -q .github/scripts", source)
 
     def test_obsolete_and_blocked_workflows_are_removed(self):
         for workflow_name in REMOVED_WORKFLOWS:
