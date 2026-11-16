@@ -5,9 +5,19 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      python-dependencies:
+      python-patch:
+        applies-to: version-updates
         patterns:
           - "*"
+        update-types:
+          - "patch"
+      python-minor-major:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "major"
 
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -419,6 +419,7 @@ Scheduled GitHub Actions runs can start late. Weekly and monthly examples are ca
 - To clear a large backlog once, run **Actions → Google News Backlog Reset** manually and type `RESET` in `confirmation`. Pending deliveries are expired and affected channels receive a single `---` divider; new items discovered afterwards are delivered normally. This is irreversible.
 - A failed state artifact upload is retried once. If both attempts fail, the workflow fails so the next run's possible fallback to an older state and duplicate deliveries are visible.
 - If no scheduled Google News run has completed for 12 hours, the **Google News Schedule Health** workflow checks every six hours and alerts the admin channel. Disable that workflow if you do not want the alert.
+- Dependabot auto-merges pip patch updates only after the `test` check passes. Review and merge minor, major, security, and GitHub Actions updates manually. Dependabot alerts and security updates are enabled.
 - GitHub can automatically disable scheduled workflows in a public repository after 60 days without repository activity. Re-enable the affected workflow from **Actions** when GitHub shows that notice. This project does not use an automated keepalive workaround for that platform policy. See [GitHub's workflow enable/disable documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 - Distinguish GitHub scheduling delays and external API limits from code failures. Saved incomplete deliveries resume in sequence on the next run.
 
