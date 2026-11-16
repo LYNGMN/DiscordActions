@@ -118,6 +118,44 @@ class SetWebhookAvatarsTests(unittest.TestCase):
         self.assertEqual("image/png", content_type)
         self.assertEqual(WEBHOOK, calls["get"])
 
+    def test_multipart_rejection_falls_back_to_json_image_data(self):
+        calls = []
+        responses = [FakeResponse(status_code=400), FakeResponse()]
+
+        def patch(url, **kwargs):
+            calls.append(kwargs)
+            return responses.pop(0)
+
+        results = self.module.apply_avatars(
+            [profile()],
+            {"DISCORD_WEBHOOK_GN_TOP_KR": WEBHOOK},
+            PNG,
+            patch=patch,
+            get=lambda *a, **k: FakeResponse(body={"avatar": "hash"}),
+        )
+
+        self.assertEqual("set", results[0]["status"])
+        self.assertEqual(2, len(calls))
+        self.assertIn("files", calls[0])
+        self.assertTrue(
+            calls[1]["json"]["avatar"].startswith("data:image/png;base64,")
+        )
+
+    def test_rejected_update_reports_the_discord_api_code(self):
+        def patch(url, **kwargs):
+            return FakeResponse(status_code=400, body={"code": 50035})
+
+        results = self.module.apply_avatars(
+            [profile()],
+            {"DISCORD_WEBHOOK_GN_TOP_KR": WEBHOOK},
+            PNG,
+            patch=patch,
+            get=lambda *a, **k: FakeResponse(body={"avatar": "hash"}),
+        )
+
+        self.assertEqual("failed", results[0]["status"])
+        self.assertEqual("http_400_api_50035", results[0]["error"])
+
     def test_dry_run_never_contacts_discord(self):
         def forbidden(*args, **kwargs):
             raise AssertionError("Discord must not be called during a dry run")

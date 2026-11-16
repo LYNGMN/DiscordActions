@@ -10,6 +10,7 @@ given. Webhook URLs are never printed.
 """
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -88,11 +89,33 @@ def _patch_avatar(
     patch: Callable,
     sleep: Callable[[float], None],
 ) -> None:
-    fields = {
+    multipart = {
         "data": {"payload_json": json.dumps({})},
         "files": {"avatar": ("avatar.png", image, "image/png")},
         "timeout": TIMEOUT,
     }
+    response = _send_patch(patch, webhook_url, multipart, sleep)
+    if response.status_code == 400:
+        # Some API versions accept the avatar only as JSON image data.
+        response = _send_patch(
+            patch,
+            webhook_url,
+            {"json": {"avatar": _data_uri(image)}, "timeout": TIMEOUT},
+            sleep,
+        )
+    response.raise_for_status()
+
+
+def _data_uri(image: bytes) -> str:
+    return "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+
+
+def _send_patch(
+    patch: Callable,
+    webhook_url: str,
+    fields: Dict[str, object],
+    sleep: Callable[[float], None],
+):
     response = patch(webhook_url, **fields)
     retry_after = _retry_after_seconds(response) if response.status_code == 429 else None
     if (
@@ -102,7 +125,20 @@ def _patch_avatar(
     ):
         sleep(retry_after)
         response = patch(webhook_url, **fields)
-    response.raise_for_status()
+    return response
+
+
+def _discord_api_code(response) -> Optional[int]:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get("code")
+    if isinstance(code, bool) or not isinstance(code, int):
+        return None
+    return code
 
 
 def _verify_avatar(webhook_url: str, get: Callable) -> None:
@@ -175,10 +211,14 @@ def apply_avatars(
         try:
             set_webhook_avatar(webhook_url, image, patch=patch, get=get, sleep=sleep)
         except requests.RequestException as error:
-            status_code = getattr(getattr(error, "response", None), "status_code", None)
+            response = getattr(error, "response", None)
+            status_code = getattr(response, "status_code", None)
             error_code = "request_error"
             if isinstance(status_code, int):
                 error_code = "http_{}".format(status_code)
+                api_code = _discord_api_code(response)
+                if api_code is not None:
+                    error_code += "_api_{}".format(api_code)
             results.append(
                 {"profile_id": profile.profile_id, "status": "failed", "error": error_code}
             )
