@@ -59,12 +59,13 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
     def source(self):
         return WORKFLOW.read_text(encoding="utf-8")
 
-    def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
+    def test_scheduled_workflow_accepts_external_dispatch(self):
         source = self.source()
         self.assertIn("cron: '*/15 * * * *'", source)
         self.assertNotIn("timezone:", source)
         self.assertIn("GOOGLE_NEWS_DELIVERY_ORDER", source)
-        self.assertNotIn("workflow_dispatch:", source)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("inputs:", source)
         self.assertNotIn("manual_test:", source)
         self.assertNotIn("--manual-test", source)
         self.assertNotIn("validate_only:", source)
@@ -286,11 +287,15 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
         self.assertIn("cron: '0 */6 * * *'", source)
         self.assertIn("workflow_dispatch:", source)
         self.assertIn("googlenews-to-discord.yml", source)
+        self.assertIn("youtube_to_discord.yml", source)
         self.assertIn("status: 'completed'", source)
-        self.assertIn("12", source)
+        self.assertIn("per_page: 5", source)
+        self.assertIn("GOOGLE_NEWS_HEALTH_MAX_AGE_HOURS", source)
+        self.assertIn("latestSuccess", source)
         self.assertIn("actions: read", source)
         self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
         self.assertIn("fetch(webhook", source)
+        self.assertIn("allowed_mentions", source)
         self.assertNotIn("console.log(webhook", source)
 
     def test_workflows_notify_admin_on_failure(self):
@@ -302,6 +307,14 @@ class GoogleNewsUnifiedWorkflowTests(unittest.TestCase):
                 self.assertIn("secrets.DISCORD_WEBHOOK_ADMIN", source)
                 self.assertIn("type(error).__name__", source)
                 self.assertNotIn("print(webhook", source)
+
+    def test_repeated_failure_alerts_are_throttled(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("id: alert_gate", source)
+        self.assertIn("previous.conclusion === 'failure'", source)
+        self.assertIn("60 * 60 * 1000", source)
+        self.assertIn("steps.alert_gate.outputs.notify == 'true'", source)
+        self.assertIn("Skipping duplicate admin alert", source)
 
 
 if __name__ == "__main__":

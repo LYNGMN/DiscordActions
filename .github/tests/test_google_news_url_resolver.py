@@ -82,13 +82,13 @@ class RecordingRequestGuard:
         self.responses = list(responses)
         self.calls = []
 
-    def get_open_circuit(self):
+    def get_open_circuit(self, scope=None):
         return None
 
-    def clear_circuit(self):
+    def clear_circuit(self, scope=None):
         return None
 
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, scope=None, **kwargs):
         self.calls.append({"method": method, "url": url, "kwargs": kwargs})
         if not self.responses:
             raise AssertionError("unexpected guarded request")
@@ -731,7 +731,7 @@ class GoogleNewsUrlResolverTests(unittest.TestCase):
                     """
                     SELECT blocked_until, last_error_code
                     FROM google_news_resolver_state
-                    WHERE state_key = 'global'
+                    WHERE state_key = 'resolver'
                     """
                 ).fetchone()
 

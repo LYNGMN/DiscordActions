@@ -237,14 +237,15 @@ class YouTubeWorkflowTests(unittest.TestCase):
 
             self.assertEqual(["B"], module.missing_youtube_detail_ids(module.DB_PATH))
 
-    def test_scheduled_workflow_has_no_manual_dispatch_surface(self):
+    def test_scheduled_workflow_accepts_external_dispatch(self):
         source = self.source()
 
         self.assertIn("cron: '*/15 * * * *'", source)
         self.assertNotIn("timezone:", source)
         self.assertIn("YOUTUBE_DELIVERY_ORDER", source)
         self.assertNotIn("cron: '0 * * * *'", source)
-        self.assertNotIn("workflow_dispatch:", source)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("inputs:", source)
         self.assertNotIn("manual_test:", source)
         self.assertIn("YOUTUBE_MANUAL_TEST_MODE: 'false'", source)
         self.assertIn("group: youtube-to-discord", source)
@@ -425,6 +426,16 @@ class YouTubeWorkflowTests(unittest.TestCase):
         self.assertIn("Pending deliveries", source)
         self.assertIn("Ambiguous retries", source)
         self.assertIn("YOUTUBE_RUN_SUMMARY_PATH", source)
+
+    def test_repeated_failure_alerts_are_throttled(self):
+        source = self.source()
+        self.assertIn("previous.conclusion === 'failure'", source)
+        self.assertIn("60 * 60 * 1000", source)
+        self.assertIn("Skipping duplicate admin alert", source)
+        self.assertNotIn(
+            "previous.conclusion === 'failure'",
+            MANUAL_WORKFLOW.read_text(encoding="utf-8"),
+        )
 
     def test_youtube_summary_ignores_a_stale_run(self):
         for workflow in (WORKFLOW, MANUAL_WORKFLOW):

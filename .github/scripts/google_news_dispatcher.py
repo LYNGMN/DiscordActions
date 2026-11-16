@@ -40,6 +40,7 @@ from google_news_profiles import (
     GoogleNewsProfile,
     build_handler_environment,
     load_profiles,
+    parse_max_network_resolutions,
     validate_common_feed_environment,
 )
 from google_news_request_guard import CircuitState, GoogleNewsRequestGuard
@@ -75,6 +76,8 @@ MAX_BACKLOG_LIMIT = 10000
 DEFAULT_BACKLOG_AGE_DAYS = 3
 MIN_BACKLOG_AGE_DAYS = 1
 MAX_BACKLOG_AGE_DAYS = 30
+ROTATION_FILENAME = "profile-rotation.json"
+ROTATION_KEY = "next_profile_index"
 
 
 def parse_backlog_limit(value: str = "500") -> int:
@@ -169,6 +172,54 @@ class DispatchSummary:
             "backlog_expired": self.backlog_expired,
             "backlog": [dict(item) for item in self.backlog],
         }
+
+
+def load_profile_rotation(state_path: Path) -> int:
+    path = state_path / ROTATION_FILENAME
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    value = payload.get(ROTATION_KEY) if isinstance(payload, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def save_profile_rotation(state_path: Path, index: int) -> None:
+    path = state_path / ROTATION_FILENAME
+    temporary_path = path.with_name(path.name + ".tmp")
+    payload = {ROTATION_KEY: max(0, int(index))}
+    temporary_path.write_text(
+        json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary_path, path)
+
+
+def rotated_profiles(
+    profiles: Sequence[GoogleNewsProfile], start: int
+) -> List[GoogleNewsProfile]:
+    ordered = list(profiles)
+    if not ordered:
+        return ordered
+    offset = start % len(ordered)
+    return ordered[offset:] + ordered[:offset]
+
+
+def next_rotation_index(
+    results: Sequence[ProfileRunResult],
+    profiles: Sequence[GoogleNewsProfile],
+) -> int:
+    positions = {
+        profile.profile_id: index for index, profile in enumerate(profiles)
+    }
+    for result in results:
+        if (
+            result.status == "skipped"
+            and result.error_code == "time_budget_exhausted"
+        ):
+            return positions.get(result.profile_id, 0)
+    return 0
 
 
 def preflight_profiles(
@@ -307,6 +358,10 @@ def run_profiles(
     state_path = Path(state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
     _remove_stale_result_dirs(state_path)
+    profile_order = list(profiles)
+    if not manual_test and not validate_only and profile_order:
+        rotation_start = load_profile_rotation(state_path) % len(profile_order)
+        profiles = rotated_profiles(profile_order, rotation_start)
     registry = publisher_registry or load_default_registry()
     database_map = dict(
         profile_databases
@@ -438,6 +493,16 @@ def run_profiles(
         backlog_expired=backlog_expired,
         backlog=tuple(backlog_events),
     )
+    if not manual_test and not validate_only and profile_order:
+        try:
+            save_profile_rotation(
+                state_path, next_rotation_index(results, profile_order)
+            )
+        except OSError as error:
+            LOGGER.warning(
+                "Could not save the profile rotation (오류 유형: %s)",
+                type(error).__name__,
+            )
     _write_summary(state_path / "run-summary.json", summary)
     return summary
 
@@ -789,6 +854,11 @@ def main(argv=None) -> int:
     parser.add_argument("--manual-test", action="store_true")
     parser.add_argument("--profile-id")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument(
+        "--check-config",
+        action="store_true",
+        help="validate profiles and common settings without network access",
+    )
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     try:
@@ -821,7 +891,25 @@ def main(argv=None) -> int:
                 str(DEFAULT_URL_CACHE_RETENTION_DAYS),
             )
         )
+        parse_max_network_resolutions(
+            os.environ.get("GOOGLE_NEWS_MAX_NETWORK_RESOLUTIONS", "40")
+        )
         all_profiles = load_profiles(arguments.profiles)
+        if arguments.check_config:
+            try:
+                for profile in all_profiles:
+                    merged = dict(os.environ)
+                    merged.update(profile.environment)
+                    validate_common_feed_environment(merged)
+            except ValueError as error:
+                print(
+                    "::error title=Google News profile configuration invalid::{}".format(
+                        error
+                    )
+                )
+                return 1
+            print("Google News profile configuration ok: {}".format(len(all_profiles)))
+            return 0
         profiles = select_profiles(all_profiles, arguments.profile_id)
         summary = run_dispatch(
             profiles,

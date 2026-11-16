@@ -3,6 +3,7 @@ name: YouTube to Discord Notification
 on:
   schedule:
     - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -227,6 +228,28 @@ jobs:
           script: |
             const webhook = (process.env.DISCORD_WEBHOOK_ADMIN || '').trim();
             if (!webhook) return;
+            const { owner, repo } = context.repo;
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'youtube_to_discord.yml',
+              branch: 'main',
+              status: 'completed',
+              per_page: 5,
+            });
+            const previous = (data.workflow_runs || []).find(
+              run => run.id !== context.runId
+            );
+            if (
+              previous &&
+              previous.conclusion === 'failure' &&
+              Date.now() - new Date(previous.created_at).getTime() < 60 * 60 * 1000
+            ) {
+              core.info(
+                'Skipping duplicate admin alert: the previous run also failed within 60 minutes.'
+              );
+              return;
+            }
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const content = ['**YouTube 실행 실패**', runUrl].join('\n');
             const response = await fetch(webhook, {
