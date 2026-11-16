@@ -391,6 +391,26 @@ RSS 채널 메시지는 게시일자와 썸네일을 표시합니다. RSS 재생
 
 GitHub Actions 예약 실행은 시스템 상황에 따라 시작이 늦어질 수 있습니다. 주간·월간 예시는 고정된 7일·30일 간격이 아니라 달력의 월요일과 매월 1일을 기준으로 합니다. Google News RSS는 기사 보관소가 아니므로 실행 간격이 길면 실행 시점에 피드에서 사라진 기사를 다시 가져올 수 없습니다. 뉴스 누락을 최소화하려면 기본 15분 주기를 권장합니다.
 
+## 진단 로그
+
+실행 로그에서 `event=`로 검색하면 "무엇을 왜 건너뛰었는지"를 한 줄씩 따라갈 수 있습니다. 같은 내용이 `google-news-events`·`youtube-events` 아티팩트의 `run-events.jsonl`에 JSON Lines로 남습니다(14일 보관).
+
+| 이벤트 | 남는 내용 |
+| --- | --- |
+| `run_start` · `run_summary` | 실행 시작과 전체 처리·대기·필터·중복·잘림·소요 시간 |
+| `profile_start` · `profile_summary` | 프로필 시작과 가져옴·필터·중복·대기열·연기·잘림·대기·소요 시간 |
+| `feed_fetched` · `filter_summary` | 피드에서 가져온 수와 필터에서 제외된 수 |
+| `item_skip` | 건너뛴 이유(`filter_date`, `filter_keyword`, `duplicate`)와 항목 해시 |
+| `item_queued` · `item_done` · `item_failed` | 대기열 저장·전송 완료·전송 실패(코드·HTTP 상태·시도 횟수) |
+| `message_sent` · `message_failed` · `message_exhausted` | 메시지 조각 순서(`sequence=2/3`), 메시지 ID, 시도 횟수 |
+| `content_truncated` | 2000자를 넘어 잘린 메시지 |
+| `delivery_stalled` | 0건 배송인데 대기 항목이 남은 상태 |
+| `backlog_expired` | 오래된 대기 항목 자동 만료 |
+
+- 항목은 원문 대신 8자 해시(`item=`)로 남깁니다. 웹훅 URL, 기사 본문, 메시지 내용은 로그에 남기지 않습니다.
+- 건수가 많은 `item_skip`·`item_queued`는 로그에는 `debug`로만 남기고 아티팩트에는 모두 기록합니다. 그래서 사람이 읽는 로그는 짧게 유지됩니다.
+- 0건 배송인데 대기 항목이 있으면 실행 요약에 경고가 남고 관리자 채널로 알립니다(첫 발생과 이후 4회마다).
+
 ## 문제 해결
 
 - 먼저 Actions 실행 결과와 업로드된 SQLite 상태 아티팩트를 확인합니다.

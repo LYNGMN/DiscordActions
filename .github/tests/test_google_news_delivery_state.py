@@ -103,6 +103,36 @@ class GoogleNewsDeliveryStateTests(unittest.TestCase):
         self.assertEqual([], self.module.pending_delivery_guids(self.db_path))
         self.assertEqual(0, self.module.count_pending_deliveries(self.db_path))
 
+    def test_delivery_reports_message_counts_and_events(self):
+        self.module.reserve_delivery_with_messages(
+            self.db_path,
+            "guid-events",
+            "Title",
+            "https://news.google.com/rss/articles/guid-events",
+            ["first part", "second part"],
+        )
+
+        class MessageId(str):
+            ambiguous_retry = False
+            attempt_count = 1
+            content_truncated = True
+
+        with self.assertLogs("delivery_events", level="INFO") as captured:
+            outcome = self.module.deliver_queued_item(
+                self.db_path,
+                "guid-events",
+                lambda _content: MessageId("123456789012345678"),
+                profile_id="top_kr",
+            )
+
+        self.assertEqual(2, outcome.message_count)
+        self.assertEqual(2, outcome.truncated_count)
+        sent = [line for line in captured.output if "event=message_sent" in line]
+        truncated = [line for line in captured.output if "event=content_truncated" in line]
+        self.assertEqual(2, len(sent))
+        self.assertEqual(2, len(truncated))
+        self.assertIn("profile=top_kr", sent[0])
+
     def test_scheduled_mode_uses_feed_position_not_publication_date(self):
         items = [
             make_item("feed-first", "Sun, 30 Aug 2026 08:00:00 GMT"),

@@ -43,6 +43,11 @@ class GoogleNewsProfileResultTests(unittest.TestCase):
                 "processed_count": 2,
                 "pending_count": 1,
                 "ambiguous_retry_count": 0,
+                "filtered_count": 0,
+                "duplicate_count": 0,
+                "queued_count": 0,
+                "deferred_count": 0,
+                "truncated_count": 0,
                 "error_code": None,
             },
             payload,
@@ -68,6 +73,37 @@ class GoogleNewsProfileResultTests(unittest.TestCase):
                         pending,
                         error_code,
                     )
+
+    def test_records_delivery_diagnostic_counts(self):
+        payload = self.module.write_profile_result(
+            str(self.path),
+            "top_us",
+            "success",
+            1,
+            2,
+            None,
+            filtered_count=4,
+            duplicate_count=5,
+            queued_count=1,
+            deferred_count=0,
+            truncated_count=1,
+        )
+
+        self.assertEqual(4, payload["filtered_count"])
+        self.assertEqual(5, payload["duplicate_count"])
+        self.assertEqual(1, payload["truncated_count"])
+
+    def test_rejects_negative_diagnostic_counts(self):
+        with self.assertRaises(ValueError):
+            self.module.write_profile_result(
+                str(self.path),
+                "top_us",
+                "success",
+                0,
+                0,
+                None,
+                filtered_count=-1,
+            )
 
     def test_replaces_an_existing_result_atomically(self):
         self.path.parent.mkdir(parents=True)

@@ -43,6 +43,7 @@ from google_news_profiles import (
     validate_common_feed_environment,
 )
 from google_news_request_guard import CircuitState, GoogleNewsRequestGuard
+from run_events import emit_event, truncate_events_file
 
 
 LOGGER = logging.getLogger(__name__)
@@ -60,6 +61,11 @@ RESULT_FIELDS = {
     "processed_count",
     "pending_count",
     "ambiguous_retry_count",
+    "filtered_count",
+    "duplicate_count",
+    "queued_count",
+    "deferred_count",
+    "truncated_count",
     "error_code",
 }
 ANNOTATION_LIMIT = 10
@@ -113,6 +119,11 @@ class ProfileRunResult:
     pending_count: int
     ambiguous_retry_count: int
     error_code: Optional[str]
+    filtered_count: int = 0
+    duplicate_count: int = 0
+    queued_count: int = 0
+    deferred_count: int = 0
+    truncated_count: int = 0
 
     @classmethod
     def skipped(cls, profile_id: str, error_code: str) -> "ProfileRunResult":
@@ -129,6 +140,11 @@ class ProfileRunResult:
             "processed_count": self.processed_count,
             "pending_count": self.pending_count,
             "ambiguous_retry_count": self.ambiguous_retry_count,
+            "filtered_count": self.filtered_count,
+            "duplicate_count": self.duplicate_count,
+            "queued_count": self.queued_count,
+            "deferred_count": self.deferred_count,
+            "truncated_count": self.truncated_count,
             "error_code": self.error_code,
         }
 
@@ -318,6 +334,13 @@ def run_profiles(
     resolver_db = str(state_path / "resolver.db")
     circuit_reader = GoogleNewsRequestGuard(requests.Session(), resolver_db)
     results: List[ProfileRunResult] = list(preflight_results)
+    for preflight_result in preflight_results:
+        emit_event(
+            "profile_result",
+            profile=preflight_result.profile_id,
+            status=preflight_result.status,
+            code=preflight_result.error_code,
+        )
     backlog_events: List[Dict[str, object]] = []
     backlog_now = datetime.now(timezone.utc)
 
@@ -333,6 +356,12 @@ def run_profiles(
                 )
                 if event is not None:
                     backlog_events.append(event)
+                    emit_event(
+                        "backlog_expired",
+                        profile=event["profile_id"],
+                        expired=event["expired"],
+                        pending=event["pending"],
+                    )
             if (
                 run_deadline is not None
                 and run_deadline - time.time() < MIN_PROFILE_BUDGET_SECONDS
@@ -353,10 +382,21 @@ def run_profiles(
                 child_env = build_handler_environment(
                     profile, profile_env, state_dir, resolver_db, manual_test
                 )
-            except ValueError:
+            except ValueError as error:
+                LOGGER.error(
+                    "Google News profile configuration invalid: profile_id=%s detail=%s",
+                    profile.profile_id,
+                    str(error),
+                )
+                emit_event(
+                    "profile_config_invalid",
+                    profile=profile.profile_id,
+                    detail=str(error),
+                )
                 results.append(ProfileRunResult.failed(profile.profile_id, "invalid_environment"))
                 continue
             result_path = str(Path(result_dir) / "{}.json".format(profile.profile_id))
+            profile_started = time.monotonic()
             child_env.update(
                 {
                     "GOOGLE_NEWS_RESULT_PATH": result_path,
@@ -372,11 +412,31 @@ def run_profiles(
                     check=False,
                 )
             except Exception:
+                emit_event(
+                    "profile_start_failed",
+                    profile=profile.profile_id,
+                    code="handler_start_failed",
+                )
                 results.append(ProfileRunResult.failed(profile.profile_id, "handler_start_failed"))
                 continue
 
-            results.append(
-                _read_profile_result(profile.profile_id, result_path, completed.returncode)
+            profile_result = _read_profile_result(
+                profile.profile_id, result_path, completed.returncode
+            )
+            results.append(profile_result)
+            emit_event(
+                "profile_result",
+                profile=profile.profile_id,
+                status=profile_result.status,
+                processed=profile_result.processed_count,
+                pending=profile_result.pending_count,
+                filtered=profile_result.filtered_count,
+                duplicates=profile_result.duplicate_count,
+                queued=profile_result.queued_count,
+                deferred=profile_result.deferred_count,
+                truncated=profile_result.truncated_count,
+                code=profile_result.error_code,
+                duration_ms=int((time.monotonic() - profile_started) * 1000),
             )
             if (
                 index + 1 < len(profiles)
@@ -390,6 +450,14 @@ def run_profiles(
         database_map,
         retention_days,
         url_cache_retention_days,
+    )
+    emit_event(
+        "state_pruned",
+        items=retention.get("items", 0),
+        messages=retention.get("messages", 0),
+        identities=retention.get("identities", 0),
+        url_cache=retention.get("url_cache", 0),
+        databases=retention.get("databases", 0),
     )
     emitted = _emit_profile_annotations(results, circuit_state)
     _emit_backlog_annotations(backlog_events, emitted)
@@ -438,6 +506,15 @@ def run_profiles(
         backlog=tuple(backlog_events),
     )
     _write_summary(state_path / "run-summary.json", summary)
+    _report_run_totals(
+        summary,
+        results,
+        env,
+        state_path,
+        manual_test,
+        validate_only,
+        admin_notifier,
+    )
     return summary
 
 
@@ -672,6 +749,109 @@ def _emit_annotation(level: str, title: str, body: str, emitted: int) -> int:
     return emitted + 1
 
 
+STALL_STREAK_FILE = "delivery-stall.json"
+STALL_ALERT_EVERY = 4
+
+
+def _profile_totals(results: Sequence[ProfileRunResult]) -> Dict[str, int]:
+    return {
+        "processed": sum(result.processed_count for result in results),
+        "pending": sum(result.pending_count for result in results),
+        "filtered": sum(getattr(result, "filtered_count", 0) for result in results),
+        "duplicates": sum(getattr(result, "duplicate_count", 0) for result in results),
+        "truncated": sum(getattr(result, "truncated_count", 0) for result in results),
+    }
+
+
+def _run_duration_ms(summary: DispatchSummary) -> Optional[int]:
+    try:
+        started = datetime.fromisoformat(summary.started_at)
+        finished = datetime.fromisoformat(summary.finished_at)
+    except (TypeError, ValueError):
+        return None
+    return max(0, int((finished - started).total_seconds() * 1000))
+
+
+def _update_stall_streak(state_path: Path, stalled: bool) -> int:
+    path = state_path / STALL_STREAK_FILE
+    streak = 0
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        payload = {}
+    value = payload.get("streak") if isinstance(payload, dict) else None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        streak = value
+    streak = streak + 1 if stalled else 0
+    try:
+        temporary_path = path.with_suffix(".tmp")
+        with open(temporary_path, "w", encoding="utf-8") as handle:
+            json.dump({"streak": streak, "updated_at": _utc_timestamp()}, handle)
+            handle.write("\n")
+        os.replace(temporary_path, path)
+    except OSError:
+        pass
+    return streak
+
+
+def _report_run_totals(
+    summary: DispatchSummary,
+    results: Sequence[ProfileRunResult],
+    env: Mapping[str, str],
+    state_path: Path,
+    manual_test: bool,
+    validate_only: bool,
+    notifier: Callable[[str, str], bool],
+) -> None:
+    totals = _profile_totals(results)
+    emit_event(
+        "run_summary",
+        status=summary.status,
+        profiles=len(results),
+        processed=totals["processed"],
+        pending=totals["pending"],
+        filtered=totals["filtered"],
+        duplicates=totals["duplicates"],
+        truncated=totals["truncated"],
+        duration_ms=_run_duration_ms(summary),
+    )
+    stalled = (
+        summary.status == "success"
+        and not manual_test
+        and not validate_only
+        and totals["processed"] == 0
+        and totals["pending"] > 0
+    )
+    streak = _update_stall_streak(state_path, stalled)
+    if not stalled:
+        return
+    emit_event("delivery_stalled", pending=totals["pending"], streak=streak)
+    print(
+        "::warning title=Google News delivery stalled::0 delivered while {} "
+        "deliveries are pending".format(totals["pending"])
+    )
+    if streak != 1 and streak % STALL_ALERT_EVERY != 0:
+        return
+    webhook = env.get("DISCORD_WEBHOOK_ADMIN", "")
+    if not isinstance(webhook, str) or not webhook.strip():
+        return
+    lines = [
+        "Google News delivery stalled",
+        "delivered=0 pending={} streak={}".format(totals["pending"], streak),
+    ]
+    run_url = current_actions_url()
+    if run_url:
+        lines.append("run: {}".format(run_url))
+    try:
+        notifier(webhook.strip(), "\n".join(lines))
+    except Exception as error:
+        LOGGER.warning(
+            "Google News stall alert skipped (오류 유형: %s)",
+            type(error).__name__,
+        )
+
+
 def _record_dispatch_failure(arguments, error_code: str) -> None:
     state_path = Path(arguments.state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
@@ -686,6 +866,7 @@ def _record_dispatch_failure(arguments, error_code: str) -> None:
         run_id=os.environ.get("GITHUB_RUN_ID"),
     )
     _write_summary(state_path / "run-summary.json", failed_summary)
+    emit_event("run_failed", code=error_code)
     LOGGER.error("Google News 디스패처 실패 (코드: %s)", error_code)
     print(
         "::error title=Google News dispatcher failed::code={}".format(error_code)
@@ -726,6 +907,16 @@ def _read_profile_result(
     processed_count = payload.get("processed_count")
     pending_count = payload.get("pending_count")
     ambiguous_retry_count = payload.get("ambiguous_retry_count")
+    metrics = {
+        key: payload.get(key)
+        for key in (
+            "filtered_count",
+            "duplicate_count",
+            "queued_count",
+            "deferred_count",
+            "truncated_count",
+        )
+    }
     if (
         status not in STATUSES
         or isinstance(processed_count, bool)
@@ -737,6 +928,10 @@ def _read_profile_result(
         or isinstance(ambiguous_retry_count, bool)
         or not isinstance(ambiguous_retry_count, int)
         or ambiguous_retry_count < 0
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in metrics.values()
+        )
         or (
             error_code is not None
             and (not isinstance(error_code, str) or not ERROR_CODE.fullmatch(error_code))
@@ -752,6 +947,11 @@ def _read_profile_result(
         pending_count,
         ambiguous_retry_count,
         error_code,
+        filtered_count=metrics["filtered_count"],
+        duplicate_count=metrics["duplicate_count"],
+        queued_count=metrics["queued_count"],
+        deferred_count=metrics["deferred_count"],
+        truncated_count=metrics["truncated_count"],
     )
 
 
@@ -788,6 +988,7 @@ def main(argv=None) -> int:
     parser.add_argument("--validate-only", action="store_true")
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    truncate_events_file(os.environ.get("RUN_EVENTS_PATH", ""))
     try:
         retention_days = state_retention_days(
             os.environ.get(
@@ -820,6 +1021,12 @@ def main(argv=None) -> int:
         )
         all_profiles = load_profiles(arguments.profiles)
         profiles = select_profiles(all_profiles, arguments.profile_id)
+        emit_event(
+            "run_start",
+            profiles=len(profiles),
+            manual=arguments.manual_test,
+            validate=arguments.validate_only,
+        )
         summary = run_dispatch(
             profiles,
             os.environ,

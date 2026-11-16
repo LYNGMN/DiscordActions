@@ -131,6 +131,7 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
 
         posted_payload = post.call_args.kwargs["json"]
         self.assertEqual("1234567890", message_id)
+        self.assertTrue(message_id.content_truncated)
         self.assertLessEqual(len(posted_payload["content"]), 2000)
         self.assertLessEqual(
             len(posted_payload["content"].encode("utf-16-le")) // 2,
@@ -139,6 +140,19 @@ class GoogleNewsDiscordDeliveryTests(unittest.TestCase):
         self.assertTrue(posted_payload["content"].endswith(date_line))
         self.assertIn("\n…\n", posted_payload["content"])
         self.assertEqual(content, payload["content"])
+
+    def test_short_message_is_not_marked_as_truncated(self):
+        with mock.patch.object(
+            self.delivery.requests,
+            "post",
+            return_value=FakeResponse(),
+        ):
+            message_id = self.delivery.send_webhook_message(
+                "https://example.com/webhook",
+                {"content": "short message"},
+            )
+
+        self.assertFalse(message_id.content_truncated)
 
     def test_split_content_preserves_every_related_line_in_order(self):
         lines = [

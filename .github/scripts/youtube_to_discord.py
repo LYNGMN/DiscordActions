@@ -36,6 +36,7 @@ from youtube_delivery_state import (
     is_youtube_item_handled,
     youtube_delivery_metrics,
 )
+from run_events import emit_event, item_ref, truncate_events_file
 from youtube_discord_delivery import YOUTUBE_AVATAR_URL, send_youtube_webhook
 from youtube_messages import build_youtube_message, resolve_playlist_layout
 from youtube_video_source import (
@@ -260,6 +261,16 @@ def deliver_queued_video(video_id):
                 error_code,
                 attempt_count=getattr(error, 'attempt_count', 1),
             )
+            emit_event(
+                "message_failed",
+                service="youtube",
+                profile=YOUTUBE_MODE,
+                item=item_ref(video_id),
+                target=target,
+                code=error_code,
+                status=getattr(error, "http_status_code", None),
+                attempt=getattr(error, "attempt_count", 1),
+            )
             print("::warning title=YouTube delivery failed::A queued delivery remains pending")
             notify_admin(
                 DISCORD_WEBHOOK_ADMIN,
@@ -291,6 +302,16 @@ def deliver_queued_video(video_id):
             result.message_id,
             last_error_code=error_code,
             attempt_count=result.attempt_count,
+        )
+        emit_event(
+            "message_sent",
+            service="youtube",
+            profile=YOUTUBE_MODE,
+            item=item_ref(video_id),
+            target=target,
+            message_id=result.message_id,
+            attempt=result.attempt_count,
+            ambiguous=bool(result.ambiguous_retry),
         )
         logging.info("Discord 전송 완료: video_id=%s target=%s", video_id, target)
         time.sleep(2)
@@ -596,6 +617,7 @@ def fetch_configured_video_data(youtube, known_video_ids):
 
 def fetch_and_post_videos(youtube):
     logging.info("YouTube feed processing started: mode=%s source=%s", YOUTUBE_MODE, YOUTUBE_SOURCE)
+    emit_event("run_start", service="youtube", mode=YOUTUBE_MODE, source=YOUTUBE_SOURCE)
     compiled_filter = compile_runtime_feed_filter()
     display_language = normalize_display_language(DISPLAY_LANGUAGE)
 
@@ -625,6 +647,7 @@ def fetch_and_post_videos(youtube):
         youtube,
         existing_video_ids,
     )
+    emit_event("feed_fetched", service="youtube", fetched=len(source_items))
     new_videos = []
     source_channel_titles = [item['channel_title'] for item in source_items]
     for video_data in source_items:
@@ -634,6 +657,13 @@ def fetch_and_post_videos(youtube):
             video_id,
             compiled_filter.fingerprint,
         ):
+            emit_event(
+                "item_skip",
+                level="debug",
+                service="youtube",
+                reason="duplicate",
+                item=item_ref(video_id),
+            )
             logging.info("Skipping handled YouTube video: %s", video_id)
             continue
         result = compiled_filter.matches(
@@ -646,6 +676,13 @@ def fetch_and_post_videos(youtube):
                 DB_PATH,
                 video_data,
                 compiled_filter.fingerprint,
+            )
+            emit_event(
+                "item_skip",
+                level="debug",
+                service="youtube",
+                reason=getattr(result, "reason", None) or "filter",
+                item=item_ref(video_id),
             )
             logging.info(
                 "YouTube video excluded by %s filter: %s",
@@ -665,6 +702,12 @@ def fetch_and_post_videos(youtube):
         "새 비디오 선별 완료: 전송 %s개, 기준선 %s개",
         len(delivery_videos),
         len(baseline_videos),
+    )
+    emit_event(
+        "items_selected",
+        service="youtube",
+        delivery=len(delivery_videos),
+        baseline=len(baseline_videos),
     )
 
     for video in baseline_videos:
@@ -706,6 +749,12 @@ def fetch_and_post_videos(youtube):
             video_data=video,
         )
         queued_videos.append((video['video_id'], video['title']))
+        emit_event(
+            "item_queued",
+            level="debug",
+            service="youtube",
+            item=item_ref(video['video_id']),
+        )
         logging.info(f"비디오 대기열 저장 완료: {video['title']}")
 
     # Only clear recovered IDs once each returned item has been durably handled
@@ -717,15 +766,29 @@ def fetch_and_post_videos(youtube):
 
     for video_id, video_title in queued_videos:
         deliver_queued_video(video_id)
+        emit_event(
+            "item_done",
+            service="youtube",
+            item=item_ref(video_id),
+            delivered=len(queued_videos),
+        )
         logging.info(f"비디오 전송 완료: {video_title}")
 
     if YOUTUBE_MODE == 'search':
         mark_search_checkpoint(DB_PATH, scan_checkpoint)
+    emit_event(
+        "run_summary",
+        service="youtube",
+        delivered=len(queued_videos),
+        baseline=len(baseline_videos),
+        resumed=resumed_count,
+    )
     logging.info("YouTube feed processing completed")
 
 if __name__ == "__main__":
     run_status = 'failed'
     try:
+        truncate_events_file(os.environ.get("RUN_EVENTS_PATH", ""))
         check_env_variables()
         if INITIALIZE_MODE_YOUTUBE:
             init_db(reset=True)
@@ -755,6 +818,7 @@ if __name__ == "__main__":
     except Exception as error:
         # Print only known, static error codes: never print URLs, keys or exception strings.
         safe_code = str(error) if isinstance(error, RuntimeError) and re.fullmatch(r'[a-z][a-z0-9_]{1,80}', str(error)) else type(error).__name__
+        emit_event("run_failed", service="youtube", code=safe_code)
         logging.error("실행 실패 (단계별 로그 확인, 오류 코드: %s)", safe_code)
         sys.exit(1)
     finally:

@@ -405,6 +405,26 @@ Edit `cron` under the workflow's `schedule`. Each expression has exactly five fi
 
 Scheduled GitHub Actions runs can start late. Weekly and monthly examples are calendar schedules, not fixed 7-day or 30-day durations. Google News RSS is not an archive: with long intervals, an article that has already disappeared from the feed cannot be recovered. Use the default 15-minute schedule when minimizing missed news matters.
 
+## Diagnostic logs
+
+Search the run log for `event=` to follow every delivery decision, including the ones that never reach Discord. The same records are written as JSON Lines to the `run-events.jsonl` file inside the `google-news-events` and `youtube-events` artifacts (retained for 14 days).
+
+| Event | What it records |
+| --- | --- |
+| `run_start` · `run_summary` | Run start plus processed, pending, filtered, duplicate, truncated counts and duration |
+| `profile_start` · `profile_summary` | Profile start plus fetched, filtered, duplicate, queued, deferred, truncated, pending counts and duration |
+| `feed_fetched` · `filter_summary` | Items read from the feed and items removed by filters |
+| `item_skip` | Skip reason (`filter_date`, `filter_keyword`, `duplicate`) and the item hash |
+| `item_queued` · `item_done` · `item_failed` | Queued, delivered, and failed deliveries with code, HTTP status, and attempts |
+| `message_sent` · `message_failed` · `message_exhausted` | Message chunk order (`sequence=2/3`), message ID, attempt count |
+| `content_truncated` | A message shortened to Discord's 2000-character limit |
+| `delivery_stalled` | A run that delivered nothing while deliveries are pending |
+| `backlog_expired` | Old pending deliveries expired automatically |
+
+- Items are recorded as a short hash (`item=`), never the original text. Webhook URLs, article bodies, and message content are never logged.
+- High-volume events such as `item_skip` and `item_queued` stay at `debug` level in the human log and are always written to the artifact.
+- When a scheduled run delivers nothing while deliveries are pending, the run summary shows a warning and the admin channel is notified on the first occurrence and every fourth one after that.
+
 ## Troubleshooting
 
 - Check the Actions result and its uploaded SQLite state artifact first.

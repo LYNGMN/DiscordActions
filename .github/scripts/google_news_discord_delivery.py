@@ -70,11 +70,13 @@ class DiscordMessageId(str):
         ambiguous_retry: bool = False,
         attempt_count: int = 1,
         google_news_fallback: bool = False,
+        content_truncated: bool = False,
     ):
         instance = str.__new__(cls, value)
         instance.ambiguous_retry = bool(ambiguous_retry)
         instance.attempt_count = int(attempt_count)
         instance.google_news_fallback = bool(google_news_fallback)
+        instance.content_truncated = bool(content_truncated)
         return instance
 
 
@@ -167,8 +169,11 @@ def send_webhook_message(
     safe_payload["username"] = GOOGLE_NEWS_USERNAME
     safe_payload["avatar_url"] = GOOGLE_NEWS_AVATAR_URL
     content = safe_payload.get("content")
+    content_truncated = False
     if isinstance(content, str):
-        safe_payload["content"] = _limit_content(content)
+        limited_content = _limit_content(content)
+        content_truncated = limited_content != content
+        safe_payload["content"] = limited_content
 
     ambiguous_retry = False
     transient_retry_used = False
@@ -292,6 +297,7 @@ def send_webhook_message(
             ambiguous_retry,
             attempt_count,
             google_news_fallback,
+            content_truncated,
         )
 
 
